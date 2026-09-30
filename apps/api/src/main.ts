@@ -28,7 +28,12 @@ async function bootstrap() {
   app.enableCors({
     origin: (origin, callback) => {
       // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
-      if (!origin || allowedOrigins.includes(origin)) {
+      // or explicitly configured origins or any Vercel deployment (*.vercel.app)
+      if (
+        !origin ||
+        allowedOrigins.includes(origin) ||
+        /^https:\/\/.*\.vercel\.app$/.test(origin)
+      ) {
         callback(null, true);
       } else {
         callback(new Error(`Origin ${origin} not allowed by CORS`));
