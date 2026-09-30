@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "prebuild": "npm run build --workspace=@smartcareer/shared",
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
