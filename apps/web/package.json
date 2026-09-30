@@ -6,6 +6,7 @@
     "prebuild": "npm run build --workspace=@smartcareer/shared",
     "dev": "next dev -p 3000",
     "build": "next build",
+    "build:web": "next build",
     "start": "next start -p 3000",
     "lint": "next lint"
   },
