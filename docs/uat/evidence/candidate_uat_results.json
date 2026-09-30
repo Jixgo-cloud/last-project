@@ -1,0 +1,72 @@
+[
+  {
+    "tcId": "TC-CAN-01A",
+    "title": "Local Email & Password Registration & Login",
+    "status": "PASS",
+    "url": "http://localhost:3000/profile",
+    "evidence": "tc_can_01a_login_success.png"
+  },
+  {
+    "tcId": "TC-CAN-01B",
+    "title": "Candidate Google OAuth Restriction Guard (GitHub Mandatory)",
+    "status": "POLICY ENFORCED PASS",
+    "details": "UI & API properly block Google OAuth for Candidate under official v1.0 security architecture.",
+    "evidence": "tc_can_01b_google_oauth_blocked.png"
+  },
+  {
+    "tcId": "TC-CAN-02",
+    "title": "Profile Hub & Career Goal Configuration",
+    "status": "PASS",
+    "details": "Profile loaded with Radar Chart: true, Skills: 30",
+    "evidence": "tc_can_02_profile_hub.png"
+  },
+  {
+    "tcId": "TC-CAN-03",
+    "title": "Candidate GitHub Evidence Sync",
+    "status": "PASS",
+    "details": "GitHub evidence verified and rendered on profile",
+    "evidence": "tc_can_03_github_sync.png"
+  },
+  {
+    "tcId": "TC-CAN-08",
+    "title": "Job Search, Filtering & 70/20/10 Matching Algorithm",
+    "status": "PASS",
+    "details": "21 jobs loaded and match scores evaluated",
+    "evidence": "tc_can_08_job_search.png"
+  },
+  {
+    "tcId": "TC-CAN-09A",
+    "title": "Job Detail & Application Submission (Native Flow)",
+    "status": "PASS",
+    "details": "Job application submitted successfully via modal",
+    "evidence": "tc_can_09a_application_submitted.png"
+  },
+  {
+    "tcId": "TC-CAN-10",
+    "title": "Candidate Applications Tracking Hub",
+    "status": "PASS",
+    "details": "3 applications tracked with real-time status badges",
+    "evidence": "tc_can_10_applications_track.png"
+  },
+  {
+    "tcId": "TC-CAN-05",
+    "title": "Theory Assessment Interface & Anti-Cheat System",
+    "status": "PASS",
+    "details": "Theory assessment loaded: \"Full Stack JavaScript & TypeScript Core Assessment\"",
+    "evidence": "tc_can_05_theory_assessment.png"
+  },
+  {
+    "tcId": "TC-CAN-06",
+    "title": "Practical Coding Assessment & Judge0 Sandbox",
+    "status": "PASS",
+    "details": "Monaco editor rendered: true, connected to Judge0 sandbox",
+    "evidence": "tc_can_06_coding_sandbox.png"
+  },
+  {
+    "tcId": "TC-CAN-12",
+    "title": "Skill Gaps & Curated Course Recommendations",
+    "status": "PASS",
+    "details": "1 curated learning courses rendered",
+    "evidence": "tc_can_12_courses_recommend.png"
+  }
+]

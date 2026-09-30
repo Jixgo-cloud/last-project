@@ -1,0 +1,175 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { SkillGapItem, SkillCategory, CourseSource, CareerTrack } from '@smartcareer/shared';
+import { CAREER_DEFINITIONS } from '../jobs/jobs.service';
+
+@Injectable()
+export class RecommendationsService {
+  // Target career benchmark expectations
+  private readonly careerBenchmarks: Record<string, Record<string, number>> = {
+    'Full Stack Developer': {
+      'React': 80,
+      'TypeScript': 75,
+      'Node.js': 80,
+      'PostgreSQL': 70,
+      'Docker': 60,
+      'Jest': 60,
+    },
+    'Frontend Developer': {
+      'React': 85,
+      'Next.js': 80,
+      'TypeScript': 80,
+      'Tailwind CSS': 85,
+      'Jest': 65,
+    },
+    'Backend Developer': {
+      'Node.js': 85,
+      'NestJS': 80,
+      'PostgreSQL': 75,
+      'Docker': 70,
+      'Redis': 65,
+    },
+    'DevOps Engineer': {
+      'Docker': 85,
+      'Kubernetes': 80,
+      'PostgreSQL': 65,
+      'Python': 70,
+    },
+  };
+
+  constructor(private prisma: PrismaService) {}
+
+  async getSkillGapsAndRecommendations(candidateUserId: string): Promise<{
+    targetCareer: string;
+    gaps: SkillGapItem[];
+  }> {
+    const candidate = await this.prisma.candidateProfile.findUnique({
+      where: { userId: candidateUserId },
+      include: {
+        skills: { include: { skill: true } },
+        evaluations: true,
+      },
+    });
+
+    if (!candidate) {
+      throw new NotFoundException('Candidate profile not found');
+    }
+
+    const targetCareer = candidate.targetCareer || 'Full Stack Developer';
+    const benchmark = this.careerBenchmarks[targetCareer] || this.careerBenchmarks['Full Stack Developer'];
+
+    // Map candidate scores
+    const candidateScores = new Map<string, number>();
+    for (const cs of candidate.skills) {
+      candidateScores.set(cs.skill.name.toLowerCase(), cs.verifiedScore || cs.practicalScore || cs.theoryScore);
+    }
+
+    const gaps: SkillGapItem[] = [];
+
+    for (const [skillName, requiredLevel] of Object.entries(benchmark)) {
+      const currentLevel = candidateScores.get(skillName.toLowerCase()) || 20;
+      const gap = Math.max(0, requiredLevel - currentLevel);
+
+      if (gap > 5) {
+        // Find skill entity
+        const skill = await this.prisma.skill.findUnique({
+          where: { name: skillName },
+        });
+
+        // Find relevant courses
+        const courses = await this.prisma.course.findMany({
+          where: {
+            OR: [
+              { title: { contains: skillName, mode: 'insensitive' } },
+              { description: { contains: skillName, mode: 'insensitive' } },
+              skill ? { skills: { some: { skillId: skill.id } } } : {},
+            ],
+          },
+          take: 3,
+        });
+
+        gaps.push({
+          skillId: skill?.id || skillName,
+          skillName,
+          category: (skill?.category as SkillCategory) || SkillCategory.BACKEND,
+          requiredLevel,
+          currentLevel,
+          gap,
+          priority: gap >= 30 ? 'HIGH' : gap >= 15 ? 'MEDIUM' : 'LOW',
+          recommendedCourses: courses.map((c) => ({
+            id: c.id,
+            title: c.title,
+            provider: c.provider as CourseSource,
+            url: c.url,
+            thumbnail: c.thumbnailUrl,
+            level: c.level,
+          })),
+        });
+      }
+    }
+
+    // Sort by highest gap first
+    gaps.sort((a, b) => b.gap - a.gap);
+
+    return {
+      targetCareer,
+      gaps,
+    };
+  }
+
+  async getAllCourses(filters?: {
+    keyword?: string;
+    provider?: CourseSource;
+    career?: string;
+    skillId?: string;
+  }) {
+    const where: any = {};
+
+    if (filters?.provider) {
+      where.provider = filters.provider;
+    }
+
+    if (filters?.keyword) {
+      where.OR = [
+        { title: { contains: filters.keyword, mode: 'insensitive' } },
+        { description: { contains: filters.keyword, mode: 'insensitive' } },
+      ];
+    }
+
+    if (filters?.skillId && filters.skillId !== 'ALL') {
+      where.skills = {
+        some: { skillId: filters.skillId },
+      };
+    }
+
+    if (filters?.career && filters.career !== 'ALL' && CAREER_DEFINITIONS[filters.career]) {
+      const def = CAREER_DEFINITIONS[filters.career];
+      where.AND = where.AND || [];
+      where.AND.push({
+        OR: [
+          {
+            skills: {
+              some: {
+                skill: {
+                  category: { in: def.categories },
+                },
+              },
+            },
+          },
+          ...def.keywords.map((kw) => ({
+            title: { contains: kw, mode: 'insensitive' as const },
+          })),
+        ],
+      });
+    }
+
+    return this.prisma.course.findMany({
+      where,
+      include: {
+        skills: { include: { skill: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+}
+

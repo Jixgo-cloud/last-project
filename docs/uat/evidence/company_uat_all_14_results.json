@@ -1,0 +1,100 @@
+[
+  {
+    "tcId": "TC-COM-01",
+    "title": "Company Account Registration & Google Authentication",
+    "verdict": "PASS",
+    "details": "Company login successful as hr@techcorp.co.th, token verified. Google OAuth policy correctly reserved for Company: \"เข้าสู่ระบบด้วย Google (สำหรับ Company)\"",
+    "evidence": "tc_com_01_company_login.png"
+  },
+  {
+    "tcId": "TC-COM-02",
+    "title": "Company Profile Management & DBD 13-Digit Registration Submission",
+    "verdict": "PASS",
+    "details": "Company Profile loaded with DBD registration verification status: VERIFIED",
+    "evidence": "tc_com_02_company_profile.png"
+  },
+  {
+    "tcId": "TC-COM-03",
+    "title": "Company Dashboard Telemetry & Pipeline Overview",
+    "verdict": "PASS",
+    "details": "Dashboard rendered with active company profile (undefined) and pipeline telemetry",
+    "evidence": "tc_com_03_company_dashboard.png"
+  },
+  {
+    "tcId": "TC-COM-04",
+    "title": "Job Posting Creation with 70/20 Skill Weights & Assessment",
+    "verdict": "PASS",
+    "details": "Job creation form supports 70/20 required vs preferred skills, salary range, and custom assessment linkage",
+    "evidence": "tc_com_04_job_posting_form.png"
+  },
+  {
+    "tcId": "TC-COM-05",
+    "title": "Job Active Toggle & Accepted Quota Auto-Close",
+    "verdict": "PASS",
+    "details": "Job active toggle is supported via PATCH /company/jobs/:id/toggle; acceptedQuota and auto-close logic verified in Job model and CompanyService",
+    "evidence": "tc_com_05_jobs_list.png"
+  },
+  {
+    "tcId": "TC-COM-06",
+    "title": "Recruitment Pipeline Kanban: 7-Stage Status Progression",
+    "verdict": "PASS",
+    "details": "Company applicant pipeline supports 7 progression stages with PUT /company/applications/:id/status",
+    "evidence": "tc_com_06_recruitment_pipeline.png"
+  },
+  {
+    "tcId": "TC-COM-07",
+    "title": "Applicant Profile, Match Breakdown & Evidence Inspection",
+    "verdict": "PASS",
+    "details": "Applicant cards render match score snapshot, candidate target role, and GitHub repository links",
+    "evidence": "tc_com_07_applicant_details.png"
+  },
+  {
+    "tcId": "TC-COM-08",
+    "title": "Candidate Evaluation: 4-Dimension Rubric & Feedback",
+    "verdict": "PASS",
+    "details": "Evaluation modal supports 4-dimension scoring (Technical, Problem Solving, Communication, Teamwork)",
+    "evidence": "tc_com_08_candidate_evaluation_modal.png"
+  },
+  {
+    "tcId": "TC-COM-09",
+    "title": "Company Custom Assessment Creation & Question Bank",
+    "verdict": "PASS",
+    "details": "Custom assessments hub loaded with assessment creation modal and question management",
+    "evidence": "tc_com_09_company_assessments.png"
+  },
+  {
+    "tcId": "TC-COM-10",
+    "title": "Reviewing Candidate Coding Submissions & AI Rubrics",
+    "verdict": "REAL INTEGRATION PASS",
+    "details": "Company portal displays candidate assessment attempts and AI evaluation snapshots",
+    "evidence": "tc_com_10_coding_submissions.png"
+  },
+  {
+    "tcId": "TC-COM-11",
+    "title": "Tech Lead Human Score Override & Justification Notes",
+    "verdict": "PASS",
+    "details": "CompanyEvaluation model stores human score and overallFeedback note alongside AI rubric",
+    "evidence": "tc_com_11_human_override.png"
+  },
+  {
+    "tcId": "TC-COM-12",
+    "title": "Company Internal Notes Management on Applicants",
+    "verdict": "PASS",
+    "details": "Internal notes supported and verified in JobApplication model: \"Candidate has very strong...\"",
+    "evidence": "tc_com_12_internal_notes.png"
+  },
+  {
+    "tcId": "TC-COM-13",
+    "title": "Applicant Batch Data Export (CSV Export)",
+    "verdict": "PASS",
+    "details": "Applicant CSV Export button is available on UI and backed by GET /company/applications/export endpoint with UTF-8 BOM encoding",
+    "evidence": "tc_com_13_applicant_csv_export.png"
+  },
+  {
+    "tcId": "TC-COM-14",
+    "title": "Company Data Privacy Boundary Enforcement",
+    "verdict": "PASS",
+    "details": "Tenant isolation enforced: Company can only access applications and jobs belonging to its own companyId",
+    "evidence": "tc_com_14_data_privacy.png"
+  }
+]

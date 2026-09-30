@@ -1,0 +1,36 @@
+{
+  "name": "smartcareer-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces",
+    "dev:api": "npm run start:dev --workspace=@smartcareer/api",
+    "build": "npm run build --workspaces",
+    "build:web": "npm run build --workspace=@smartcareer/shared && npm run build --workspace=@smartcareer/web",
+    "build:api": "npm run build --workspace=@smartcareer/shared && npx prisma generate && npm run build --workspace=@smartcareer/api",
+    "lint": "npm run lint --workspace=@smartcareer/web",
+    "prisma:generate": "npx prisma generate",
+    "prisma:push": "npx prisma db push",
+    "prisma:migrate": "npx prisma migrate dev",
+    "prisma:seed": "npx ts-node prisma/seed.ts",
+    "prisma:seed:prod": "npx ts-node prisma/seed-production.ts",
+    "prisma:studio": "npx prisma studio",
+    "admin:create": "npx ts-node scripts/create-superadmin.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "prisma": "^5.22.0",
+    "puppeteer-core": "^25.12.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "prisma": "^5.22.0",
+    "ts-node": "^10.9.2"
+  }
+}

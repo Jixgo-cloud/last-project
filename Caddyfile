@@ -1,0 +1,12 @@
+# Caddyfile for SmartCareer Production (Automatic HTTPS with Let's Encrypt)
+# Replace yourdomain.com with your real registered domain name.
+
+smartcareer.yourdomain.com {
+    reverse_proxy web:3000
+    encode zstd gzip
+}
+
+api.smartcareer.yourdomain.com {
+    reverse_proxy api:4000
+    encode zstd gzip
+}

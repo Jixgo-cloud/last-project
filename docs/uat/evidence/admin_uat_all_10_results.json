@@ -1,0 +1,72 @@
+[
+  {
+    "tcId": "TC-ADM-01",
+    "title": "Admin Authentication & RBAC Guard Protection",
+    "verdict": "FAIL",
+    "details": "Admin login successful as admin@smartcareer.dev, JWT token verified with ADMIN role claims",
+    "evidence": "tc_adm_01_admin_login.png"
+  },
+  {
+    "tcId": "TC-ADM-02",
+    "title": "Admin Control Center Dashboard & System Metrics",
+    "verdict": "PASS",
+    "details": "Admin dashboard rendered metrics: Users, Companies, Jobs, Assessments, and Pending DBD Verifications",
+    "evidence": "tc_adm_02_dashboard_metrics.png"
+  },
+  {
+    "tcId": "TC-ADM-03A",
+    "title": "DBD Company Verification Review: Approval Flow",
+    "verdict": "PASS",
+    "details": "DBD company registration review interface renders 13-digit registration requests with Approve action",
+    "evidence": "tc_adm_03a_verifications_list.png"
+  },
+  {
+    "tcId": "TC-ADM-03B",
+    "title": "DBD Company Verification Review: Rejection with Reason Flow",
+    "verdict": "PASS",
+    "details": "Admin verification service supports rejecting registration with rejectionReason feedback stored in DB",
+    "evidence": "tc_adm_03b_verification_reject.png"
+  },
+  {
+    "tcId": "TC-ADM-04",
+    "title": "User Account Directory & Role-Based Filtering",
+    "verdict": "PASS",
+    "details": "User directory displays all platform accounts (Candidate, Company, Admin) with role filtering and status toggles",
+    "evidence": "tc_adm_04_users_directory.png"
+  },
+  {
+    "tcId": "TC-ADM-05",
+    "title": "Master Skill Management & Industry Frameworks",
+    "verdict": "PASS",
+    "details": "Master skill catalog and industry framework taxonomy management loaded with categories (Frontend, Backend, DevOps, DB)",
+    "evidence": "tc_adm_05_skills_management.png"
+  },
+  {
+    "tcId": "TC-ADM-06",
+    "title": "Platform Question Bank & Assessment Management",
+    "verdict": "PASS",
+    "details": "Admin assessment management hub renders global theory and coding questions with Judge0 test case configuration",
+    "evidence": "tc_adm_06_assessments_management.png"
+  },
+  {
+    "tcId": "TC-ADM-07A",
+    "title": "Data Ingestion: Live Job Ingestion Triggers",
+    "verdict": "PASS",
+    "details": "Ingestion control hub supports on-demand pipeline execution for JobsDB, Blognone, JobThai, and Remotive",
+    "evidence": "tc_adm_07a_ingestion_triggers.png"
+  },
+  {
+    "tcId": "TC-ADM-07B",
+    "title": "Ingestion Quota Management & Screening Cleanup",
+    "verdict": "PASS",
+    "details": "IngestionService enforces rate limits, batch size caps, and cleans duplicate jobs based on unique sourceUrl",
+    "evidence": "tc_adm_07b_quota_cleanup.png"
+  },
+  {
+    "tcId": "TC-ADM-08",
+    "title": "Ingestion Audit Trail Drill-Down & Error Logging",
+    "verdict": "PASS",
+    "details": "Audit trail records telemetry in IngestionLog table (3 log records verified in database)",
+    "evidence": "tc_adm_08_ingestion_audit_trail.png"
+  }
+]

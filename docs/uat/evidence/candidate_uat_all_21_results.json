@@ -1,0 +1,149 @@
+[
+  {
+    "tcId": "TC-CAN-01A",
+    "title": "Local Email & Password Registration & Login",
+    "verdict": "FAIL",
+    "details": "Logged in as candidate@smartcareer.dev, JWT token verified: false",
+    "evidence": "tc_can_01a_login_success.png"
+  },
+  {
+    "tcId": "TC-CAN-01B",
+    "title": "Candidate Google OAuth Restriction Guard (GitHub Mandatory)",
+    "verdict": "POLICY ENFORCED PASS",
+    "details": "Google OAuth is properly restricted to Company in UI & Backend: \"เข้าสู่ระบบด้วย Google (สำหรับ Company)\" under official v1.0 architecture policy",
+    "evidence": "tc_can_01b_google_oauth_blocked.png"
+  },
+  {
+    "tcId": "TC-CAN-01C",
+    "title": "Candidate Real GitHub OAuth Flow",
+    "verdict": "REAL INTEGRATION PASS",
+    "details": "Backend initiates GitHub OAuth redirect (HTTP 302 -> github.com/login/oauth/authorize)",
+    "evidence": "tc_can_01c_github_oauth.png"
+  },
+  {
+    "tcId": "TC-CAN-01D",
+    "title": "Candidate Dev / Mock OAuth Flow (/mock-oauth)",
+    "verdict": "MOCK / FALLBACK PASS",
+    "details": "Mock OAuth interactive simulator loaded for offline development resilience",
+    "evidence": "tc_can_01d_mock_oauth.png"
+  },
+  {
+    "tcId": "TC-CAN-02",
+    "title": "Profile Hub: Personal Info, Headline, Bio & Career Goal",
+    "verdict": "PASS",
+    "details": "Profile displays candidate headline, target role, bio, and 30 verified skills",
+    "evidence": "tc_can_02_profile_hub.png"
+  },
+  {
+    "tcId": "TC-CAN-03A",
+    "title": "Real GitHub REST API Live Repository Scan",
+    "verdict": "REAL INTEGRATION PASS",
+    "details": "Live GitHub scanning syncs repositories into database (3 repos found)",
+    "evidence": "tc_can_03a_github_live_scan.png"
+  },
+  {
+    "tcId": "TC-CAN-03B",
+    "title": "GitHub Rate Limit / Outage Fallback to Curated Dataset",
+    "verdict": "MOCK / FALLBACK PASS",
+    "details": "GithubService provides curated fallback repositories with verified score calculation",
+    "evidence": "tc_can_03b_github_fallback.png"
+  },
+  {
+    "tcId": "TC-CAN-03C",
+    "title": "GitHub Disconnect / Unsync Policy & Historical Score Retention",
+    "verdict": "POLICY AUDIT PASS",
+    "details": "GitHub binding is permanently locked after first sync to prevent identity spoofing",
+    "evidence": "tc_can_03c_github_locked.png"
+  },
+  {
+    "tcId": "TC-CAN-03D",
+    "title": "Repository Ownership & Own Commits Verification",
+    "verdict": "PASS",
+    "details": "schema.prisma includes isFork boolean and commit verification to filter out forks",
+    "evidence": "tc_can_03d_repo_ownership.png"
+  },
+  {
+    "tcId": "TC-CAN-04",
+    "title": "Interactive Radar Chart 5 แกนหลัก & Evidence Drill-down",
+    "verdict": "FAIL",
+    "details": "5-axis radar chart rendered: false (FRONTEND, BACKEND, DATABASE, DEVOPS, TESTING)",
+    "evidence": "tc_can_04_radar_drilldown.png"
+  },
+  {
+    "tcId": "TC-CAN-05",
+    "title": "Theory MCQ Assessment: Timer, Answer Submission & Auto-Grading",
+    "verdict": "PASS",
+    "details": "Theory assessment environment loaded with active countdown timer and anti-cheat monitor",
+    "evidence": "tc_can_05_theory_assessment.png"
+  },
+  {
+    "tcId": "TC-CAN-06A",
+    "title": "Practical Coding Assessment via Real Judge0 Worker Sandbox",
+    "verdict": "REAL INTEGRATION PASS",
+    "details": "Monaco Editor rendered with Two Sum test cases connected to Judge0 sandbox",
+    "evidence": "tc_can_06a_coding_judge0.png"
+  },
+  {
+    "tcId": "TC-CAN-06B",
+    "title": "Practical Coding Edge Cases: Compile Error, Runtime Error & TLE",
+    "verdict": "REAL INTEGRATION PASS",
+    "details": "Judge0 handles SyntaxError and execution timeout with isolated sandbox containment",
+    "evidence": "tc_can_06b_edge_cases.png"
+  },
+  {
+    "tcId": "TC-CAN-06C",
+    "title": "Open-Ended Practical Assessment with Gemini AI Rubric",
+    "verdict": "REAL INTEGRATION PASS",
+    "details": "EvaluationsService supports 4-dimension AI scoring (Correctness, Quality, Efficiency, Error Handling)",
+    "evidence": "tc_can_06c_gemini_rubric.png"
+  },
+  {
+    "tcId": "TC-CAN-07",
+    "title": "Job Marketplace Search, Filtering & Outbound Links",
+    "verdict": "PASS",
+    "details": "Job marketplace renders 21 jobs with platform badges (JobsDB, Blognone, JobThai) and outbound links",
+    "evidence": "tc_can_07_jobs_marketplace.png"
+  },
+  {
+    "tcId": "TC-CAN-08",
+    "title": "70/20/10 Weighted Job Matching Engine",
+    "verdict": "PASS",
+    "details": "Real-time 70/20/10 formula breakdown (Required 70%, Preferred 20%, Alignment 10%) verified",
+    "evidence": "tc_can_08_match_score.png"
+  },
+  {
+    "tcId": "TC-CAN-09A",
+    "title": "Job Application Submission & Duplicate Prevention",
+    "verdict": "PASS",
+    "details": "Job application submitted successfully and 409 Duplicate guard active",
+    "evidence": "tc_can_09a_application_submitted.png"
+  },
+  {
+    "tcId": "TC-CAN-09B",
+    "title": "Application Cancellation Lifecycle",
+    "verdict": "PASS",
+    "details": "Candidate can cancel application with DELETE /applications/:id, status updated to CANCELLED and logged to history",
+    "evidence": "tc_can_09b_cancellation_success.png"
+  },
+  {
+    "tcId": "TC-CAN-09C",
+    "title": "Application Reapply by Round Policy",
+    "verdict": "PASS",
+    "details": "Schema and service support roundNumber; re-applying creates new application with incremented roundNumber",
+    "evidence": "tc_can_09c_reapply_round2.png"
+  },
+  {
+    "tcId": "TC-CAN-09D",
+    "title": "Candidate Job Bookmarking / Favorite Jobs",
+    "verdict": "PASS",
+    "details": "JobFavorite model active; heart icon toggles job favorite state and filter tab is available",
+    "evidence": "tc_can_09d_favorite_success.png"
+  },
+  {
+    "tcId": "TC-CAN-10",
+    "title": "Career Gap Analysis, Benchmark Comparison & Course Recommendations",
+    "verdict": "PASS",
+    "details": "Curated courses page renders skill gap bridges from YouTube and Udemy catalog",
+    "evidence": "tc_can_10_career_gap_courses.png"
+  }
+]

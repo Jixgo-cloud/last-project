@@ -1,0 +1,72 @@
+{
+  "JSEARCH": {
+    "source": "JSEARCH",
+    "label": "JSearch (Google Jobs RapidAPI)",
+    "quota": 15,
+    "default": 15,
+    "min": 5,
+    "max": 50,
+    "unit": "ตำแหน่ง",
+    "category": "JOB"
+  },
+  "JOBSDB": {
+    "source": "JOBSDB",
+    "label": "JobsDB Thailand (SEEK Asia)",
+    "quota": 30,
+    "default": 30,
+    "min": 10,
+    "max": 60,
+    "unit": "ตำแหน่ง",
+    "category": "JOB"
+  },
+  "JOBTHAI": {
+    "source": "JOBTHAI",
+    "label": "JobThai",
+    "quota": 25,
+    "default": 25,
+    "min": 10,
+    "max": 50,
+    "unit": "ตำแหน่ง",
+    "category": "JOB"
+  },
+  "REMOTIVE": {
+    "source": "REMOTIVE",
+    "label": "Remotive Global Remote Tech",
+    "quota": 20,
+    "default": 20,
+    "min": 5,
+    "max": 50,
+    "unit": "ตำแหน่ง",
+    "category": "JOB"
+  },
+  "BLOGNONE": {
+    "source": "BLOGNONE",
+    "label": "Blognone Jobs (Thai Tech)",
+    "quota": 15,
+    "default": 15,
+    "min": 5,
+    "max": 30,
+    "unit": "ตำแหน่ง",
+    "category": "JOB"
+  },
+  "YOUTUBE": {
+    "source": "YOUTUBE",
+    "label": "YouTube Courses (Live oEmbed)",
+    "quota": 25,
+    "default": 10,
+    "min": 3,
+    "max": 25,
+    "unit": "คอร์ส",
+    "category": "COURSE"
+  },
+  "UDEMY": {
+    "source": "UDEMY",
+    "label": "Udemy Courses (Verified Industry)",
+    "quota": 25,
+    "default": 10,
+    "min": 5,
+    "max": 30,
+    "unit": "คอร์ส",
+    "category": "COURSE"
+  }
+}
