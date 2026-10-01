@@ -209,11 +209,13 @@ export interface MatchScoreResult {
   requiredCoverage: number; // %
   preferredCoverage: number; // %
   careerAlignment: number; // %
+  verifiedBadgesCount?: number;
   matchedSkills: Array<{
     skillId: string;
     name: string;
     userScore: number;
     requiredScore: number;
+    isVerified?: boolean;
   }>;
   missingSkills: Array<{
     skillId: string;

@@ -876,12 +876,13 @@ export class AssessmentsService {
         candidateSkill.codingScore * 0.3,
     );
 
+    const isPassing = score >= 60 || verifiedScore >= 60;
     await tx.candidateSkill.update({
       where: { id: candidateSkill.id },
       data: {
-        verifiedScore,
-        isVerified: verifiedScore >= 60,
-        verifiedAt: verifiedScore >= 60 ? new Date() : candidateSkill.verifiedAt,
+        verifiedScore: Math.max(verifiedScore, score),
+        isVerified: isPassing || candidateSkill.isVerified,
+        verifiedAt: isPassing ? new Date() : candidateSkill.verifiedAt,
       },
     });
   }

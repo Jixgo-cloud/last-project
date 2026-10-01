@@ -47,14 +47,14 @@ export class MatchingService {
       };
     }
 
-    const candidateSkillMap = new Map<string, number>();
+    const candidateSkillMap = new Map<string, { score: number; isVerified: boolean }>();
     for (const cs of candidate.skills) {
-      // Use verified score if verified, or practical/theory score
-      const effectiveScore = cs.isVerified
-        ? cs.verifiedScore
-        : Math.max(cs.practicalScore, cs.theoryScore, cs.codingScore);
-      candidateSkillMap.set(cs.skill.name.toLowerCase(), effectiveScore);
-      candidateSkillMap.set(cs.skill.id, effectiveScore);
+      // Practical score represents hands-on GitHub/project competence (Public Analyzer model)
+      // Assessments do not dilute match score; passing grants the Verified Badge
+      const effectiveScore = cs.practicalScore || (cs.isVerified ? 85 : 70);
+      const isVerified = Boolean(cs.isVerified);
+      candidateSkillMap.set(cs.skill.name.toLowerCase(), { score: effectiveScore, isVerified });
+      candidateSkillMap.set(cs.skill.id, { score: effectiveScore, isVerified });
     }
 
     const requiredSkills = job.skills.filter((s) => s.isRequired);
@@ -62,15 +62,21 @@ export class MatchingService {
 
     const matchedSkills: MatchScoreResult['matchedSkills'] = [];
     const missingSkills: MatchScoreResult['missingSkills'] = [];
+    let verifiedBadgesCount = 0;
 
     // 1. Required Skill Coverage (70%)
     let requiredScoreSum = 0;
     if (requiredSkills.length > 0) {
       for (const req of requiredSkills) {
-        const userScore =
+        const skillData =
           candidateSkillMap.get(req.skill.name.toLowerCase()) ||
-          candidateSkillMap.get(req.skillId) ||
-          0;
+          candidateSkillMap.get(req.skillId);
+        const userScore = skillData?.score || 0;
+        const isVerified = skillData?.isVerified || false;
+
+        if (isVerified) {
+          verifiedBadgesCount++;
+        }
 
         if (userScore >= 40) {
           matchedSkills.push({
@@ -78,6 +84,7 @@ export class MatchingService {
             name: req.skill.name,
             userScore,
             requiredScore: req.minimumScore,
+            isVerified,
           });
           requiredScoreSum += Math.min(1, userScore / req.minimumScore);
         } else {
@@ -97,16 +104,23 @@ export class MatchingService {
     let preferredScoreSum = 0;
     if (preferredSkills.length > 0) {
       for (const pref of preferredSkills) {
-        const userScore =
+        const skillData =
           candidateSkillMap.get(pref.skill.name.toLowerCase()) ||
-          candidateSkillMap.get(pref.skillId) ||
-          0;
+          candidateSkillMap.get(pref.skillId);
+        const userScore = skillData?.score || 0;
+        const isVerified = skillData?.isVerified || false;
+
+        if (isVerified) {
+          verifiedBadgesCount++;
+        }
+
         if (userScore >= 30) {
           matchedSkills.push({
             skillId: pref.skillId,
             name: pref.skill.name,
             userScore,
             requiredScore: pref.minimumScore,
+            isVerified,
           });
           preferredScoreSum += 1;
         } else {
@@ -142,6 +156,7 @@ export class MatchingService {
       requiredCoverage: Math.round(requiredCoverage),
       preferredCoverage: Math.round(preferredCoverage),
       careerAlignment: Math.round(careerAlignment),
+      verifiedBadgesCount,
       matchedSkills,
       missingSkills,
     };
@@ -170,9 +185,7 @@ export class MatchingService {
 
     const candidateSkillMap = new Map<string, number>();
     for (const cs of candidate.skills) {
-      const effectiveScore = cs.isVerified
-        ? cs.verifiedScore
-        : Math.max(cs.practicalScore, cs.theoryScore, cs.codingScore);
+      const effectiveScore = cs.practicalScore || (cs.isVerified ? 85 : 70);
       candidateSkillMap.set(cs.skill.name.toLowerCase(), effectiveScore);
       candidateSkillMap.set(cs.skill.id, effectiveScore);
     }

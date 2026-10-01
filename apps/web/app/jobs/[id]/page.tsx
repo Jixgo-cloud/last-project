@@ -402,17 +402,29 @@ export default function JobDetailPage() {
 
                   {/* Matched vs Missing Skills */}
                   <div className="space-y-3 pt-3 border-t border-slate-100">
-                    <p className="text-xs font-bold text-slate-800">
-                      ทักษะที่คุณมีตรงกับงาน ({match.matchedSkills?.length || 0})
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold text-slate-800">
+                        ทักษะที่คุณมีตรงกับงาน ({match.matchedSkills?.length || 0})
+                      </p>
+                      {match.verifiedBadgesCount !== undefined && match.verifiedBadgesCount > 0 && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+                          🎖️ มีเหรียญรับรอง {match.verifiedBadgesCount} ทักษะ
+                        </span>
+                      )}
+                    </div>
                     <div className="flex flex-wrap gap-1.5">
                       {match.matchedSkills?.map((s: any) => (
                         <span
                           key={s.skillId}
-                          className="flex items-center gap-1 text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full"
+                          className="flex items-center gap-1.5 text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full"
                         >
                           <CheckCircle2 className="h-3 w-3" />
-                          {s.name} ({s.userScore}%)
+                          <span>{s.name} ({s.userScore}%)</span>
+                          {s.isVerified && (
+                            <span className="inline-flex items-center text-[9px] font-extrabold bg-emerald-200/60 text-emerald-800 px-1 rounded" title="ผ่านการสอบรับรองมาตรฐานแล้ว (Verified Badge)">
+                              🎖️ Badge
+                            </span>
+                          )}
                         </span>
                       ))}
                     </div>
