@@ -158,11 +158,38 @@ export class AdminService {
     });
   }
 
+  async getAssessment(id: string) {
+    const assessment = await this.prisma.assessment.findUnique({
+      where: { id },
+      include: {
+        skill: true,
+        company: { select: { id: true, name: true, logoUrl: true } },
+        questions: {
+          include: {
+            choices: {
+              orderBy: { order: 'asc' },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+    if (!assessment) throw new NotFoundException('Assessment not found');
+    return assessment;
+  }
+
   async createAssessment(data: any) {
+    const cleanSlugPart = (data.title || '')
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
     const slug =
-      (data.slug || data.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')) +
-      '-' +
-      Math.floor(1000 + Math.random() * 9000);
+      data.slug ||
+      (cleanSlugPart
+        ? `${cleanSlugPart}-${randomSuffix}`
+        : `assessment-${(data.type || 'theory').toLowerCase()}-${randomSuffix}`);
 
     return this.prisma.assessment.create({
       data: {
@@ -179,8 +206,8 @@ export class AdminService {
         version: 1,
         questions: {
           create: (data.questions || []).map((q: any) => ({
-            title: q.title,
-            prompt: q.prompt,
+            title: q.title || 'คำถาม',
+            prompt: q.prompt || '',
             difficulty: q.difficulty || 'MEDIUM',
             points: q.points ? parseInt(q.points) : 10,
             starterCode: q.starterCode || null,
@@ -211,18 +238,144 @@ export class AdminService {
     const assessment = await this.prisma.assessment.findUnique({ where: { id } });
     if (!assessment) throw new NotFoundException('Assessment not found');
 
-    return this.prisma.assessment.update({
-      where: { id },
-      data: {
-        title: data.title ?? assessment.title,
-        description: data.description ?? assessment.description,
-        timeLimitMinutes: data.timeLimitMinutes ? parseInt(data.timeLimitMinutes) : assessment.timeLimitMinutes,
-        passingScore: data.passingScore ? parseFloat(data.passingScore) : assessment.passingScore,
-        feedbackVisibility: data.feedbackVisibility ?? assessment.feedbackVisibility,
-        skillId: data.skillId !== undefined ? data.skillId : assessment.skillId,
-        isActive: data.isActive !== undefined ? data.isActive : assessment.isActive,
-        version: { increment: 1 },
-      },
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Update questions if provided in payload
+      if (Array.isArray(data.questions)) {
+        const attemptCount = await tx.assessmentAttempt.count({ where: { assessmentId: id } });
+
+        if (attemptCount === 0) {
+          // No attempts yet: safely replace all questions & choices
+          await tx.question.deleteMany({ where: { assessmentId: id } });
+          for (const q of data.questions) {
+            await tx.question.create({
+              data: {
+                assessmentId: id,
+                title: q.title || 'คำถาม',
+                prompt: q.prompt || '',
+                difficulty: q.difficulty || 'MEDIUM',
+                points: q.points ? parseInt(q.points) : 10,
+                starterCode: q.starterCode || null,
+                testCases: q.testCases || null,
+                evaluationMethod: q.evaluationMethod || 'AUTOMATED_TEST_CASES',
+                rubric: q.rubric || null,
+                solutionCode: q.solutionCode || null,
+                explanation: q.explanation || null,
+                version: 1,
+                choices: {
+                  create: (q.choices || []).map((c: any, cIdx: number) => ({
+                    text: c.text,
+                    isCorrect: !!c.isCorrect,
+                    order: c.order !== undefined ? c.order : cIdx + 1,
+                  })),
+                },
+              },
+            });
+          }
+        } else {
+          // Existing attempts: preserve relation integrity and update in-place
+          for (const q of data.questions) {
+            if (q.id) {
+              await tx.question.update({
+                where: { id: q.id },
+                data: {
+                  title: q.title || 'คำถาม',
+                  prompt: q.prompt || '',
+                  difficulty: q.difficulty || 'MEDIUM',
+                  points: q.points ? parseInt(q.points) : 10,
+                  starterCode: q.starterCode || null,
+                  testCases: q.testCases || null,
+                  evaluationMethod: q.evaluationMethod || 'AUTOMATED_TEST_CASES',
+                  rubric: q.rubric || null,
+                  solutionCode: q.solutionCode || null,
+                  explanation: q.explanation || null,
+                  version: { increment: 1 },
+                },
+              });
+
+              if (Array.isArray(q.choices)) {
+                // In-place update / upsert choices to preserve historical attempt references
+                const existingChoices = await tx.choice.findMany({ where: { questionId: q.id } });
+                const keepIds = q.choices.map((c: any) => c.id).filter(Boolean);
+                const choicesToDelete = existingChoices.filter((ec) => !keepIds.includes(ec.id));
+                for (const c of choicesToDelete) {
+                  const answerCount = await tx.assessmentAnswer.count({ where: { selectedChoiceId: c.id } });
+                  if (answerCount === 0) {
+                    await tx.choice.delete({ where: { id: c.id } });
+                  }
+                }
+
+                for (let cIdx = 0; cIdx < q.choices.length; cIdx++) {
+                  const c = q.choices[cIdx];
+                  if (c.id && existingChoices.some((ec) => ec.id === c.id)) {
+                    await tx.choice.update({
+                      where: { id: c.id },
+                      data: {
+                        text: c.text,
+                        isCorrect: !!c.isCorrect,
+                        order: c.order !== undefined ? c.order : cIdx + 1,
+                      },
+                    });
+                  } else {
+                    await tx.choice.create({
+                      data: {
+                        questionId: q.id,
+                        text: c.text,
+                        isCorrect: !!c.isCorrect,
+                        order: c.order !== undefined ? c.order : cIdx + 1,
+                      },
+                    });
+                  }
+                }
+              }
+            } else {
+              // Newly added question
+              await tx.question.create({
+                data: {
+                  assessmentId: id,
+                  title: q.title || 'คำถาม',
+                  prompt: q.prompt || '',
+                  difficulty: q.difficulty || 'MEDIUM',
+                  points: q.points ? parseInt(q.points) : 10,
+                  starterCode: q.starterCode || null,
+                  testCases: q.testCases || null,
+                  evaluationMethod: q.evaluationMethod || 'AUTOMATED_TEST_CASES',
+                  rubric: q.rubric || null,
+                  solutionCode: q.solutionCode || null,
+                  explanation: q.explanation || null,
+                  version: 1,
+                  choices: {
+                    create: (q.choices || []).map((c: any, cIdx: number) => ({
+                      text: c.text,
+                      isCorrect: !!c.isCorrect,
+                      order: c.order !== undefined ? c.order : cIdx + 1,
+                    })),
+                  },
+                },
+              });
+            }
+          }
+        }
+      }
+
+      // 2. Update Assessment metadata
+      return tx.assessment.update({
+        where: { id },
+        data: {
+          title: data.title ?? assessment.title,
+          description: data.description ?? assessment.description,
+          type: data.type ?? assessment.type,
+          timeLimitMinutes: data.timeLimitMinutes ? parseInt(data.timeLimitMinutes) : assessment.timeLimitMinutes,
+          passingScore: data.passingScore ? parseFloat(data.passingScore) : assessment.passingScore,
+          feedbackVisibility: data.feedbackVisibility ?? assessment.feedbackVisibility,
+          skillId: data.skillId !== undefined ? data.skillId : assessment.skillId,
+          isActive: data.isActive !== undefined ? data.isActive : assessment.isActive,
+          version: { increment: 1 },
+        },
+        include: {
+          skill: true,
+          questions: { include: { choices: true } },
+        },
+      });
     });
   }
 
@@ -246,5 +399,56 @@ export class AdminService {
       });
     }
     return this.prisma.assessment.delete({ where: { id } });
+  }
+
+  async listAssessmentAttempts(assessmentId: string) {
+    const assessment = await this.prisma.assessment.findUnique({
+      where: { id: assessmentId },
+    });
+    if (!assessment) throw new NotFoundException('Assessment not found');
+
+    const attempts = await this.prisma.assessmentAttempt.findMany({
+      where: { assessmentId },
+      include: {
+        candidate: {
+          select: {
+            id: true,
+            fullName: true,
+            avatarUrl: true,
+            targetCareer: true,
+            githubUsername: true,
+          },
+        },
+        assessment: {
+          select: {
+            id: true,
+            title: true,
+            type: true,
+            passingScore: true,
+          },
+        },
+        answers: true,
+      },
+      orderBy: { startedAt: 'desc' },
+    });
+
+    return attempts.map((att) => {
+      const events: any[] = Array.isArray(att.integrityEvents) ? (att.integrityEvents as any[]) : [];
+      const tabSwitchCount = events.filter(
+        (e) => e.type === 'TAB_BLUR' || e.eventType === 'TAB_BLUR',
+      ).length;
+      let riskLevel: 'NORMAL' | 'SUSPICIOUS' | 'HIGH_RISK' = 'NORMAL';
+      if (tabSwitchCount >= 8) riskLevel = 'HIGH_RISK';
+      else if (tabSwitchCount >= 3) riskLevel = 'SUSPICIOUS';
+
+      return {
+        ...att,
+        integritySummary: {
+          tabSwitchCount,
+          riskLevel,
+          events,
+        },
+      };
+    });
   }
 }

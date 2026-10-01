@@ -67,6 +67,9 @@ export default function AssessmentRunnerPage() {
   const [runningCode, setRunningCode] = useState(false);
   const [submittingCoding, setSubmittingCoding] = useState(false);
   const [testRunResults, setTestRunResults] = useState<Record<string, any>>({});
+  const [submittedQuestions, setSubmittedQuestions] = useState<Record<string, any>>({});
+  const [finalizingAttempt, setFinalizingAttempt] = useState(false);
+  const [submissionFeedback, setSubmissionFeedback] = useState<string | null>(null);
   const [codingFinalResult, setCodingFinalResult] = useState<any>(null);
 
   // Load Assessment & Start Attempt
@@ -96,9 +99,15 @@ export default function AssessmentRunnerPage() {
         if (assessData.type === AssessmentType.PRACTICAL_CODING && assessData.questions) {
           const initialCodes: Record<string, string> = {};
           assessData.questions.forEach((q: any) => {
+            const isPy =
+              q.starterCode?.includes('def solution') ||
+              q.starterCode?.includes('def ') ||
+              q.starterCode?.includes('#');
             initialCodes[q.id] =
               q.starterCode ||
-              '// เขียนฟังก์ชันแก้ปัญหาด้านล่าง\nfunction solution() {\n  return 0;\n}';
+              (isPy
+                ? '# เขียนฟังก์ชันแก้ปัญหาด้านล่าง\ndef solution(*args):\n    return 0'
+                : '// เขียนฟังก์ชันแก้ปัญหาด้านล่าง\nfunction solution() {\n  return 0;\n}');
           });
           setCodes(initialCodes);
         }
@@ -234,7 +243,7 @@ export default function AssessmentRunnerPage() {
     if (assessment?.type === AssessmentType.THEORY) {
       handleSubmitTheory();
     } else if (assessment?.type === AssessmentType.PRACTICAL_CODING) {
-      handleSubmitCoding();
+      handleFinalizeAttempt();
     }
   };
 
@@ -271,6 +280,20 @@ export default function AssessmentRunnerPage() {
     } finally {
       setSubmittingTheory(false);
     }
+  };
+
+  // Question Language Detector (Python vs JavaScript)
+  const isQuestionPython = (q?: any): boolean => {
+    if (!q) return false;
+    const starter = q.starterCode || '';
+    return (
+      starter.includes('def solution') ||
+      starter.includes('def ') ||
+      starter.includes('import sys') ||
+      starter.includes('# เขียนโค้ดแก้ปัญหา') ||
+      starter.includes('# เขียนฟังก์ชันแก้ปัญหา') ||
+      starter.includes('# Write your solution')
+    );
   };
 
   // Practical Coding Handlers
@@ -316,12 +339,13 @@ export default function AssessmentRunnerPage() {
     }
   };
 
-  // 2. Submit Coding Solution (Strict evaluation with hidden test cases and DB score update)
+  // 2. Submit Single Question Solution (Evaluation with hidden test cases and DB score update)
   const handleSubmitCoding = async () => {
     if (!attempt || !currentQuestion || submittingCoding) return;
     setSubmittingCoding(true);
     setRateLimitMessage(null);
     setJudgeUnavailableError(null);
+    setSubmissionFeedback(null);
     try {
       const result = await apiRequest(`/assessments/${id}/submit-coding`, {
         method: 'POST',
@@ -331,7 +355,31 @@ export default function AssessmentRunnerPage() {
           sourceCode: currentCode,
         }),
       });
-      setCodingFinalResult(result);
+
+      // Track this question's answered state
+      setSubmittedQuestions((prev) => ({
+        ...prev,
+        [currentQuestion.id]: result,
+      }));
+
+      // If all questions are answered or single question completed
+      if (result.isFinished) {
+        setCodingFinalResult(result);
+      } else {
+        const earned = result.pointsEarned !== undefined ? result.pointsEarned : (result.score ?? 0);
+        const max = currentQuestion.points || 10;
+        setSubmissionFeedback(`✅ บันทึกคำตอบข้อที่ ${activeQuestionIndex + 1} เรียบร้อยแล้ว (ได้ ${earned}/${max} คะแนน) สามารถทำข้อถัดไปหรือกดส่งข้อสอบทั้งหมดเมื่อพร้อม`);
+
+        // Auto-advance to next unanswered question if exists
+        const nextIdx = assessment?.questions?.findIndex(
+          (q: any, i: number) => i > activeQuestionIndex && !submittedQuestions[q.id],
+        );
+        if (nextIdx !== undefined && nextIdx !== -1) {
+          setTimeout(() => {
+            setActiveQuestionIndex(nextIdx);
+          }, 1000);
+        }
+      }
     } catch (e: any) {
       if (e.message?.includes('503') || e.message?.includes('JUDGE_UNAVAILABLE') || e.message?.includes('Judge0')) {
         setJudgeUnavailableError('⚠️ ระบบรันโค้ด Sandbox (Judge0) ไม่พร้อมใช้งานชั่วคราว ระบบได้ตั้งสถานะ SYSTEM_ERROR ให้อัตโนมัติ เพื่อให้คุณสามารถเริ่มทำใหม่ได้โดยไม่เสียคะแนน');
@@ -340,6 +388,32 @@ export default function AssessmentRunnerPage() {
       }
     } finally {
       setSubmittingCoding(false);
+    }
+  };
+
+  // 3. Finalize Multi-Question Attempt (Calculates total and closes attempt)
+  const handleFinalizeAttempt = async () => {
+    if (!attempt || finalizingAttempt) return;
+    const answeredCount = Object.keys(submittedQuestions).length;
+    const totalCount = assessment?.questions?.length || 1;
+    if (answeredCount < totalCount) {
+      const confirmSubmit = window.confirm(
+        `คุณเพิ่งส่งคำตอบไปแล้ว ${answeredCount} จาก ${totalCount} ข้อ คุณแน่ใจหรือไม่ว่าต้องการจบการสอบและส่งผลคะแนนทั้งหมดตอนนี้?`,
+      );
+      if (!confirmSubmit) return;
+    }
+
+    setFinalizingAttempt(true);
+    try {
+      const result = await apiRequest(`/assessments/${id}/finalize-attempt`, {
+        method: 'POST',
+        body: JSON.stringify({ attemptId: attempt.id }),
+      });
+      setCodingFinalResult(result);
+    } catch (e: any) {
+      alert(`Finalize error: ${e.message}`);
+    } finally {
+      setFinalizingAttempt(false);
     }
   };
 
@@ -449,6 +523,42 @@ export default function AssessmentRunnerPage() {
           </div>
         )}
 
+        {/* Anti-Cheat Real-Time Warning Banner */}
+        {showAntiCheatBanner && !theoryResult && !codingFinalResult && (
+          <div
+            className={`mb-4 rounded-2xl border p-3.5 flex items-center justify-between text-xs shadow-xs animate-in fade-in duration-200 ${
+              tabSwitchCount >= 3
+                ? 'bg-rose-50 border-rose-200 text-rose-800'
+                : 'bg-amber-50 border-amber-200 text-amber-800'
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <ShieldAlert
+                className={`h-4 w-4 shrink-0 ${
+                  tabSwitchCount >= 3 ? 'text-rose-600 animate-pulse' : 'text-amber-600'
+                }`}
+              />
+              <div>
+                <span className="font-bold">
+                  {tabSwitchCount >= 3
+                    ? '⚠️ แจ้งเตือนความซื่อสัตย์ระดับสูง (Anti-Cheat Suspicious Alert)'
+                    : 'ระบบป้องกันการทุจริต (Anti-Cheat Monitor)'}
+                  :
+                </span>{' '}
+                <span>
+                  ตรวจพบการสลับแท็บ/หน้าต่าง <strong>{tabSwitchCount} ครั้ง</strong> (ข้อมูลการสลับหน้าจอจะถูกส่งให้ผู้ประเมินผลและบันทึกในระบบ)
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowAntiCheatBanner(false)}
+              className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 px-2 py-0.5 rounded hover:bg-black/5 transition shrink-0 ml-2"
+            >
+              รับทราบ
+            </button>
+          </div>
+        )}
+
         {/* Top Header & Live Timer Control Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 mb-6 border-b border-slate-200/80">
           <div className="flex items-center gap-3.5">
@@ -554,6 +664,30 @@ export default function AssessmentRunnerPage() {
                 <p className="text-xs text-[#667085] mt-2 max-w-md mx-auto">
                   ระบบได้บันทึกคะแนนรอบล่าสุดและคำนวณเหรียญทักษะในหน้าโปรไฟล์ของคุณเรียบร้อยแล้ว
                 </p>
+
+                {theoryResult.passed && (
+                  <div className="mt-5 p-4 rounded-2xl bg-indigo-50/80 border border-indigo-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-left max-w-lg mx-auto shadow-2xs">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-xl shadow-xs shrink-0">
+                        🎖️
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-indigo-950">
+                          ได้รับเหรียญทักษะเฉพาะ: {assessment.title}
+                        </div>
+                        <div className="text-[11px] text-indigo-700 mt-0.5">
+                          เหรียญถูกบันทึกลงในโปรไฟล์และคำนวณเป็น Verified Skill ให้คุณแล้ว
+                        </div>
+                      </div>
+                    </div>
+                    <Link
+                      href="/profile?tab=skills"
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-xs whitespace-nowrap shrink-0"
+                    >
+                      ดูเหรียญในโปรไฟล์
+                    </Link>
+                  </div>
+                )}
 
                 <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
                   <Link
@@ -715,13 +849,17 @@ export default function AssessmentRunnerPage() {
                     <p className="text-sm text-[#667085] mt-2">
                       คะแนนการประเมินผล:{' '}
                       <span className="font-extrabold text-[#4f46e5] text-2xl">
-                        {codingFinalResult.score ?? codingFinalResult.aiScore}%
+                        {codingFinalResult.percentage ?? codingFinalResult.score ?? codingFinalResult.aiScore}%
                       </span>
-                      {codingFinalResult.pointsEarned !== undefined && codingFinalResult.maxPoints && (
+                      {codingFinalResult.pointsEarned !== undefined && codingFinalResult.maxPoints ? (
                         <span className="text-xs ml-1 text-slate-500">
                           ({codingFinalResult.pointsEarned} / {codingFinalResult.maxPoints} คะแนน)
                         </span>
-                      )}
+                      ) : codingFinalResult.score !== undefined && codingFinalResult.maxScore ? (
+                        <span className="text-xs ml-1 text-slate-500">
+                          ({codingFinalResult.score} / {codingFinalResult.maxScore} คะแนน)
+                        </span>
+                      ) : null}
                     </p>
 
                     {/* AI Rubric Breakdown Display */}
@@ -798,6 +936,30 @@ export default function AssessmentRunnerPage() {
                       </div>
                     )}
 
+                    {codingFinalResult.passed && (
+                      <div className="mt-6 p-4 rounded-2xl bg-indigo-50/80 border border-indigo-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-left max-w-lg mx-auto shadow-2xs">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-xl shadow-xs shrink-0">
+                            🎖️
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-indigo-950">
+                              ได้รับเหรียญทักษะเฉพาะ: {assessment.title}
+                            </div>
+                            <div className="text-[11px] text-indigo-700 mt-0.5">
+                              ผ่านการทดสอบโค้ดดิ้งภาคปฏิบัติและยืนยันใน Verified Skills แล้ว
+                            </div>
+                          </div>
+                        </div>
+                        <Link
+                          href="/profile?tab=skills"
+                          className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-xs whitespace-nowrap shrink-0"
+                        >
+                          ดูเหรียญในโปรไฟล์
+                        </Link>
+                      </div>
+                    )}
+
                     <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
                       <Link
                         href="/profile?tab=skills"
@@ -823,32 +985,65 @@ export default function AssessmentRunnerPage() {
               <div>
                 {/* Multi-Question Tabs */}
                 {assessment.questions.length > 1 && (
-                  <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
-                    <span className="text-xs font-bold text-slate-400 mr-1 uppercase tracking-wider">
-                      ข้อสอบ:
-                    </span>
-                    {assessment.questions.map((q: any, idx: number) => (
-                      <button
-                        key={q.id}
-                        onClick={() => setActiveQuestionIndex(idx)}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border ${
-                          activeQuestionIndex === idx
-                            ? 'bg-[#6366f1] text-white border-[#6366f1] shadow-xs'
-                            : 'bg-white border-slate-200/80 text-slate-700 hover:bg-slate-50'
-                        }`}
-                      >
-                        <span>ข้อที่ {idx + 1}: {q.title}</span>
-                        <span
-                          className={`text-[10px] px-1.5 py-0.5 rounded ${
-                            activeQuestionIndex === idx
-                              ? 'bg-white/20 text-white'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          {q.points} คะแนน
-                        </span>
-                      </button>
-                    ))}
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                      <span className="text-xs font-bold text-slate-400 mr-1 uppercase tracking-wider">
+                        ข้อสอบ:
+                      </span>
+                      {assessment.questions.map((q: any, idx: number) => {
+                        const isSubmitted = !!submittedQuestions[q.id];
+                        return (
+                          <button
+                            key={q.id}
+                            onClick={() => setActiveQuestionIndex(idx)}
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 border ${
+                              activeQuestionIndex === idx
+                                ? 'bg-[#6366f1] text-white border-[#6366f1] shadow-xs'
+                                : isSubmitted
+                                ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+                                : 'bg-white border-slate-200/80 text-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            {isSubmitted && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />}
+                            <span>ข้อที่ {idx + 1}: {q.title}</span>
+                            <span
+                              className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                activeQuestionIndex === idx
+                                  ? 'bg-white/20 text-white'
+                                  : isSubmitted
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              {q.points} คะแนน
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      onClick={handleFinalizeAttempt}
+                      disabled={finalizingAttempt || Object.keys(submittedQuestions).length === 0}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-xs transition disabled:opacity-50"
+                      title="ส่งชุดข้อสอบทั้งหมดและคำนวณคะแนนรวม"
+                    >
+                      <Award className="h-3.5 w-3.5" />
+                      <span>{finalizingAttempt ? 'กำลังประมวลผลสรุป...' : 'ส่งข้อสอบทั้งหมด (Finalize Exam)'}</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Submission Feedback Banner */}
+                {submissionFeedback && (
+                  <div className="mb-4 p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center justify-between shadow-xs animate-in fade-in duration-200">
+                    <span className="font-semibold">{submissionFeedback}</span>
+                    <button
+                      onClick={() => setSubmissionFeedback(null)}
+                      className="text-emerald-700 hover:text-emerald-900 text-xs font-bold px-2 py-0.5"
+                    >
+                      ✕
+                    </button>
                   </div>
                 )}
 
@@ -861,9 +1056,19 @@ export default function AssessmentRunnerPage() {
                         <span className="text-xs font-bold text-purple-700 uppercase tracking-wider flex items-center gap-1.5">
                           <Code2 className="h-4 w-4" /> ข้อที่ {activeQuestionIndex + 1} ({currentQuestion?.points} คะแนน)
                         </span>
-                        <span className="text-[10px] font-semibold bg-[#f4f5fa] border border-slate-200/70 px-2.5 py-0.5 rounded-full text-[#667085]">
-                          ความยาก: {currentQuestion?.difficulty}
-                        </span>
+                        {currentQuestion?.difficulty === 'EASY' ? (
+                          <span className="text-[10px] font-bold bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full text-emerald-700">
+                            ระดับ: ง่าย (Easy)
+                          </span>
+                        ) : currentQuestion?.difficulty === 'HARD' ? (
+                          <span className="text-[10px] font-bold bg-rose-50 border border-rose-200 px-2.5 py-0.5 rounded-full text-rose-700">
+                            ระดับ: ยาก (Hard)
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full text-amber-700">
+                            ระดับ: ปานกลาง (Medium)
+                          </span>
+                        )}
                       </div>
 
                       <h2 className="text-lg font-extrabold text-slate-900 mb-2 tracking-tight">
@@ -1031,9 +1236,15 @@ export default function AssessmentRunnerPage() {
                   <div className="lg:col-span-7 rounded-[22px] border border-slate-800 bg-[#0f172a] p-4 shadow-xl flex flex-col justify-between overflow-hidden">
                     <div className="flex items-center justify-between pb-3 border-b border-slate-800 text-slate-400 text-xs">
                       <span className="font-mono text-slate-300 flex items-center gap-2">
-                        <span>solution.js</span>
-                        <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-400">
-                          JavaScript Node.js
+                        <span>{isQuestionPython(currentQuestion) ? 'solution.py' : 'solution.js'}</span>
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded font-semibold ${
+                            isQuestionPython(currentQuestion)
+                              ? 'bg-blue-900/60 text-blue-300 border border-blue-700/50'
+                              : 'bg-amber-900/40 text-amber-300 border border-amber-700/50'
+                          }`}
+                        >
+                          {isQuestionPython(currentQuestion) ? 'Python 3.11' : 'JavaScript Node.js'}
                         </span>
                       </span>
                       <span className="text-[10px] text-emerald-400 flex items-center gap-1">
@@ -1045,7 +1256,7 @@ export default function AssessmentRunnerPage() {
                     <div className="flex-1 my-3 overflow-hidden rounded-xl border border-slate-800">
                       <Editor
                         height="100%"
-                        defaultLanguage="javascript"
+                        language={isQuestionPython(currentQuestion) ? 'python' : 'javascript'}
                         theme="vs-dark"
                         value={currentCode}
                         onChange={handleCodeChange}
@@ -1086,7 +1297,11 @@ export default function AssessmentRunnerPage() {
                           className="flex items-center gap-2 rounded-full bg-[#6366f1] hover:bg-[#4f46e5] text-white font-bold text-xs py-2.5 px-6 shadow-xs shadow-indigo-500/20 transition disabled:opacity-50"
                         >
                           <Send className={`h-3.5 w-3.5 ${submittingCoding ? 'animate-spin' : ''}`} />
-                          {submittingCoding ? 'กำลังส่งคำตอบ...' : 'ส่งคำตอบข้อนี้'}
+                          {submittingCoding
+                            ? 'กำลังส่งคำตอบ...'
+                            : submittedQuestions[currentQuestion?.id]
+                            ? 'ส่งคำตอบข้อนี้ใหม่อีกครั้ง'
+                            : 'ส่งคำตอบข้อนี้'}
                         </button>
                       </div>
                     </div>

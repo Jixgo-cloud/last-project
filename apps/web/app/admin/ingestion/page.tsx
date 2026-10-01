@@ -72,6 +72,12 @@ export default function AdminIngestionPage() {
   const [resultType, setResultType] = useState<'JOBS' | 'COURSES'>('JOBS');
   const [showResultModal, setShowResultModal] = useState<boolean>(false);
 
+  // Course Skill Filtering States
+  const [skillsList, setSkillsList] = useState<any[]>([]);
+  const [selectedCourseSkillId, setSelectedCourseSkillId] = useState<string>('ALL');
+  const [customCourseKeyword, setCustomCourseKeyword] = useState<string>('');
+  const [backfillingCourses, setBackfillingCourses] = useState<boolean>(false);
+
   const fetchLogs = async () => {
     try {
       setLoading(true);
@@ -104,6 +110,9 @@ export default function AdminIngestionPage() {
   useEffect(() => {
     fetchLogs();
     fetchQuotas();
+    apiRequest('/skills')
+      .then((data) => setSkillsList(data || []))
+      .catch((err) => console.error('Failed to load skills:', err));
   }, []);
 
   const handleSaveQuotas = async () => {
@@ -163,14 +172,44 @@ export default function AdminIngestionPage() {
       setSyncingSource(provider);
       setMsg(null);
       const quota = quotas?.[provider]?.quota;
-      const queryParam = quota ? `&limit=${quota}` : '';
-      const res = await apiRequest(`/ingestion/sync-courses?provider=${provider}${queryParam}`, { method: 'POST' });
-      setMsg(`ดึงข้อมูลคอร์สเรียนจาก ${provider} สำเร็จ! (+${res.createdCount || 0} สร้างใหม่, ${res.duplicateCount || 0} ข้ามรายการซ้ำ) [โควต้า: ${quota || 'ค่าเริ่มต้น'} คอร์ส]`);
+      const queryParams = new URLSearchParams();
+      queryParams.append('provider', provider);
+      if (quota) queryParams.append('limit', String(quota));
+      if (selectedCourseSkillId !== 'ALL') queryParams.append('skillId', selectedCourseSkillId);
+      if (customCourseKeyword.trim()) queryParams.append('keyword', customCourseKeyword.trim());
+
+      const res = await apiRequest(`/ingestion/sync-courses?${queryParams.toString()}`, { method: 'POST' });
+      const matchedSkill = skillsList.find((s) => s.id === selectedCourseSkillId);
+      const skillLabel = matchedSkill
+        ? ` หมวดหมู่: [${matchedSkill.name}]`
+        : customCourseKeyword.trim()
+        ? ` คำค้นหา: ["${customCourseKeyword.trim()}"]`
+        : ' ทุกหมวดหมู่ทักษะ';
+
+      setMsg(
+        `ดึงข้อมูลคอร์สเรียนจาก ${provider}${skillLabel} สำเร็จ! (+${res.createdCount || 0} สร้างใหม่, ${res.duplicateCount || 0} รายการเดิมที่ตรวจพบ) [โควต้า: ${quota || 'ค่าเริ่มต้น'} คอร์ส]`,
+      );
       fetchLogs();
     } catch (err: any) {
       alert(`Sync failed: ${err.message}`);
     } finally {
       setSyncingSource(null);
+    }
+  };
+
+  const handleBackfillCourseSkills = async () => {
+    try {
+      setBackfillingCourses(true);
+      setMsg(null);
+      const res = await apiRequest('/ingestion/backfill-course-skills', { method: 'POST' });
+      setMsg(
+        `เชื่อมโยง CourseSkills อัตโนมัติสำเร็จ! ประมวลผลคอร์สทั้งหมด ${res.totalCourses} รายการ, เพิ่มการเชื่อมโยงทักษะใหม่ +${res.newConnectionsCreated} จุด`,
+      );
+      fetchLogs();
+    } catch (err: any) {
+      alert(`Backfill failed: ${err.message}`);
+    } finally {
+      setBackfillingCourses(false);
     }
   };
 
@@ -696,15 +735,80 @@ export default function AdminIngestionPage() {
                   <span>Cron: ทุกเที่ยงคืน (00:00 ICT)</span>
                 </span>
               </div>
-              <p className="text-xs text-slate-500 mb-6 leading-relaxed">
-                ดึงหลักสูตรและบทเรียนคุณภาพสูงจาก YouTube (freeCodeCamp live oEmbed API) และ Udemy Industry Registry (Angela Yu, Colt Steele, Stephane Maarek) ป้อนระบบ Skill Gap
+              <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                ดึงหลักสูตรและบทเรียนคุณภาพสูงจาก YouTube (oEmbed API) และ Udemy Industry Registry พร้อมผูกเข้ากับ <strong className="text-purple-700">CourseSkill</strong> เพื่อแสดงผลในระบบ Skill Gap
               </p>
+
+              {/* Skill Selection & Keyword Filters */}
+              <div className="p-3.5 mb-5 rounded-2xl bg-gradient-to-r from-purple-50/70 via-indigo-50/40 to-white border border-purple-100/90 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                    <Layers className="h-4 w-4 text-[#7c3aed]" />
+                    <span>กำหนดทักษะเป้าหมาย (Target Skill Filter)</span>
+                  </span>
+                  <button
+                    onClick={handleBackfillCourseSkills}
+                    disabled={backfillingCourses || !!syncingSource}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-white border border-purple-200 text-purple-700 hover:bg-purple-100/80 transition disabled:opacity-50 shadow-2xs"
+                    title="สแกนคอร์สทั้งหมดในระบบและจับคู่เข้ากับ Master Skills อัตโนมัติ"
+                  >
+                    <Sparkles className={`h-3 w-3 text-amber-500 ${backfillingCourses ? 'animate-spin' : ''}`} />
+                    <span>{backfillingCourses ? 'กำลังผูกทักษะ...' : 'Auto-Link All CourseSkills'}</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                      เลือกทักษะที่ต้องการดึง:
+                    </label>
+                    <select
+                      value={selectedCourseSkillId}
+                      onChange={(e) => setSelectedCourseSkillId(e.target.value)}
+                      className="w-full text-xs font-semibold bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:border-purple-500 shadow-2xs"
+                    >
+                      <option value="ALL">🌟 ทุกทักษะ (General Catalog)</option>
+                      {skillsList.map((skill) => (
+                        <option key={skill.id} value={skill.id}>
+                          {skill.name} ({skill.category})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                      คำค้นหาเพิ่มเติม (Optional Keyword):
+                    </label>
+                    <div className="relative flex items-center">
+                      <Search className="absolute left-2.5 h-3.5 w-3.5 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="เช่น Fastify, Redux Toolkit..."
+                        value={customCourseKeyword}
+                        onChange={(e) => setCustomCourseKeyword(e.target.value)}
+                        className="w-full text-xs bg-white border border-slate-200 rounded-xl pl-8 pr-3 py-2 text-slate-800 focus:outline-none focus:border-purple-500 placeholder:text-slate-400 shadow-2xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {selectedCourseSkillId !== 'ALL' && (
+                  <div className="text-[11px] text-purple-700 font-semibold flex items-center gap-1.5 pt-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-purple-500" />
+                    <span>
+                      กำลังจะดึงเฉพาะคอร์สเกี่ยวกับ{' '}
+                      <strong>{skillsList.find((s) => s.id === selectedCourseSkillId)?.name}</strong> และผูกเข้าสู่ระบบทันที
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 onClick={() => triggerCourseSync(CourseSource.YOUTUBE)}
-                disabled={!!syncingSource || screeningLoading}
+                disabled={!!syncingSource || screeningLoading || backfillingCourses}
                 className="flex items-center justify-between p-4 rounded-2xl bg-rose-50/80 border border-rose-200/90 hover:bg-rose-100/80 text-rose-900 text-xs font-bold transition disabled:opacity-50 shadow-xs"
               >
                 <div className="flex flex-col items-start gap-1">
@@ -713,7 +817,9 @@ export default function AdminIngestionPage() {
                     <span>Sync YouTube Courses</span>
                   </span>
                   <span className="text-[10px] text-rose-700 font-medium">
-                    โควต้า: <strong className="text-rose-900 font-bold">{quotas?.YOUTUBE?.quota || 10}</strong> คอร์ส
+                    {selectedCourseSkillId !== 'ALL'
+                      ? `ดึงเฉพาะ: ${skillsList.find((s) => s.id === selectedCourseSkillId)?.name}`
+                      : `โควต้า: ${quotas?.YOUTUBE?.quota || 10} คอร์ส`}
                   </span>
                 </div>
                 <span className="text-[10px] bg-rose-200/70 text-rose-800 px-2 py-0.5 rounded-full font-black">oEmbed LIVE</span>
@@ -721,7 +827,7 @@ export default function AdminIngestionPage() {
 
               <button
                 onClick={() => triggerCourseSync(CourseSource.UDEMY)}
-                disabled={!!syncingSource || screeningLoading}
+                disabled={!!syncingSource || screeningLoading || backfillingCourses}
                 className="flex items-center justify-between p-4 rounded-2xl bg-purple-50/80 border border-purple-200/90 hover:bg-purple-100/80 text-purple-900 text-xs font-bold transition disabled:opacity-50 shadow-xs"
               >
                 <div className="flex flex-col items-start gap-1">
@@ -730,7 +836,9 @@ export default function AdminIngestionPage() {
                     <span>Sync Udemy Courses</span>
                   </span>
                   <span className="text-[10px] text-purple-700 font-medium">
-                    โควต้า: <strong className="text-purple-900 font-bold">{quotas?.UDEMY?.quota || 10}</strong> คอร์ส
+                    {selectedCourseSkillId !== 'ALL'
+                      ? `ดึงเฉพาะ: ${skillsList.find((s) => s.id === selectedCourseSkillId)?.name}`
+                      : `โควต้า: ${quotas?.UDEMY?.quota || 10} คอร์ส`}
                   </span>
                 </div>
                 <span className="text-[10px] bg-purple-200/70 text-purple-800 px-2 py-0.5 rounded-full font-black">VERIFIED REPO</span>

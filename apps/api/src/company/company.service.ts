@@ -326,12 +326,41 @@ export class CompanyService {
     });
   }
 
+  async getCompanyAssessmentDetail(userId: string, id: string) {
+    const company = await this.getCompanyByUserId(userId);
+    const assessment = await this.prisma.assessment.findUnique({
+      where: { id },
+      include: {
+        skill: true,
+        questions: {
+          include: {
+            choices: {
+              orderBy: { order: 'asc' },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+    if (!assessment || assessment.companyId !== company.id) {
+      throw new ForbiddenException('You are not authorized to view this assessment');
+    }
+    return assessment;
+  }
+
   async createCompanyAssessment(userId: string, data: any) {
     const company = await this.getCompanyByUserId(userId);
+    const cleanSlugPart = (data.title || '')
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
     const slug =
-      (data.slug || data.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')) +
-      '-' +
-      Math.floor(1000 + Math.random() * 9000);
+      data.slug ||
+      (cleanSlugPart
+        ? `${cleanSlugPart}-${randomSuffix}`
+        : `company-assessment-${(data.type || 'coding').toLowerCase()}-${randomSuffix}`);
 
     return this.prisma.assessment.create({
       data: {
@@ -348,8 +377,8 @@ export class CompanyService {
         version: 1,
         questions: {
           create: (data.questions || []).map((q: any) => ({
-            title: q.title,
-            prompt: q.prompt,
+            title: q.title || 'โจทย์ข้อสอบ',
+            prompt: q.prompt || '',
             difficulty: q.difficulty || 'MEDIUM',
             points: q.points ? parseInt(q.points) : 50,
             starterCode: q.starterCode || null,
@@ -383,18 +412,144 @@ export class CompanyService {
       throw new ForbiddenException('You are not authorized to edit this assessment');
     }
 
-    return this.prisma.assessment.update({
-      where: { id },
-      data: {
-        title: data.title ?? assessment.title,
-        description: data.description ?? assessment.description,
-        timeLimitMinutes: data.timeLimitMinutes ? parseInt(data.timeLimitMinutes) : assessment.timeLimitMinutes,
-        passingScore: data.passingScore ? parseFloat(data.passingScore) : assessment.passingScore,
-        feedbackVisibility: data.feedbackVisibility ?? assessment.feedbackVisibility,
-        skillId: data.skillId !== undefined ? data.skillId : assessment.skillId,
-        isActive: data.isActive !== undefined ? data.isActive : assessment.isActive,
-        version: { increment: 1 },
-      },
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Update questions if provided in payload
+      if (Array.isArray(data.questions)) {
+        const attemptCount = await tx.assessmentAttempt.count({ where: { assessmentId: id } });
+
+        if (attemptCount === 0) {
+          // No attempts yet: safely recreate all questions & choices
+          await tx.question.deleteMany({ where: { assessmentId: id } });
+          for (const q of data.questions) {
+            await tx.question.create({
+              data: {
+                assessmentId: id,
+                title: q.title || 'โจทย์ข้อสอบ',
+                prompt: q.prompt || '',
+                difficulty: q.difficulty || 'MEDIUM',
+                points: q.points ? parseInt(q.points) : 50,
+                starterCode: q.starterCode || null,
+                testCases: q.testCases || null,
+                evaluationMethod: q.evaluationMethod || 'AUTOMATED_TEST_CASES',
+                rubric: q.rubric || null,
+                solutionCode: q.solutionCode || null,
+                explanation: q.explanation || null,
+                version: 1,
+                choices: {
+                  create: (q.choices || []).map((c: any, cIdx: number) => ({
+                    text: c.text,
+                    isCorrect: !!c.isCorrect,
+                    order: c.order !== undefined ? c.order : cIdx + 1,
+                  })),
+                },
+              },
+            });
+          }
+        } else {
+          // Existing attempts: preserve relation integrity and update in-place
+          for (const q of data.questions) {
+            if (q.id) {
+              await tx.question.update({
+                where: { id: q.id },
+                data: {
+                  title: q.title || 'โจทย์ข้อสอบ',
+                  prompt: q.prompt || '',
+                  difficulty: q.difficulty || 'MEDIUM',
+                  points: q.points ? parseInt(q.points) : 50,
+                  starterCode: q.starterCode || null,
+                  testCases: q.testCases || null,
+                  evaluationMethod: q.evaluationMethod || 'AUTOMATED_TEST_CASES',
+                  rubric: q.rubric || null,
+                  solutionCode: q.solutionCode || null,
+                  explanation: q.explanation || null,
+                  version: { increment: 1 },
+                },
+              });
+
+              if (Array.isArray(q.choices)) {
+                // In-place update / upsert choices to preserve historical attempt references
+                const existingChoices = await tx.choice.findMany({ where: { questionId: q.id } });
+                const keepIds = q.choices.map((c: any) => c.id).filter(Boolean);
+                const choicesToDelete = existingChoices.filter((ec) => !keepIds.includes(ec.id));
+                for (const c of choicesToDelete) {
+                  const answerCount = await tx.assessmentAnswer.count({ where: { selectedChoiceId: c.id } });
+                  if (answerCount === 0) {
+                    await tx.choice.delete({ where: { id: c.id } });
+                  }
+                }
+
+                for (let cIdx = 0; cIdx < q.choices.length; cIdx++) {
+                  const c = q.choices[cIdx];
+                  if (c.id && existingChoices.some((ec) => ec.id === c.id)) {
+                    await tx.choice.update({
+                      where: { id: c.id },
+                      data: {
+                        text: c.text,
+                        isCorrect: !!c.isCorrect,
+                        order: c.order !== undefined ? c.order : cIdx + 1,
+                      },
+                    });
+                  } else {
+                    await tx.choice.create({
+                      data: {
+                        questionId: q.id,
+                        text: c.text,
+                        isCorrect: !!c.isCorrect,
+                        order: c.order !== undefined ? c.order : cIdx + 1,
+                      },
+                    });
+                  }
+                }
+              }
+            } else {
+              // Newly added question
+              await tx.question.create({
+                data: {
+                  assessmentId: id,
+                  title: q.title || 'โจทย์ข้อสอบ',
+                  prompt: q.prompt || '',
+                  difficulty: q.difficulty || 'MEDIUM',
+                  points: q.points ? parseInt(q.points) : 50,
+                  starterCode: q.starterCode || null,
+                  testCases: q.testCases || null,
+                  evaluationMethod: q.evaluationMethod || 'AUTOMATED_TEST_CASES',
+                  rubric: q.rubric || null,
+                  solutionCode: q.solutionCode || null,
+                  explanation: q.explanation || null,
+                  version: 1,
+                  choices: {
+                    create: (q.choices || []).map((c: any, cIdx: number) => ({
+                      text: c.text,
+                      isCorrect: !!c.isCorrect,
+                      order: c.order !== undefined ? c.order : cIdx + 1,
+                    })),
+                  },
+                },
+              });
+            }
+          }
+        }
+      }
+
+      // 2. Update Assessment metadata
+      return tx.assessment.update({
+        where: { id },
+        data: {
+          title: data.title ?? assessment.title,
+          description: data.description ?? assessment.description,
+          type: data.type ?? assessment.type,
+          timeLimitMinutes: data.timeLimitMinutes ? parseInt(data.timeLimitMinutes) : assessment.timeLimitMinutes,
+          passingScore: data.passingScore ? parseFloat(data.passingScore) : assessment.passingScore,
+          feedbackVisibility: data.feedbackVisibility ?? assessment.feedbackVisibility,
+          skillId: data.skillId !== undefined ? data.skillId : assessment.skillId,
+          isActive: data.isActive !== undefined ? data.isActive : assessment.isActive,
+          version: { increment: 1 },
+        },
+        include: {
+          skill: true,
+          questions: { include: { choices: true } },
+        },
+      });
     });
   }
 
@@ -431,7 +586,7 @@ export class CompanyService {
   async listCompanyAssessmentAttempts(userId: string, assessmentId?: string) {
     const company = await this.getCompanyByUserId(userId);
 
-    return this.prisma.assessmentAttempt.findMany({
+    const attempts = await this.prisma.assessmentAttempt.findMany({
       where: {
         assessment: {
           companyId: company.id,
@@ -459,6 +614,25 @@ export class CompanyService {
         },
       },
       orderBy: { startedAt: 'desc' },
+    });
+
+    return attempts.map((att) => {
+      const events: any[] = Array.isArray(att.integrityEvents) ? (att.integrityEvents as any[]) : [];
+      const tabSwitchCount = events.filter(
+        (e) => e.type === 'TAB_BLUR' || e.eventType === 'TAB_BLUR',
+      ).length;
+      let riskLevel: 'NORMAL' | 'SUSPICIOUS' | 'HIGH_RISK' = 'NORMAL';
+      if (tabSwitchCount >= 8) riskLevel = 'HIGH_RISK';
+      else if (tabSwitchCount >= 3) riskLevel = 'SUSPICIOUS';
+
+      return {
+        ...att,
+        integritySummary: {
+          tabSwitchCount,
+          riskLevel,
+          events,
+        },
+      };
     });
   }
 }

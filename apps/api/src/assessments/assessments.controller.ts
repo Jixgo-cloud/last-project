@@ -105,6 +105,16 @@ export class AssessmentsController {
     );
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.CANDIDATE)
+  @Post(':id/finalize-attempt')
+  async finalizeAttempt(
+    @Request() req: any,
+    @Body() body: { attemptId: string },
+  ) {
+    return this.assessmentsService.finalizeAttempt(body.attemptId, req.user.id);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get('attempts/:attemptId/review')
   async getAttemptReview(

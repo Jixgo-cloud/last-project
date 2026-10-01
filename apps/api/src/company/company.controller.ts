@@ -93,6 +93,14 @@ export class CompanyController {
     return this.companyService.listCompanyAssessments(req.user.id);
   }
 
+  @Get('assessments/:id')
+  async getCompanyAssessment(
+    @Request() req: any,
+    @Param('id') id: string,
+  ) {
+    return this.companyService.getCompanyAssessmentDetail(req.user.id, id);
+  }
+
   @Post('assessments')
   async createCompanyAssessment(@Request() req: any, @Body() body: any) {
     return this.companyService.createCompanyAssessment(req.user.id, body);

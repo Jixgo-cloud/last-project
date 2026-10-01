@@ -277,14 +277,28 @@ async function main() {
     ];
 
     for (const c of coursesData) {
-      const existingCourse = await tx.course.findFirst({
+      let existingCourse = await tx.course.findFirst({
         where: { url: c.url },
       });
       if (!existingCourse) {
-        await tx.course.create({ data: c });
+        existingCourse = await tx.course.create({ data: c });
+      }
+
+      if (c.title.includes('Docker') && dockerId && existingCourse) {
+        await tx.courseSkill.upsert({
+          where: { courseId_skillId: { courseId: existingCourse.id, skillId: dockerId } },
+          update: { relevanceScore: 1.0 },
+          create: { courseId: existingCourse.id, skillId: dockerId, relevanceScore: 1.0 },
+        });
+      } else if (c.title.includes('PostgreSQL') && pgId && existingCourse) {
+        await tx.courseSkill.upsert({
+          where: { courseId_skillId: { courseId: existingCourse.id, skillId: pgId } },
+          update: { relevanceScore: 1.0 },
+          create: { courseId: existingCourse.id, skillId: pgId, relevanceScore: 1.0 },
+        });
       }
     }
-    console.log('✅ Curated Reference Courses upserted');
+    console.log('✅ Curated Reference Courses & CourseSkills upserted');
   });
 
   console.log('🎉 Production Non-Destructive Master Seeding Completed Successfully.');

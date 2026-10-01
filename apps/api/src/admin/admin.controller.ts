@@ -61,6 +61,11 @@ export class AdminController {
     return this.adminService.listAssessments();
   }
 
+  @Get('assessments/:id')
+  async getAssessment(@Param('id') id: string) {
+    return this.adminService.getAssessment(id);
+  }
+
   @Post('assessments')
   async createAssessment(@Body() body: any) {
     return this.adminService.createAssessment(body);
@@ -79,5 +84,10 @@ export class AdminController {
   @Delete('assessments/:id')
   async deleteAssessment(@Param('id') id: string) {
     return this.adminService.deleteAssessment(id);
+  }
+
+  @Get('assessments/:id/attempts')
+  async listAssessmentAttempts(@Param('id') id: string) {
+    return this.adminService.listAssessmentAttempts(id);
   }
 }

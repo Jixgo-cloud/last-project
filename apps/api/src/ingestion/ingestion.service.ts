@@ -158,7 +158,12 @@ export class IngestionService {
     return log;
   }
 
-  async syncCourses(provider: CourseSource = CourseSource.YOUTUBE, limit?: number) {
+  async syncCourses(
+    provider: CourseSource = CourseSource.YOUTUBE,
+    limit?: number,
+    skillId?: string,
+    keyword?: string,
+  ) {
     const startedAt = new Date();
     let createdCount = 0;
     let duplicateCount = 0;
@@ -166,46 +171,127 @@ export class IngestionService {
     let errorMessage: string | null = null;
     const quota = limit || this.configService.getQuotaForSource(provider);
 
+    // 1. Resolve target skill if specified
+    const targetSkill =
+      skillId && skillId !== 'ALL'
+        ? await this.prisma.skill.findUnique({ where: { id: skillId } })
+        : null;
+
+    const searchTerm = (keyword || targetSkill?.name || '').trim();
+
     try {
-      this.logger.log(`Starting Course Ingestion for provider: ${provider} (Target Quota: ${quota})`);
+      this.logger.log(
+        `Starting Course Ingestion for provider: ${provider} (Target Quota: ${quota}, Skill: ${targetSkill?.name || 'All'}, Search: "${searchTerm || 'Default'}")`,
+      );
       let coursesToProcess: any[] = [];
 
       if (provider === CourseSource.UDEMY) {
-        coursesToProcess = await this.fetchUdemyCourses('web development', quota);
+        coursesToProcess = await this.fetchUdemyCourses(searchTerm || 'web development', quota, targetSkill?.name);
       } else {
-        coursesToProcess = await this.fetchYouTubeCourses(quota);
+        coursesToProcess = await this.fetchYouTubeCourses(quota, targetSkill?.name, searchTerm);
       }
 
       if (coursesToProcess.length > quota) {
         coursesToProcess = coursesToProcess.slice(0, quota);
       }
 
+      // Pre-fetch all skills for intelligent tagging
+      const allSkills = await this.prisma.skill.findMany();
+      const skillMapByName = new Map<string, any>();
+      for (const s of allSkills) {
+        skillMapByName.set(s.name.toLowerCase(), s);
+      }
+
       for (const c of coursesToProcess) {
         try {
-          const existing = await this.prisma.course.findFirst({
+          let course = await this.prisma.course.findFirst({
             where: { provider, externalId: c.externalId },
           });
 
-          if (existing) {
+          if (course) {
             duplicateCount++;
-            continue;
+          } else {
+            course = await this.prisma.course.create({
+              data: {
+                title: c.title,
+                provider,
+                description: c.description,
+                url: c.url,
+                thumbnailUrl: c.thumbnailUrl,
+                duration: c.duration,
+                level: c.level,
+                rating: c.rating,
+                source: c.source || (provider === CourseSource.YOUTUBE ? 'YouTube' : 'Udemy'),
+                externalId: c.externalId,
+              },
+            });
+            createdCount++;
           }
 
-          await this.prisma.course.create({
-            data: {
-              title: c.title,
-              provider,
-              description: c.description,
-              url: c.url,
-              thumbnailUrl: c.thumbnailUrl,
-              duration: c.duration,
-              level: c.level,
-              rating: c.rating,
-              source: c.source || (provider === CourseSource.YOUTUBE ? 'YouTube' : 'Udemy'),
-              externalId: c.externalId,
-            },
-          });
-          createdCount++;
+          // A) Always link target skill if specified
+          if (targetSkill && course) {
+            await this.prisma.courseSkill.upsert({
+              where: {
+                courseId_skillId: {
+                  courseId: course.id,
+                  skillId: targetSkill.id,
+                },
+              },
+              update: { relevanceScore: 1.0 },
+              create: {
+                courseId: course.id,
+                skillId: targetSkill.id,
+                relevanceScore: 1.0,
+              },
+            });
+          }
+
+          // B) Auto-link any tagged skills on the course object
+          if (c.skills && Array.isArray(c.skills) && course) {
+            for (const sName of c.skills) {
+              const matched = skillMapByName.get(String(sName).toLowerCase());
+              if (matched) {
+                await this.prisma.courseSkill.upsert({
+                  where: {
+                    courseId_skillId: {
+                      courseId: course.id,
+                      skillId: matched.id,
+                    },
+                  },
+                  update: {},
+                  create: {
+                    courseId: course.id,
+                    skillId: matched.id,
+                    relevanceScore: 0.95,
+                  },
+                });
+              }
+            }
+          }
+
+          // C) Auto-detect skills matching title/description if not already linked
+          if (course) {
+            const text = `${course.title} ${course.description || ''}`.toLowerCase();
+            for (const s of allSkills) {
+              const sName = s.name.toLowerCase();
+              if (text.includes(sName)) {
+                await this.prisma.courseSkill.upsert({
+                  where: {
+                    courseId_skillId: {
+                      courseId: course.id,
+                      skillId: s.id,
+                    },
+                  },
+                  update: {},
+                  create: {
+                    courseId: course.id,
+                    skillId: s.id,
+                    relevanceScore: 0.9,
+                  },
+                });
+              }
+            }
+          }
         } catch (err: any) {
           errorCount++;
           this.logger.error(`Error saving course: ${err.message}`);
@@ -236,8 +322,74 @@ export class IngestionService {
         duplicateCount,
         errorCount,
         errorMessage,
+        metadata: {
+          skillId: targetSkill?.id || null,
+          skillName: targetSkill?.name || null,
+          searchTerm: searchTerm || null,
+        },
       },
     });
+  }
+
+  /**
+   * Scan all existing courses and link them to Master Skills based on title, description, and keywords
+   */
+  async backfillAllCourseSkills() {
+    this.logger.log('Starting Backfill CourseSkills for all courses...');
+    const allSkills = await this.prisma.skill.findMany();
+    const allCourses = await this.prisma.course.findMany({
+      include: { skills: true },
+    });
+
+    let newConnections = 0;
+    let coursesProcessed = 0;
+
+    for (const course of allCourses) {
+      const existingSkillIds = new Set(course.skills.map((s) => s.skillId));
+      const textToSearch = `${course.title} ${course.description || ''}`.toLowerCase();
+
+      for (const skill of allSkills) {
+        if (existingSkillIds.has(skill.id)) continue;
+
+        const skillNameLower = skill.name.toLowerCase();
+        const isMatched =
+          textToSearch.includes(skillNameLower) ||
+          (skillNameLower === 'react' && (textToSearch.includes('react.js') || textToSearch.includes('reactjs'))) ||
+          (skillNameLower === 'node.js' && (textToSearch.includes('nodejs') || textToSearch.includes('node.js'))) ||
+          (skillNameLower === 'next.js' && (textToSearch.includes('nextjs') || textToSearch.includes('next.js'))) ||
+          (skillNameLower === 'tailwind css' && textToSearch.includes('tailwind')) ||
+          (skillNameLower === 'postgresql' && (textToSearch.includes('postgres') || textToSearch.includes('postgresql')));
+
+        if (isMatched) {
+          await this.prisma.courseSkill.upsert({
+            where: {
+              courseId_skillId: {
+                courseId: course.id,
+                skillId: skill.id,
+              },
+            },
+            update: {},
+            create: {
+              courseId: course.id,
+              skillId: skill.id,
+              relevanceScore: 0.9,
+            },
+          });
+          newConnections++;
+          existingSkillIds.add(skill.id);
+        }
+      }
+      coursesProcessed++;
+    }
+
+    this.logger.log(
+      `Backfill completed. Processed ${coursesProcessed} courses, created ${newConnections} new CourseSkill connections.`,
+    );
+    return {
+      totalCourses: coursesProcessed,
+      newConnectionsCreated: newConnections,
+      status: 'SUCCESS',
+    };
   }
 
   // =========================================================================
@@ -591,14 +743,14 @@ export class IngestionService {
   // =========================================================================
   // 6. UDEMY API CONNECTOR & VERIFIED COURSE CATALOG
   // =========================================================================
-  private async fetchUdemyCourses(searchQuery: string, limit = 10): Promise<any[]> {
+  private async fetchUdemyCourses(searchQuery: string, limit = 10, targetSkillName?: string): Promise<any[]> {
     const clientId = process.env.UDEMY_CLIENT_ID;
     const clientSecret = process.env.UDEMY_CLIENT_SECRET;
 
     // A) If Official Udemy Affiliate / Enterprise API credentials are provided:
     if (clientId && clientSecret) {
       try {
-        this.logger.log(`[Udemy API] Connecting to https://www.udemy.com/api-2.0/courses with client credentials (limit: ${limit})...`);
+        this.logger.log(`[Udemy API] Connecting to https://www.udemy.com/api-2.0/courses with client credentials for query "${searchQuery}" (limit: ${limit})...`);
         const token = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
         const pageSize = Math.min(Math.max(limit, 5), 50);
         const response = await axios.get(
@@ -631,21 +783,50 @@ export class IngestionService {
         this.logger.warn(`[Udemy API] Official endpoint error: ${err.message}. Falling back to verified course registry.`);
       }
     } else {
-      this.logger.log(`[Udemy API] UDEMY_CLIENT_ID / SECRET not configured. Synchronizing verified industry course registry (limit: ${limit})...`);
+      this.logger.log(`[Udemy API] UDEMY_CLIENT_ID / SECRET not configured. Synchronizing verified industry course registry (limit: ${limit}, filter: "${searchQuery}")...`);
     }
 
     // B) Verified Tech Courses from Udemy with Direct Enrollment Links
-    return this.getCuratedCourses(CourseSource.UDEMY).slice(0, limit);
+    let catalog = this.getCuratedCourses(CourseSource.UDEMY);
+    const filterTerm = (targetSkillName || searchQuery || '').trim().toLowerCase();
+    if (filterTerm && filterTerm !== 'web development') {
+      const filtered = catalog.filter((c: any) => {
+        const titleMatch = c.title.toLowerCase().includes(filterTerm);
+        const descMatch = (c.description || '').toLowerCase().includes(filterTerm);
+        const skillMatch = c.skills?.some((s: string) => s.toLowerCase().includes(filterTerm) || filterTerm.includes(s.toLowerCase()));
+        return titleMatch || descMatch || skillMatch;
+      });
+      if (filtered.length > 0) {
+        catalog = filtered;
+      }
+    }
+
+    return catalog.slice(0, limit);
   }
 
   // =========================================================================
   // 7. YOUTUBE LIVE OEMBED CONNECTOR
   // =========================================================================
-  private async fetchYouTubeCourses(limit = 10): Promise<any[]> {
-    const rawCatalog = this.getCuratedCourses(CourseSource.YOUTUBE).slice(0, limit);
+  private async fetchYouTubeCourses(limit = 10, targetSkillName?: string, keyword?: string): Promise<any[]> {
+    let rawCatalog = this.getCuratedCourses(CourseSource.YOUTUBE);
+    const filterTerm = (keyword || targetSkillName || '').trim().toLowerCase();
+
+    if (filterTerm) {
+      const filtered = rawCatalog.filter((c: any) => {
+        const titleMatch = c.title.toLowerCase().includes(filterTerm);
+        const descMatch = (c.description || '').toLowerCase().includes(filterTerm);
+        const skillMatch = c.skills?.some((s: string) => s.toLowerCase().includes(filterTerm) || filterTerm.includes(s.toLowerCase()));
+        return titleMatch || descMatch || skillMatch;
+      });
+      if (filtered.length > 0) {
+        rawCatalog = filtered;
+      }
+    }
+
+    const selectedCatalog = rawCatalog.slice(0, limit);
 
     return Promise.all(
-      rawCatalog.map(async (c) => {
+      selectedCatalog.map(async (c) => {
         try {
           const oembedRes = await axios.get(
             `https://www.youtube.com/oembed?url=${encodeURIComponent(c.url)}&format=json`,

@@ -141,6 +141,51 @@ export class AssessmentsService {
       throw new NotFoundException('Assessment not available');
     }
 
+    // Security & Integrity: Check if an attempt is already IN_PROGRESS for this candidate
+    const existingAttempt = await this.prisma.assessmentAttempt.findFirst({
+      where: {
+        assessmentId,
+        candidateId: candidate.id,
+        status: AttemptStatus.IN_PROGRESS,
+      },
+      include: {
+        assessment: {
+          select: {
+            id: true,
+            title: true,
+            type: true,
+            timeLimitMinutes: true,
+            passingScore: true,
+          },
+        },
+        answers: true,
+      },
+      orderBy: { startedAt: 'desc' },
+    });
+
+    if (existingAttempt) {
+      const now = new Date();
+      const elapsedSeconds = Math.round((now.getTime() - existingAttempt.startedAt.getTime()) / 1000);
+      const maxAllowedSeconds = existingAttempt.assessment.timeLimitMinutes * 60 + 30; // 30s grace buffer
+
+      if (elapsedSeconds > maxAllowedSeconds) {
+        // Expired in background: mark it EXPIRED
+        await this.prisma.assessmentAttempt.update({
+          where: { id: existingAttempt.id },
+          data: {
+            status: AttemptStatus.EXPIRED,
+            completedAt: now,
+            passed: false,
+            score: 0,
+            percentage: 0,
+          },
+        });
+      } else {
+        // Active attempt exists: resume with original timer and draft!
+        return existingAttempt;
+      }
+    }
+
     // Version Snapshotting
     const snapshot = {
       version: assessment.version,
@@ -256,9 +301,12 @@ export class AssessmentsService {
     });
     if (!question) throw new NotFoundException('Question not found');
 
+    // Production Control: Automatic Language Detection (Python 3.11 = 71, JS = 63)
+    const langId = this.detectLanguageId(sourceCode, question.starterCode);
+
     // Dual-Mode: If OPEN_ENDED, execute raw code in isolated Judge0 sandbox
     if (question.evaluationMethod === QuestionEvaluationMethod.OPEN_ENDED) {
-      const rawReport = await this.judge0.executeRaw(sourceCode);
+      const rawReport = await this.judge0.executeRaw(sourceCode, langId);
       return {
         status: rawReport.status,
         stdout: rawReport.stdout,
@@ -280,7 +328,27 @@ export class AssessmentsService {
     const testCasesToRun = visibleTestCases.length > 0 ? visibleTestCases : allTestCases.slice(0, 2);
 
     // Run via Judge0 only
-    return this.judge0.execute(sourceCode, testCasesToRun, { maskHiddenDetails: false });
+    return this.judge0.execute(sourceCode, testCasesToRun, { maskHiddenDetails: false, languageId: langId });
+  }
+
+  /**
+   * Automatically detects language ID for Judge0 based on source code and question starter code.
+   * 71 = Python 3.11, 63 = JavaScript (Node.js)
+   */
+  private detectLanguageId(sourceCode?: string, starterCode?: string): number {
+    const combined = `${starterCode || ''}\n${sourceCode || ''}`;
+    if (
+      combined.includes('def solution') ||
+      combined.includes('def ') ||
+      combined.includes('import sys') ||
+      combined.includes('import math') ||
+      combined.includes('# เขียนฟังก์ชันแก้ปัญหา') ||
+      combined.includes('# เขียนโค้ดแก้ปัญหา') ||
+      combined.includes('# Write your solution')
+    ) {
+      return 71; // Python 3.11
+    }
+    return 63; // JavaScript (Node.js)
   }
 
   /**
@@ -425,10 +493,12 @@ export class AssessmentsService {
     // =========================================================================
     // BRANCH 1: OPEN-ENDED EVALUATION (Free-form / Plain text prompt)
     // =========================================================================
+    const langId = this.detectLanguageId(sourceCode, question.starterCode);
+
     if (question.evaluationMethod === QuestionEvaluationMethod.OPEN_ENDED) {
       let rawReport;
       try {
-        rawReport = await this.judge0.executeRaw(sourceCode);
+        rawReport = await this.judge0.executeRaw(sourceCode, langId);
       } catch (err: any) {
         this.logger.warn(`Judge0 raw execution failed for open-ended attempt: ${err.message}`);
         rawReport = {
@@ -464,6 +534,21 @@ export class AssessmentsService {
       // Handle AI Outage: Graceful fallback to EVALUATION_PENDING with null score (no 0% fail!)
       if (aiFailed || !aiEvaluation) {
         return this.prisma.$transaction(async (tx) => {
+        const existingAnswer = await tx.assessmentAnswer.findFirst({
+          where: { attemptId, questionId },
+        });
+
+        if (existingAnswer) {
+          await tx.assessmentAnswer.update({
+            where: { id: existingAnswer.id },
+            data: {
+              submittedCode: sourceCode,
+              executionResult: rawReport as any,
+              isCorrect: false,
+              pointsEarned: 0,
+            },
+          });
+        } else {
           await tx.assessmentAnswer.create({
             data: {
               attemptId,
@@ -474,136 +559,75 @@ export class AssessmentsService {
               pointsEarned: 0,
             },
           });
+        }
 
-          const updatedAttempt = await tx.assessmentAttempt.update({
-            where: { id: attemptId },
-            data: {
-              status: finalStatus,
-              reviewStatus: AssessmentReviewStatus.EVALUATION_PENDING,
-              score: null,
-              percentage: null,
-              passed: null,
-              aiScore: null,
-              humanScore: null,
-              finalScore: null,
-              sourceCode,
-              evaluationSnapshot: {
-                pendingReason: 'AI_SERVICE_UNAVAILABLE',
-                error: aiErrorMessage,
-              },
-              timeSpentSeconds,
-              completedAt: now,
-            },
-          });
+        const allAnswers = await tx.assessmentAnswer.findMany({ where: { attemptId } });
+        const isAllQuestionsAnswered = attempt.assessment.questions.every((q) =>
+          allAnswers.some((a) => a.questionId === q.id),
+        );
+        const isAttemptFinished = isExpired || isAllQuestionsAnswered;
+        const currentAttemptStatus = isExpired
+          ? AttemptStatus.EXPIRED
+          : isAttemptFinished
+          ? AttemptStatus.COMPLETED
+          : AttemptStatus.IN_PROGRESS;
 
-          return {
-            attemptId,
-            questionId,
-            status: finalStatus,
+        const updatedAttempt = await tx.assessmentAttempt.update({
+          where: { id: attemptId },
+          data: {
+            status: currentAttemptStatus,
             reviewStatus: AssessmentReviewStatus.EVALUATION_PENDING,
             score: null,
             percentage: null,
             passed: null,
             aiScore: null,
+            humanScore: null,
             finalScore: null,
             sourceCode,
-            message:
-              'ส่งคำตอบเรียบร้อยแล้ว — ระบบกำลังรอการประเมินผลเชิงลึก (Evaluation Pending)',
-          };
-        });
-      }
-
-      // AI evaluation succeeded
-      const overallScore = aiEvaluation.result.overallScore;
-      const pointsEarned =
-        isExpired ? 0 : Math.round((overallScore / 100) * question.points * 10) / 10;
-
-      // Company assessment: Pending human review, finalScore remains null until Tech Lead reviews
-      // Platform assessment: Preliminary AI score becomes final directly
-      const attemptReviewStatus = isCompanyAssessment
-        ? AssessmentReviewStatus.PENDING_HUMAN_REVIEW
-        : AssessmentReviewStatus.NOT_REQUIRED;
-
-      const aiFinalScore = isCompanyAssessment ? null : overallScore;
-      const aiPassed = isCompanyAssessment
-        ? null
-        : !isExpired && overallScore >= attempt.assessment.passingScore;
-
-      return this.prisma.$transaction(async (tx) => {
-        await tx.assessmentAnswer.create({
-          data: {
-            attemptId,
-            questionId,
-            submittedCode: sourceCode,
-            executionResult: rawReport as any,
-            isCorrect: overallScore >= attempt.assessment.passingScore,
-            pointsEarned,
-          },
-        });
-
-        const updatedAttempt = await tx.assessmentAttempt.update({
-          where: { id: attemptId },
-          data: {
-            status: finalStatus,
-            reviewStatus: attemptReviewStatus,
-            aiScore: overallScore,
-            humanScore: null,
-            finalScore: aiFinalScore,
-            score: isCompanyAssessment ? null : pointsEarned,
-            percentage: isCompanyAssessment ? null : overallScore,
-            passed: aiPassed,
-            sourceCode,
-            evaluationSnapshot: aiEvaluation.result as any,
-            evaluatorModel: aiEvaluation.model,
-            evaluatorProvider: aiEvaluation.provider,
-            promptVersion: aiEvaluation.promptVersion,
+            evaluationSnapshot: {
+              pendingReason: 'AI_SERVICE_UNAVAILABLE',
+              error: aiErrorMessage,
+            },
             timeSpentSeconds,
-            completedAt: now,
+            completedAt: isAttemptFinished ? now : null,
           },
         });
 
         return {
           attemptId,
           questionId,
-          status: finalStatus,
-          reviewStatus: attemptReviewStatus,
-          aiScore: overallScore,
-          finalScore: aiFinalScore,
-          score: isCompanyAssessment ? null : overallScore,
-          percentage: isCompanyAssessment ? null : overallScore,
-          passed: aiPassed,
-          evaluation: aiEvaluation.result,
-          timeSpentSeconds,
-          isCompanyAssessment,
+          status: currentAttemptStatus,
+          isFinished: isAttemptFinished,
+          totalQuestions: attempt.assessment.questions.length,
+          answeredQuestions: allAnswers.length,
+          reviewStatus: AssessmentReviewStatus.EVALUATION_PENDING,
+          score: null,
+          percentage: null,
+          passed: null,
+          aiScore: null,
+          finalScore: null,
+          sourceCode,
+          message:
+            'ส่งคำตอบเรียบร้อยแล้ว — ระบบกำลังรอการประเมินผลเชิงลึก (Evaluation Pending)',
         };
       });
     }
 
-    // =========================================================================
-    // BRANCH 2: AUTOMATED TEST CASES (Algorithmic / Strict Judge0)
-    // =========================================================================
-    const testCases: TestCase[] = (question.testCases as any) || [];
-
-    let executionReport;
-    try {
-      executionReport = await this.judge0.execute(sourceCode, testCases, {
-        maskHiddenDetails: true,
-      });
-    } catch (err: any) {
-      await this.prisma.assessmentAttempt.update({
-        where: { id: attemptId },
-        data: { status: AttemptStatus.SYSTEM_ERROR },
-      });
-      throw err;
-    }
-
-    const isCorrect = !isExpired && executionReport.passedTestCases === executionReport.totalTestCases;
+    // AI evaluation succeeded
+    const overallScore = aiEvaluation.result.overallScore;
     const pointsEarned =
-      isExpired || executionReport.totalTestCases === 0
-        ? 0
-        : Math.round(
-            (executionReport.passedTestCases / executionReport.totalTestCases) * question.points * 10,
-          ) / 10;
+      isExpired ? 0 : Math.round((overallScore / 100) * question.points * 10) / 10;
+
+    // Company assessment: Pending human review, finalScore remains null until Tech Lead reviews
+    // Platform assessment: Preliminary AI score becomes final directly
+    const attemptReviewStatus = isCompanyAssessment
+      ? AssessmentReviewStatus.PENDING_HUMAN_REVIEW
+      : AssessmentReviewStatus.NOT_REQUIRED;
+
+    const aiFinalScore = isCompanyAssessment ? null : overallScore;
+    const aiPassed = isCompanyAssessment
+      ? null
+      : !isExpired && overallScore >= attempt.assessment.passingScore;
 
     return this.prisma.$transaction(async (tx) => {
       const existingAnswer = await tx.assessmentAnswer.findFirst({
@@ -615,8 +639,8 @@ export class AssessmentsService {
           where: { id: existingAnswer.id },
           data: {
             submittedCode: sourceCode,
-            executionResult: executionReport as any,
-            isCorrect,
+            executionResult: rawReport as any,
+            isCorrect: overallScore >= attempt.assessment.passingScore,
             pointsEarned,
           },
         });
@@ -626,45 +650,238 @@ export class AssessmentsService {
             attemptId,
             questionId,
             submittedCode: sourceCode,
-            executionResult: executionReport as any,
-            isCorrect,
+            executionResult: rawReport as any,
+            isCorrect: overallScore >= attempt.assessment.passingScore,
             pointsEarned,
           },
         });
       }
 
-      const allAnswers = await tx.assessmentAnswer.findMany({
-        where: { attemptId },
-      });
+      const allAnswers = await tx.assessmentAnswer.findMany({ where: { attemptId } });
+      const isAllQuestionsAnswered = attempt.assessment.questions.every((q) =>
+        allAnswers.some((a) => a.questionId === q.id),
+      );
+      const isAttemptFinished = isExpired || isAllQuestionsAnswered;
+      const currentAttemptStatus = isExpired
+        ? AttemptStatus.EXPIRED
+        : isAttemptFinished
+        ? AttemptStatus.COMPLETED
+        : AttemptStatus.IN_PROGRESS;
+
       const totalPointsEarned = allAnswers.reduce((sum, a) => sum + a.pointsEarned, 0);
       const maxScore = attempt.assessment.questions.reduce((sum, q) => sum + q.points, 0);
       const percentage = isExpired ? 0 : maxScore > 0 ? Math.round((totalPointsEarned / maxScore) * 100) : 0;
       const passed = !isExpired && percentage >= attempt.assessment.passingScore;
-      const finalStatus = isExpired ? AttemptStatus.EXPIRED : AttemptStatus.COMPLETED;
 
       const updatedAttempt = await tx.assessmentAttempt.update({
         where: { id: attemptId },
         data: {
-          status: finalStatus,
+          status: currentAttemptStatus,
+          reviewStatus: attemptReviewStatus,
+          aiScore: overallScore,
+          humanScore: null,
+          finalScore: aiFinalScore,
+          score: isCompanyAssessment ? null : totalPointsEarned,
+          percentage: isCompanyAssessment ? null : percentage,
+          passed: isCompanyAssessment ? null : passed,
+          sourceCode,
+          evaluationSnapshot: aiEvaluation.result as any,
+          evaluatorModel: aiEvaluation.model,
+          evaluatorProvider: aiEvaluation.provider,
+          promptVersion: aiEvaluation.promptVersion,
+          timeSpentSeconds,
+          completedAt: isAttemptFinished ? now : null,
+        },
+      });
+
+      return {
+        attemptId,
+        questionId,
+        status: currentAttemptStatus,
+        isFinished: isAttemptFinished,
+        totalQuestions: attempt.assessment.questions.length,
+        answeredQuestions: allAnswers.length,
+        reviewStatus: attemptReviewStatus,
+        aiScore: overallScore,
+        finalScore: aiFinalScore,
+        score: isCompanyAssessment ? null : totalPointsEarned,
+        percentage: isCompanyAssessment ? null : percentage,
+        passed: isCompanyAssessment ? null : passed,
+        evaluation: aiEvaluation.result,
+        timeSpentSeconds,
+        isCompanyAssessment,
+      };
+    });
+  }
+
+  // =========================================================================
+  // BRANCH 2: AUTOMATED TEST CASES (Algorithmic / Strict Judge0)
+  // =========================================================================
+  const testCases: TestCase[] = (question.testCases as any) || [];
+
+  let executionReport;
+  try {
+    executionReport = await this.judge0.execute(sourceCode, testCases, {
+      maskHiddenDetails: true,
+      languageId: langId,
+    });
+  } catch (err: any) {
+    await this.prisma.assessmentAttempt.update({
+      where: { id: attemptId },
+      data: { status: AttemptStatus.SYSTEM_ERROR },
+    });
+    throw err;
+  }
+
+  const isCorrect = !isExpired && executionReport.passedTestCases === executionReport.totalTestCases;
+  const pointsEarned =
+    isExpired || executionReport.totalTestCases === 0
+      ? 0
+      : Math.round(
+          (executionReport.passedTestCases / executionReport.totalTestCases) * question.points * 10,
+        ) / 10;
+
+  return this.prisma.$transaction(async (tx) => {
+    const existingAnswer = await tx.assessmentAnswer.findFirst({
+      where: { attemptId, questionId },
+    });
+
+    if (existingAnswer) {
+      await tx.assessmentAnswer.update({
+        where: { id: existingAnswer.id },
+        data: {
+          submittedCode: sourceCode,
+          executionResult: executionReport as any,
+          isCorrect,
+          pointsEarned,
+        },
+      });
+    } else {
+      await tx.assessmentAnswer.create({
+        data: {
+          attemptId,
+          questionId,
+          submittedCode: sourceCode,
+          executionResult: executionReport as any,
+          isCorrect,
+          pointsEarned,
+        },
+      });
+    }
+
+    const allAnswers = await tx.assessmentAnswer.findMany({
+      where: { attemptId },
+    });
+    const totalPointsEarned = allAnswers.reduce((sum, a) => sum + a.pointsEarned, 0);
+    const maxScore = attempt.assessment.questions.reduce((sum, q) => sum + q.points, 0);
+    const percentage = isExpired ? 0 : maxScore > 0 ? Math.round((totalPointsEarned / maxScore) * 100) : 0;
+    const passed = !isExpired && percentage >= attempt.assessment.passingScore;
+
+    // Check whether ALL questions have answers
+    const isAllQuestionsAnswered = attempt.assessment.questions.every((q) =>
+      allAnswers.some((a) => a.questionId === q.id),
+    );
+    const isAttemptFinished = isExpired || isAllQuestionsAnswered;
+    const currentAttemptStatus = isExpired
+      ? AttemptStatus.EXPIRED
+      : isAttemptFinished
+      ? AttemptStatus.COMPLETED
+      : AttemptStatus.IN_PROGRESS;
+
+    const updatedAttempt = await tx.assessmentAttempt.update({
+      where: { id: attemptId },
+      data: {
+        status: currentAttemptStatus,
+        score: totalPointsEarned,
+        maxScore,
+        percentage,
+        passed,
+        aiScore: percentage,
+        finalScore: percentage,
+        reviewStatus: AssessmentReviewStatus.NOT_REQUIRED,
+        sourceCode,
+        timeSpentSeconds,
+        completedAt: isAttemptFinished ? now : null,
+      },
+    });
+
+    // Platform Verified Skill update: STRICTLY for Platform assessments with AUTOMATED_TEST_CASES
+    if (
+      isAttemptFinished &&
+      attempt.assessment.skillId &&
+      attempt.assessment.companyId === null &&
+      !isExpired
+    ) {
+      await this.updateCandidateSkillScoreInTx(
+        tx,
+        attempt.candidateId,
+        attempt.assessment.skillId,
+        'codingScore',
+        percentage,
+      );
+    }
+
+    return {
+      attemptId,
+      questionId,
+      execution: executionReport,
+      isCorrect,
+      score: percentage,
+      pointsEarned,
+      maxPoints: question.points,
+      passed,
+      timeSpentSeconds,
+      status: currentAttemptStatus,
+      isFinished: isAttemptFinished,
+      totalQuestions: attempt.assessment.questions.length,
+      answeredQuestions: allAnswers.length,
+    };
+  });
+}
+
+  /**
+   * Finalize an attempt explicitly (e.g. candidate clicks Submit All / Finish Exam)
+   */
+  async finalizeAttempt(attemptId: string, candidateUserId: string) {
+    const attempt = await this.validateAttemptOwnership(attemptId, candidateUserId);
+    if (attempt.status === AttemptStatus.COMPLETED || attempt.status === AttemptStatus.EXPIRED) {
+      return attempt;
+    }
+
+    const now = new Date();
+    const elapsedSeconds = Math.round((now.getTime() - attempt.startedAt.getTime()) / 1000);
+    const maxAllowedSeconds = attempt.assessment.timeLimitMinutes * 60 + 30; // 30s grace buffer
+    const isExpired = elapsedSeconds > maxAllowedSeconds;
+    const timeSpentSeconds = Math.min(elapsedSeconds, attempt.assessment.timeLimitMinutes * 60);
+
+    return this.prisma.$transaction(async (tx) => {
+      const allAnswers = await tx.assessmentAnswer.findMany({ where: { attemptId } });
+      const totalPointsEarned = isExpired ? 0 : allAnswers.reduce((sum, a) => sum + a.pointsEarned, 0);
+      const maxScore = attempt.assessment.questions.reduce((sum, q) => sum + q.points, 0);
+      const percentage = isExpired ? 0 : maxScore > 0 ? Math.round((totalPointsEarned / maxScore) * 100) : 0;
+      const passed = !isExpired && percentage >= attempt.assessment.passingScore;
+      const currentAttemptStatus = isExpired ? AttemptStatus.EXPIRED : AttemptStatus.COMPLETED;
+
+      const updated = await tx.assessmentAttempt.update({
+        where: { id: attemptId },
+        data: {
+          status: currentAttemptStatus,
           score: totalPointsEarned,
           maxScore,
           percentage,
           passed,
-          aiScore: percentage,
-          finalScore: percentage,
-          reviewStatus: AssessmentReviewStatus.NOT_REQUIRED,
-          sourceCode,
           timeSpentSeconds,
           completedAt: now,
         },
+        include: {
+          assessment: {
+            include: { skill: true, company: true },
+          },
+          answers: true,
+        },
       });
 
-      // Platform Verified Skill update: STRICTLY for Platform assessments with AUTOMATED_TEST_CASES
-      if (
-        attempt.assessment.skillId &&
-        attempt.assessment.companyId === null &&
-        !isExpired
-      ) {
+      if (!isExpired && attempt.assessment.skillId && attempt.assessment.companyId === null) {
         await this.updateCandidateSkillScoreInTx(
           tx,
           attempt.candidateId,
@@ -674,18 +891,7 @@ export class AssessmentsService {
         );
       }
 
-      return {
-        attemptId,
-        questionId,
-        execution: executionReport,
-        isCorrect,
-        score: percentage,
-        pointsEarned,
-        maxPoints: question.points,
-        passed,
-        timeSpentSeconds,
-        status: finalStatus,
-      };
+      return updated;
     });
   }
 
@@ -819,7 +1025,30 @@ export class AssessmentsService {
       throw new ForbiddenException('Access denied');
     }
 
-    return attempt;
+    return {
+      ...attempt,
+      integritySummary: this.getIntegritySummary(attempt.integrityEvents),
+    };
+  }
+
+  getIntegritySummary(integrityEvents: any): {
+    tabSwitchCount: number;
+    riskLevel: 'NORMAL' | 'SUSPICIOUS' | 'HIGH_RISK';
+    events: any[];
+  } {
+    const events: any[] = Array.isArray(integrityEvents) ? integrityEvents : [];
+    const tabSwitchCount = events.filter(
+      (e) => e.type === 'TAB_BLUR' || e.eventType === 'TAB_BLUR',
+    ).length;
+
+    let riskLevel: 'NORMAL' | 'SUSPICIOUS' | 'HIGH_RISK' = 'NORMAL';
+    if (tabSwitchCount >= 8) {
+      riskLevel = 'HIGH_RISK';
+    } else if (tabSwitchCount >= 3) {
+      riskLevel = 'SUSPICIOUS';
+    }
+
+    return { tabSwitchCount, riskLevel, events };
   }
 
   private async validateAttemptOwnership(attemptId: string, candidateUserId: string) {
@@ -857,12 +1086,20 @@ export class AssessmentsService {
     field: 'theoryScore' | 'codingScore',
     score: number,
   ) {
+    const existing = await tx.candidateSkill.findUnique({
+      where: {
+        candidateId_skillId: { candidateId, skillId },
+      },
+    });
+
+    const bestScore = Math.max(existing?.[field] || 0, score);
+
     const candidateSkill = await tx.candidateSkill.upsert({
       where: {
         candidateId_skillId: { candidateId, skillId },
       },
       update: {
-        [field]: score, // Overwrites with LATEST attempt score
+        [field]: bestScore, // Best Score Retention!
       },
       create: {
         candidateId,
@@ -877,11 +1114,11 @@ export class AssessmentsService {
         candidateSkill.codingScore * 0.3,
     );
 
-    const isPassing = score >= 60 || verifiedScore >= 60;
+    const isPassing = bestScore >= 60 || verifiedScore >= 60;
     await tx.candidateSkill.update({
       where: { id: candidateSkill.id },
       data: {
-        verifiedScore: Math.max(verifiedScore, score),
+        verifiedScore: Math.max(verifiedScore, bestScore),
         isVerified: isPassing || candidateSkill.isVerified,
         verifiedAt: isPassing ? new Date() : candidateSkill.verifiedAt,
       },

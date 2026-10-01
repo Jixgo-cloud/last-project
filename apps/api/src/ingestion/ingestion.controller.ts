@@ -49,11 +49,20 @@ export class IngestionController {
   async triggerCoursesSync(
     @Query('provider') provider?: CourseSource,
     @Query('limit') limit?: string,
+    @Query('skillId') skillId?: string,
+    @Query('keyword') keyword?: string,
   ) {
     return this.ingestionService.syncCourses(
       provider || CourseSource.YOUTUBE,
       limit ? parseInt(limit, 10) : undefined,
+      skillId,
+      keyword,
     );
+  }
+
+  @Post('backfill-course-skills')
+  async backfillCourseSkills() {
+    return this.ingestionService.backfillAllCourseSkills();
   }
 
   @Post('backfill-skills')

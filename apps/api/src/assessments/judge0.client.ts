@@ -107,7 +107,7 @@ export class Judge0Client {
   async execute(
     sourceCode: string,
     testCases: TestCase[],
-    options: { maskHiddenDetails?: boolean } = {},
+    options: { maskHiddenDetails?: boolean; languageId?: number } = {},
   ): Promise<Judge0ExecutionReport> {
     if (!sourceCode || sourceCode.trim().length === 0) {
       throw new BadRequestException('Source code is required');
@@ -124,24 +124,25 @@ export class Judge0Client {
 
     const baseUrl = this.getBaseUrl();
     const headers = this.getHeaders();
+    const languageId = options.languageId || 63;
     let passedCount = 0;
     const details: TestCaseResultDetail[] = [];
     let generalStderr: string | null = null;
     let generalCompileOutput: string | null = null;
     let worstStatus: JudgeResultStatus = 'ACCEPTED';
 
-    this.logger.log(`Submitting ${testCases.length} test cases to Judge0 at ${baseUrl}`);
+    this.logger.log(`Submitting ${testCases.length} test cases to Judge0 (lang: ${languageId}) at ${baseUrl}`);
 
     for (let i = 0; i < testCases.length; i++) {
       const tc = testCases[i];
-      const harness = this.wrapSourceCode(sourceCode, tc.input);
+      const harness = this.wrapSourceCode(sourceCode, tc.input, languageId);
 
       try {
         const response = await axios.post(
           `${baseUrl}/submissions?wait=true`,
           {
             source_code: harness,
-            language_id: 63, // JavaScript (Node.js 18+)
+            language_id: languageId,
             stdin: '',
             expected_output: tc.expectedOutput,
             cpu_time_limit: 3, // 3 seconds timeout
@@ -163,7 +164,7 @@ export class Judge0Client {
 
         const stdout = (data.stdout || '').trim();
         const expected = String(tc.expectedOutput || '').trim();
-        const isMatch = status === 'ACCEPTED' || stdout.toLowerCase() === expected.toLowerCase();
+        const isMatch = status === 'ACCEPTED' || this.isOutputEquivalent(stdout, expected);
 
         if (isMatch) {
           passedCount++;
@@ -332,16 +333,114 @@ export class Judge0Client {
     }
   }
 
-  private wrapSourceCode(sourceCode: string, testInput: string): string {
+  private isOutputEquivalent(actual: string, expected: string): boolean {
+    const act = (actual || '').trim();
+    const exp = (expected || '').trim();
+    if (act === exp) return true;
+    if (act.toLowerCase() === exp.toLowerCase()) return true;
+
+    // Check JSON equivalence (e.g. [1, 2] vs [1,2], booleans, key-ordered objects)
+    try {
+      const actJson = JSON.parse(act);
+      const expJson = JSON.parse(exp);
+      return JSON.stringify(actJson) === JSON.stringify(expJson);
+    } catch {
+      // not JSON
+    }
+
+    // Number equivalence (e.g. 5.0 vs 5)
+    const numAct = Number(act);
+    const numExp = Number(exp);
+    if (!isNaN(numAct) && !isNaN(numExp) && numAct === numExp) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private wrapSourceCode(sourceCode: string, testInput: string, languageId: number = 63): string {
+    if (languageId === 71) {
+      // Python 3.11 Harness
+      return `import json
+import sys
+
+${sourceCode}
+
+if 'solution' not in globals() or not callable(globals().get('solution')):
+    print("Error: ฟังก์ชัน 'solution' ไม่ถูกกำหนด (Function 'solution' is not defined). โปรดตั้งชื่อฟังก์ชันหลักเป็น def solution(...):", file=sys.stderr)
+else:
+    def __parse_input(raw):
+        s = (raw or '').strip()
+        if not s:
+            return []
+        try:
+            parsed = json.loads(s)
+            if isinstance(parsed, list):
+                return parsed
+            return [parsed]
+        except Exception:
+            pass
+        if '|' in s:
+            parts = [p.strip() for p in s.split('|')]
+            res = []
+            for p in parts:
+                try:
+                    res.append(int(p))
+                except ValueError:
+                    try:
+                        res.append(float(p))
+                    except ValueError:
+                        res.append(p)
+            return res
+        if ',' in s:
+            parts = [p.strip() for p in s.split(',')]
+            res = []
+            for p in parts:
+                try:
+                    res.append(int(p))
+                except ValueError:
+                    try:
+                        res.append(float(p))
+                    except ValueError:
+                        res.append(p)
+            return res
+        try:
+            return [int(s)]
+        except ValueError:
+            try:
+                return [float(s)]
+            except ValueError:
+                return [s]
+
+    try:
+        args = __parse_input(${JSON.stringify(testInput)})
+        res = solution(*args)
+        if isinstance(res, (dict, list)):
+            print(json.dumps(res))
+        elif isinstance(res, bool):
+            print("true" if res else "false")
+        else:
+            print(res)
+    except Exception as err:
+        print(f"Runtime Error in solution(): {err}", file=sys.stderr)
+`;
+    }
+
+    // Default: JavaScript (63) / TypeScript (74)
     return `
 ${sourceCode}
 
-if (typeof solution === 'function') {
+if (typeof solution !== 'function') {
+  console.error("Error: ฟังก์ชัน 'solution' ไม่ถูกกำหนด (Function 'solution' is not defined). โปรดตั้งชื่อฟังก์ชันหลักเป็น function solution(...)");
+} else {
   function __parseInput(raw) {
     var str = (raw || '').trim();
-    if (str.startsWith('[') && str.endsWith(']')) {
-      try { return JSON.parse(str); } catch(e) {}
-    }
+    if (!str) return [];
+    try {
+      var parsed = JSON.parse(str);
+      if (Array.isArray(parsed)) return parsed;
+      return [parsed];
+    } catch(e) {}
     if (str.indexOf('|') !== -1) {
       return str.split('|').map(function(s) {
         var p = s.trim();
@@ -352,7 +451,7 @@ if (typeof solution === 'function') {
       var lastIdx = str.lastIndexOf(',');
       var p1 = str.slice(0, lastIdx).trim();
       var p2 = str.slice(lastIdx + 1).trim();
-      return [p1, isNaN(Number(p2)) ? p2 : Number(p2)];
+      return [isNaN(Number(p1)) ? p1 : Number(p1), isNaN(Number(p2)) ? p2 : Number(p2)];
     }
     if (str.indexOf(',') !== -1) {
       return str.split(',').map(function(s) {
@@ -363,12 +462,16 @@ if (typeof solution === 'function') {
     return [isNaN(Number(str)) ? str : Number(str)];
   }
 
-  var __args = __parseInput(${JSON.stringify(testInput)});
-  var __res = solution.apply(null, __args);
-  if (typeof __res === 'object' && __res !== null) {
-    console.log(JSON.stringify(__res));
-  } else {
-    console.log(__res);
+  try {
+    var __args = __parseInput(${JSON.stringify(testInput)});
+    var __res = solution.apply(null, __args);
+    if (typeof __res === 'object' && __res !== null) {
+      console.log(JSON.stringify(__res));
+    } else {
+      console.log(__res);
+    }
+  } catch (err) {
+    console.error("Runtime Error in solution(): " + err.message);
   }
 }
 `;
