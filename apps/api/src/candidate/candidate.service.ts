@@ -180,6 +180,44 @@ export class CandidateService {
           include: {
             company: true,
             skills: { include: { skill: true } },
+            customAssessment: {
+              select: {
+                id: true,
+                title: true,
+                type: true,
+                passingScore: true,
+                timeLimitMinutes: true,
+                description: true,
+              },
+            },
+          },
+        },
+        assignedAssessment: {
+          select: {
+            id: true,
+            title: true,
+            type: true,
+            passingScore: true,
+            timeLimitMinutes: true,
+            description: true,
+          },
+        },
+        candidate: {
+          select: {
+            id: true,
+            fullName: true,
+            assessmentAttempts: {
+              orderBy: { startedAt: 'desc' },
+              select: {
+                id: true,
+                assessmentId: true,
+                score: true,
+                passed: true,
+                status: true,
+                startedAt: true,
+                completedAt: true,
+              },
+            },
           },
         },
         evaluation: true,

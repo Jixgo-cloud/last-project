@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { apiRequest } from '@/lib/api';
+import Link from 'next/link';
 import {
   Users,
   Building2,
@@ -84,15 +85,60 @@ export default function CompanyApplicationsPage() {
   const [evalToast, setEvalToast] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
 
+  // Assessment assignment state
+  const [companyAssessments, setCompanyAssessments] = useState<any[]>([]);
+  const [selectedAppForAssign, setSelectedAppForAssign] = useState<any | null>(null);
+  const [selectedAssessmentId, setSelectedAssessmentId] = useState<string>('');
+  const [assignNote, setAssignNote] = useState<string>('');
+  const [assignSubmitting, setAssignSubmitting] = useState(false);
+  const [assignToast, setAssignToast] = useState<string | null>(null);
+
   const fetchApps = async () => {
     try {
       setLoading(true);
-      const data = await apiRequest('/company/applications');
-      setApplications(data);
+      const [appsData, assessData] = await Promise.all([
+        apiRequest('/company/applications'),
+        apiRequest('/company/assessments').catch(() => []),
+      ]);
+      setApplications(appsData || []);
+      setCompanyAssessments(assessData || []);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleOpenAssignAssessment = (app: any) => {
+    setSelectedAppForAssign(app);
+    const existingId = app.assignedAssessmentId || app.job?.customAssessmentId;
+    setSelectedAssessmentId(existingId || (companyAssessments[0]?.id || ''));
+    setAssignNote('');
+  };
+
+  const handleSubmitAssignAssessment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedAppForAssign || !selectedAssessmentId) {
+      alert('กรุณาเลือกแบบทดสอบที่ต้องการมอบหมาย');
+      return;
+    }
+    setAssignSubmitting(true);
+    try {
+      await apiRequest(`/company/applications/${selectedAppForAssign.id}/assign-assessment`, {
+        method: 'POST',
+        body: JSON.stringify({
+          assessmentId: selectedAssessmentId,
+          note: assignNote || undefined,
+        }),
+      });
+      setSelectedAppForAssign(null);
+      setAssignToast('มอบหมายแบบทดสอบให้ผู้สมัครเรียบร้อยแล้ว พร้อมส่งการแจ้งเตือนไปยังผู้สมัคร');
+      setTimeout(() => setAssignToast(null), 4000);
+      fetchApps();
+    } catch (err: any) {
+      alert(`มอบหมายแบบทดสอบไม่สำเร็จ: ${err.message}`);
+    } finally {
+      setAssignSubmitting(false);
     }
   };
 
@@ -151,6 +197,16 @@ export default function CompanyApplicationsPage() {
   }, []);
 
   const handleStatusChange = async (appId: string, newStatus: ApplicationStatus) => {
+    const targetApp = applications.find((a) => a.id === appId);
+    if (
+      newStatus === ApplicationStatus.TECHNICAL_TEST &&
+      targetApp &&
+      !targetApp.assignedAssessment &&
+      !targetApp.job?.customAssessment
+    ) {
+      handleOpenAssignAssessment(targetApp);
+      return;
+    }
     try {
       await apiRequest(`/company/applications/${appId}/status`, {
         method: 'PUT',
@@ -265,6 +321,17 @@ export default function CompanyApplicationsPage() {
 
       <main className="flex-1 py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
         {/* Toast Alert */}
+        {assignToast && (
+          <div className="mb-6 p-4 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-800 text-sm font-semibold flex items-center justify-between shadow-xs">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-indigo-600 shrink-0" />
+              <span>{assignToast}</span>
+            </div>
+            <button onClick={() => setAssignToast(null)} className="text-indigo-600 hover:text-indigo-800 p-1">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
         {evalToast && (
           <div className="mb-6 p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-semibold flex items-center justify-between shadow-xs">
             <div className="flex items-center gap-2">
@@ -483,47 +550,74 @@ export default function CompanyApplicationsPage() {
                       )}
                     </div>
 
-                    {/* Custom Technical Assessment Results if Job has Assessment */}
-                    {app.job?.customAssessment && (
-                      <div className="mb-5 p-3 rounded-2xl bg-[#f8f9fd] border border-indigo-100/90 shadow-2xs">
-                        <div className="flex items-center justify-between gap-2 mb-1.5">
-                          <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-1">
-                            <Code2 className="h-3 w-3" /> Technical Test: {app.job.customAssessment.title}
-                          </span>
-                          <span className="text-[10px] text-slate-400">เกณฑ์ {app.job.customAssessment.passingScore}%</span>
-                        </div>
-                        {(() => {
-                          const customAttempt = (app.candidate?.assessmentAttempts || []).find(
-                            (att: any) => att.assessmentId === app.job.customAssessmentId,
-                          );
-                          if (!customAttempt) {
+                    {/* Custom Technical Assessment Results (Assigned or Job Default) */}
+                    {(() => {
+                      const effectiveAssessment = app.assignedAssessment || app.job?.customAssessment;
+                      if (!effectiveAssessment) return null;
+
+                      const targetAssessmentId = app.assignedAssessmentId || app.job?.customAssessmentId;
+                      const customAttempt = (app.candidate?.assessmentAttempts || []).find(
+                        (att: any) => att.assessmentId === targetAssessmentId
+                      );
+
+                      return (
+                        <div className="mb-5 p-3.5 rounded-2xl bg-[#f8f9fd] border border-indigo-100/90 shadow-2xs">
+                          <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-1">
+                                <Code2 className="h-3 w-3" /> Technical Test: {effectiveAssessment.title}
+                              </span>
+                              {app.assignedAssessment ? (
+                                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 border border-purple-200">
+                                  Custom Assigned
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                                  Job Default
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-slate-400">เกณฑ์ {effectiveAssessment.passingScore}%</span>
+                          </div>
+                          {(() => {
+                            if (!customAttempt) {
+                              return (
+                                <div className="text-[11px] text-slate-500 flex items-center justify-between gap-2 pt-0.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <Clock className="h-3 w-3 text-amber-500" />
+                                    <span>ยังไม่ได้เริ่มทำแบบทดสอบนี้</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenAssignAssessment(app)}
+                                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
+                                  >
+                                    เปลี่ยนข้อสอบ
+                                  </button>
+                                </div>
+                              );
+                            }
+                            const isPassed = customAttempt.score >= (effectiveAssessment.passingScore || 70);
                             return (
-                              <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
-                                <Clock className="h-3 w-3 text-amber-500" />
-                                <span>ยังไม่ได้เริ่มทำแบบทดสอบเฉพาะตำแหน่งนี้</span>
+                              <div className="flex items-center justify-between text-xs pt-0.5">
+                                <span className="font-semibold text-slate-800">
+                                  คะแนนล่าสุด: <span className="font-extrabold text-[#4f46e5] text-sm">{customAttempt.score}%</span>
+                                </span>
+                                <span
+                                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                    isPassed
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      : 'bg-rose-50 text-rose-700 border-rose-200'
+                                  }`}
+                                >
+                                  {isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ยังไม่ผ่าน (Failed)'}
+                                </span>
                               </div>
                             );
-                          }
-                          const isPassed = customAttempt.score >= (app.job.customAssessment.passingScore || 70);
-                          return (
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-semibold text-slate-800">
-                                คะแนนล่าสุด: <span className="font-extrabold text-[#4f46e5] text-sm">{customAttempt.score}%</span>
-                              </span>
-                              <span
-                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                  isPassed
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                    : 'bg-rose-50 text-rose-700 border-rose-200'
-                                }`}
-                              >
-                                {isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ยังไม่ผ่าน (Failed)'}
-                              </span>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
+                          })()}
+                        </div>
+                      );
+                    })()}
 
                     {/* Pipeline Stage Select */}
                     <div className="pt-3 border-t border-slate-100">
@@ -547,7 +641,7 @@ export default function CompanyApplicationsPage() {
                     </div>
                   </div>
 
-                  {/* Action Buttons: View Profile + Evaluation */}
+                  {/* Action Buttons: View Profile + Assign Test + Evaluation */}
                   <div className="mt-5 pt-3 border-t border-slate-100 flex flex-col sm:flex-row gap-2">
                     <button
                       type="button"
@@ -555,7 +649,16 @@ export default function CompanyApplicationsPage() {
                       className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-full text-xs font-bold border border-slate-200/90 bg-slate-50/70 hover:bg-indigo-50/80 hover:border-indigo-200 hover:text-[#4f46e5] text-slate-700 transition shadow-2xs cursor-pointer group"
                     >
                       <UserCheck className="h-3.5 w-3.5 text-[#4f46e5] group-hover:scale-110 transition" />
-                      <span>ดูโปรไฟล์ & เรดาร์</span>
+                      <span>ดูโปรไฟล์</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAssignAssessment(app)}
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-full text-xs font-bold border border-indigo-200/90 bg-indigo-50/50 hover:bg-indigo-100/80 hover:border-indigo-300 text-indigo-700 transition shadow-2xs cursor-pointer group"
+                      title="มอบหมายหรือเปลี่ยนแบบทดสอบเฉพาะบุคคล"
+                    >
+                      <Sparkles className="h-3.5 w-3.5 text-[#6366f1] group-hover:scale-110 transition" />
+                      <span>{app.assignedAssessment ? 'เปลี่ยนข้อสอบ' : 'มอบหมายข้อสอบ'}</span>
                     </button>
                     <button
                       type="button"
@@ -582,6 +685,122 @@ export default function CompanyApplicationsPage() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Assign Assessment Modal */}
+        {selectedAppForAssign && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 overflow-y-auto">
+            <div className="bg-white rounded-[28px] p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-slate-200/90 my-8 animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                <div>
+                  <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block mb-1">
+                    Skill Assessment Assignment
+                  </span>
+                  <h3 className="text-xl font-black text-slate-900">
+                    มอบหมายแบบทดสอบ: {selectedAppForAssign.candidate?.fullName}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    ตำแหน่งงาน: <strong className="text-slate-700">{selectedAppForAssign.job?.title}</strong>
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedAppForAssign(null)}
+                  className="p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSubmitAssignAssessment} className="mt-6 space-y-5">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-2">
+                    เลือกแบบทดสอบจากคลังข้อสอบของบริษัท <span className="text-rose-500">*</span>
+                  </label>
+                  {companyAssessments.length === 0 ? (
+                    <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+                      <p className="font-bold mb-1">ยังไม่มีแบบทดสอบในคลังข้อสอบของบริษัท</p>
+                      <p className="text-[11px] mb-3 leading-relaxed">
+                        คุณสามารถสร้างแบบทดสอบทักษะ Coding Sandbox หรือ Theory Quiz ได้ที่หน้าจัดการข้อสอบ
+                      </p>
+                      <Link
+                        href="/company/assessments"
+                        className="inline-flex items-center gap-1.5 font-bold text-[#6366f1] underline hover:text-indigo-800"
+                      >
+                        ไปที่หน้าจัดการข้อสอบ (Create Assessment) →
+                      </Link>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <select
+                        value={selectedAssessmentId}
+                        onChange={(e) => setSelectedAssessmentId(e.target.value)}
+                        required
+                        className="w-full text-xs font-semibold rounded-xl border border-slate-200 py-3 px-3.5 bg-slate-50 hover:bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition cursor-pointer"
+                      >
+                        <option value="">-- กรุณาเลือกแบบทดสอบ --</option>
+                        {companyAssessments.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.title} ({a.type === 'PRACTICAL_CODING' ? 'Coding Sandbox' : 'Theory'}, {a.timeLimitMinutes} นาที, เกณฑ์ {a.passingScore}%)
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Selected assessment preview card */}
+                      {(() => {
+                        const preview = companyAssessments.find((a) => a.id === selectedAssessmentId);
+                        if (!preview) return null;
+                        return (
+                          <div className="p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-100 text-xs text-slate-700 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-indigo-900">{preview.title}</span>
+                              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-white text-indigo-700 border border-indigo-200">
+                                {preview.type === 'PRACTICAL_CODING' ? '💻 Coding Sandbox' : '📝 Theory Quiz'}
+                              </span>
+                            </div>
+                            {preview.description && <p className="text-[11px] text-slate-600 italic leading-relaxed">{preview.description}</p>}
+                            <div className="flex items-center gap-4 text-[11px] text-slate-600 pt-1">
+                              <span>ระยะเวลา: <strong>{preview.timeLimitMinutes} นาที</strong></span>
+                              <span>เกณฑ์คะแนนผ่าน: <strong>{preview.passingScore}%</strong></span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    ข้อความหรือคำแนะนำเพิ่มเติมถึงผู้สมัคร (Optional Note)
+                  </label>
+                  <textarea
+                    value={assignNote}
+                    onChange={(e) => setAssignNote(e.target.value)}
+                    rows={3}
+                    placeholder="เช่น ขอให้เข้าทำแบบทดสอบภายใน 3 วัน หรือเตรียมคอมพิวเตอร์ให้พร้อมสำหรับการเขียนโค้ด..."
+                    className="w-full text-xs rounded-xl border border-slate-200 p-3 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition leading-relaxed"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAppForAssign(null)}
+                    className="px-5 py-2.5 rounded-full text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={assignSubmitting || !selectedAssessmentId}
+                    className="px-6 py-2.5 rounded-full text-xs font-bold bg-[#6366f1] hover:bg-[#4f46e5] text-white shadow-xs shadow-indigo-500/20 disabled:opacity-50 transition cursor-pointer flex items-center gap-2"
+                  >
+                    {assignSubmitting ? 'กำลังส่งมอบหมาย...' : 'ยืนยันและส่งแบบทดสอบ'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         )}
 

@@ -15,6 +15,7 @@ import {
   ArrowRight,
   TrendingUp,
   Bell,
+  Code2,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -257,6 +258,116 @@ export default function ApplicationsPage() {
                     })}
                   </div>
                 </div>
+
+                {/* Candidate Skill Assessment Card */}
+                {(() => {
+                  const effectiveAssessment = app.assignedAssessment || app.job?.customAssessment;
+                  if (!effectiveAssessment && app.status !== 'TECHNICAL_TEST') return null;
+
+                  const customAttempt = (app.candidate?.assessmentAttempts || []).find(
+                    (att: any) => att.assessmentId === effectiveAssessment?.id
+                  );
+                  const isPassed = customAttempt && customAttempt.score >= (effectiveAssessment?.passingScore || 70);
+
+                  return (
+                    <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/70 via-white to-purple-50/40 p-5 shadow-xs">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 pb-3 border-b border-indigo-100/70">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-xl bg-[#6366f1] text-white flex items-center justify-center shadow-xs shadow-indigo-500/20 shrink-0">
+                            <Code2 className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">
+                                {app.assignedAssessment ? 'แบบทดสอบที่ได้รับมอบหมายพิเศษ (Assigned Test)' : 'แบบทดสอบคัดกรองเฉพาะตำแหน่ง (Job Assessment)'}
+                              </span>
+                              {effectiveAssessment?.type && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+                                  {effectiveAssessment.type === 'PRACTICAL_CODING' ? 'Coding Sandbox' : 'Theory Quiz'}
+                                </span>
+                              )}
+                            </div>
+                            <h4 className="text-sm sm:text-base font-extrabold text-slate-900 mt-0.5">
+                              {effectiveAssessment ? effectiveAssessment.title : 'แบบทดสอบทักษะเฉพาะทาง'}
+                            </h4>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          {customAttempt ? (
+                            <div className="flex items-center gap-2">
+                              <div className="text-right">
+                                <span className="text-[10px] text-slate-500 block">คะแนนล่าสุด</span>
+                                <span className="text-sm font-black text-indigo-700">{customAttempt.score}%</span>
+                              </div>
+                              <span
+                                className={`text-xs font-bold px-3 py-1 rounded-full border ${
+                                  isPassed
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : 'bg-rose-50 text-rose-700 border-rose-200'
+                                }`}
+                              >
+                                {isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ยังไม่ผ่าน (Failed)'}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1.5">
+                              <Clock className="h-3.5 w-3.5 text-amber-500" /> รอเข้าทำแบบทดสอบ
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                        <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600">
+                          {effectiveAssessment?.timeLimitMinutes && (
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3.5 w-3.5 text-slate-400" />
+                              เวลา: <strong>{effectiveAssessment.timeLimitMinutes} นาที</strong>
+                            </span>
+                          )}
+                          {effectiveAssessment?.passingScore && (
+                            <span className="flex items-center gap-1">
+                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                              เกณฑ์ผ่าน: <strong>{effectiveAssessment.passingScore}%</strong>
+                            </span>
+                          )}
+                          {customAttempt?.completedAt && (
+                            <span className="text-[11px] text-slate-400">
+                              (ส่งข้อสอบเมื่อ: {new Date(customAttempt.completedAt).toLocaleDateString('th-TH')})
+                            </span>
+                          )}
+                        </div>
+
+                        {effectiveAssessment?.id && (
+                          <div className="flex items-center gap-2">
+                            <Link
+                              href={`/assessments/${effectiveAssessment.id}`}
+                              className={`inline-flex items-center gap-2 rounded-full px-5 py-2 text-xs font-bold transition shadow-xs cursor-pointer ${
+                                customAttempt
+                                  ? 'bg-white hover:bg-slate-50 text-indigo-600 border border-indigo-200 shadow-slate-100'
+                                  : 'bg-[#6366f1] hover:bg-[#4f46e5] text-white shadow-indigo-500/20'
+                              }`}
+                            >
+                              {customAttempt ? (
+                                <>
+                                  <span>ทำแบบทดสอบอีกครั้ง</span>
+                                  <ArrowRight className="h-3.5 w-3.5" />
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles className="h-3.5 w-3.5" />
+                                  <span>เริ่มทำแบบทดสอบทันที</span>
+                                  <ArrowRight className="h-3.5 w-3.5" />
+                                </>
+                              )}
+                            </Link>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Company Evaluation & Feedback Box */}
                 {app.evaluation ? (

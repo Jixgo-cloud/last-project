@@ -52,6 +52,11 @@ export class CompanyController {
     return this.companyService.createJob(req.user.id, body);
   }
 
+  @Put('jobs/:id')
+  async updateJob(@Request() req: any, @Param('id') id: string, @Body() body: any) {
+    return this.companyService.updateJob(req.user.id, id, body);
+  }
+
   @Patch('jobs/:id/toggle')
   async toggleJob(@Request() req: any, @Param('id') id: string) {
     return this.companyService.toggleJobStatus(req.user.id, id);
@@ -86,9 +91,18 @@ export class CompanyController {
   async updateStatus(
     @Request() req: any,
     @Param('id') id: string,
-    @Body() body: { status: ApplicationStatus; note?: string },
+    @Body() body: { status: ApplicationStatus; note?: string; assessmentId?: string },
   ) {
-    return this.companyService.updateApplicationStatus(req.user.id, id, body.status, body.note);
+    return this.companyService.updateApplicationStatus(req.user.id, id, body.status, body.note, body.assessmentId);
+  }
+
+  @Post('applications/:id/assign-assessment')
+  async assignAssessment(
+    @Request() req: any,
+    @Param('id') id: string,
+    @Body() body: { assessmentId: string; note?: string },
+  ) {
+    return this.companyService.assignAssessmentToApplication(req.user.id, id, body.assessmentId, body.note);
   }
 
   @Get('candidates/:candidateId')

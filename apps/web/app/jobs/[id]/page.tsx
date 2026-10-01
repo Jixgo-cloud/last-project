@@ -22,6 +22,7 @@ import {
   Clock,
   X,
   Heart,
+  Code2,
 } from 'lucide-react';
 
 import Link from 'next/link';
@@ -350,6 +351,52 @@ export default function JobDetailPage() {
                     <div className="bg-[#f9fafb] border border-slate-200/70 rounded-2xl p-4 sm:p-5">
                       <FormattedJobContent content={job.benefits} />
                     </div>
+                  </div>
+                )}
+
+                {/* 4. แบบทดสอบคัดกรองเฉพาะตำแหน่ง (Technical Assessment) */}
+                {job.customAssessment && (
+                  <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/70 via-[#f8f9fd] to-purple-50/40 p-5 sm:p-6 shadow-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3 pb-3 border-b border-indigo-100/70">
+                      <div className="flex items-center gap-2">
+                        <div className="h-8 w-8 rounded-xl bg-[#6366f1] text-white flex items-center justify-center shadow-xs shadow-indigo-500/20">
+                          <Code2 className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider block">
+                            Screening Assessment
+                          </span>
+                          <h4 className="text-sm sm:text-base font-extrabold text-slate-900">
+                            แบบทดสอบเฉพาะตำแหน่ง: {job.customAssessment.title}
+                          </h4>
+                        </div>
+                      </div>
+                      <span className="self-start sm:self-auto text-[11px] font-extrabold px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">
+                        {job.customAssessment.type === 'PRACTICAL_CODING' ? '💻 Coding Sandbox' : '📝 Theory Quiz'}
+                      </span>
+                    </div>
+
+                    {job.customAssessment.description && (
+                      <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+                        {job.customAssessment.description}
+                      </p>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-white/90 p-3.5 rounded-xl border border-indigo-100/80">
+                      <div className="flex items-center gap-2 text-slate-700">
+                        <Clock className="h-4 w-4 text-indigo-500" />
+                        <span>ระยะเวลาในการทำ: <strong className="text-slate-900">{job.customAssessment.timeLimitMinutes} นาที</strong></span>
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-700">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                        <span>เกณฑ์คะแนนผ่าน: <strong className="text-slate-900">{job.customAssessment.passingScore}%</strong></span>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-indigo-600/90 font-medium mt-3 flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5 shrink-0" />
+                      ผู้สมัครจะได้รับมอบหมายให้ทำแบบทดสอบผ่านระบบ และผลคะแนนจะถูกส่งให้ผู้ว่าจ้างพิจารณาโดยตรง
+                    </p>
                   </div>
                 )}
               </div>

@@ -132,6 +132,48 @@ export class CompanyService {
     return job;
   }
 
+  async updateJob(userId: string, jobId: string, jobDto: any) {
+    const company = await this.getCompanyByUserId(userId);
+    const job = await this.prisma.job.findFirst({
+      where: { id: jobId, companyId: company.id },
+    });
+    if (!job) throw new NotFoundException('Job not found or unauthorized');
+
+    const updateData: any = {};
+    if (jobDto.title !== undefined) updateData.title = jobDto.title;
+    if (jobDto.description !== undefined) updateData.description = jobDto.description;
+    if (jobDto.requirements !== undefined) updateData.requirements = jobDto.requirements;
+    if (jobDto.benefits !== undefined) updateData.benefits = jobDto.benefits;
+    if (jobDto.location !== undefined) updateData.location = jobDto.location;
+    if (jobDto.isRemote !== undefined) updateData.isRemote = jobDto.isRemote;
+    if (jobDto.employmentType !== undefined) updateData.employmentType = jobDto.employmentType;
+    if (jobDto.salaryMin !== undefined) updateData.salaryMin = jobDto.salaryMin ? parseInt(jobDto.salaryMin) : null;
+    if (jobDto.salaryMax !== undefined) updateData.salaryMax = jobDto.salaryMax ? parseInt(jobDto.salaryMax) : null;
+    if (jobDto.salaryCurrency !== undefined) updateData.salaryCurrency = jobDto.salaryCurrency;
+    if (jobDto.acceptedQuota !== undefined) updateData.acceptedQuota = jobDto.acceptedQuota ? parseInt(jobDto.acceptedQuota) : null;
+    if (jobDto.customAssessmentId !== undefined) updateData.customAssessmentId = jobDto.customAssessmentId || null;
+
+    if (jobDto.skills && Array.isArray(jobDto.skills)) {
+      await this.prisma.jobSkill.deleteMany({ where: { jobId } });
+      updateData.skills = {
+        create: jobDto.skills.map((s: { skillId: string; isRequired?: boolean; minimumScore?: number }) => ({
+          skillId: s.skillId,
+          isRequired: s.isRequired !== false,
+          minimumScore: s.minimumScore || 50,
+        })),
+      };
+    }
+
+    return this.prisma.job.update({
+      where: { id: jobId },
+      data: updateData,
+      include: {
+        skills: { include: { skill: true } },
+        customAssessment: true,
+      },
+    });
+  }
+
   async toggleJobStatus(userId: string, jobId: string) {
     const company = await this.getCompanyByUserId(userId);
     const job = await this.prisma.job.findFirst({
@@ -179,8 +221,18 @@ export class CompanyService {
                 title: true,
                 passingScore: true,
                 type: true,
+                timeLimitMinutes: true,
               },
             },
+          },
+        },
+        assignedAssessment: {
+          select: {
+            id: true,
+            title: true,
+            passingScore: true,
+            type: true,
+            timeLimitMinutes: true,
           },
         },
         candidate: {
@@ -211,16 +263,39 @@ export class CompanyService {
     applicationId: string,
     newStatus: ApplicationStatus,
     note?: string,
+    assessmentId?: string,
   ) {
     const company = await this.getCompanyByUserId(userId);
 
     const application = await this.prisma.jobApplication.findUnique({
       where: { id: applicationId },
-      include: { job: true, candidate: true },
+      include: {
+        job: {
+          include: { customAssessment: true },
+        },
+        candidate: true,
+        assignedAssessment: true,
+      },
     });
 
     if (!application || application.job.companyId !== company.id) {
       throw new ForbiddenException('Cannot update application for another company');
+    }
+
+    let assignedAssessmentId = application.assignedAssessmentId;
+    let assignedAssessmentObj: any = application.assignedAssessment;
+    if (assessmentId) {
+      const assess = await this.prisma.assessment.findFirst({
+        where: {
+          id: assessmentId,
+          isActive: true,
+          OR: [{ companyId: company.id }, { companyId: null }],
+        },
+      });
+      if (assess) {
+        assignedAssessmentId = assess.id;
+        assignedAssessmentObj = assess;
+      }
     }
 
     const previousStatus = application.status;
@@ -229,17 +304,24 @@ export class CompanyService {
       where: { id: applicationId },
       data: {
         status: newStatus,
+        assignedAssessmentId: assignedAssessmentId || null,
         internalNote: note ? `${application.internalNote || ''}\n[${new Date().toISOString()}] ${note}` : application.internalNote,
         statusHistory: {
           create: {
             previousStatus,
             newStatus,
             changedById: userId,
-            note: note || `Status updated to ${newStatus}`,
+            note: note || (newStatus === ApplicationStatus.TECHNICAL_TEST && assignedAssessmentObj
+              ? `Status updated to TECHNICAL_TEST with assessment "${assignedAssessmentObj.title}"`
+              : `Status updated to ${newStatus}`),
           },
         },
       },
       include: {
+        job: {
+          include: { customAssessment: true },
+        },
+        assignedAssessment: true,
         statusHistory: true,
       },
     });
@@ -248,7 +330,10 @@ export class CompanyService {
     try {
       const candidateUserId = application.candidate?.userId;
       if (candidateUserId) {
-        const statusNotifMap: Record<ApplicationStatus, { title: string; message: string }> = {
+        const effectiveAssessment = assignedAssessmentObj || application.job?.customAssessment;
+        const testName = effectiveAssessment?.title ? ` "${effectiveAssessment.title}"` : '';
+
+        const statusNotifMap: Record<ApplicationStatus, { title: string; message: string; type?: NotificationType }> = {
           [ApplicationStatus.INTERVIEW]: {
             title: 'นัดหมายสัมภาษณ์งาน',
             message: `บริษัท ${company.name} ได้นัดหมายสัมภาษณ์งานสำหรับตำแหน่ง "${application.job.title}"`,
@@ -259,7 +344,8 @@ export class CompanyService {
           },
           [ApplicationStatus.TECHNICAL_TEST]: {
             title: 'มอบหมายแบบทดสอบทักษะ (Skill Assessment)',
-            message: `บริษัท ${company.name} เชิญให้คุณทำแบบทดสอบทักษะสำหรับตำแหน่ง "${application.job.title}"`,
+            message: `บริษัท ${company.name} เชิญให้คุณทำแบบทดสอบทักษะ${testName} สำหรับตำแหน่ง "${application.job.title}"`,
+            type: NotificationType.ASSESSMENT_ASSIGNED,
           },
           [ApplicationStatus.ACCEPTED]: {
             title: '✅ ยืนยันการตอบรับเข้าทำงาน (Accepted)',
@@ -288,17 +374,23 @@ export class CompanyService {
           message: `ใบสมัครงานตำแหน่ง "${application.job.title}" ได้รับการปรับสถานะเป็น ${newStatus}`,
         };
 
+        const notifLink = newStatus === ApplicationStatus.TECHNICAL_TEST && effectiveAssessment?.id
+          ? `/assessments/${effectiveAssessment.id}`
+          : '/applications';
+
         await this.notificationsService.createNotification(candidateUserId, {
-          type: NotificationType.APPLICATION_STATUS_CHANGED,
+          type: notifPayload.type || NotificationType.APPLICATION_STATUS_CHANGED,
           title: notifPayload.title,
           message: notifPayload.message,
-          link: '/applications',
+          link: notifLink,
           metadata: {
             applicationId: application.id,
             jobId: application.jobId,
             jobTitle: application.job.title,
             companyId: company.id,
             companyName: company.name,
+            assessmentId: effectiveAssessment?.id || null,
+            assessmentTitle: effectiveAssessment?.title || null,
             previousStatus,
             newStatus,
             note: note || null,
@@ -335,6 +427,21 @@ export class CompanyService {
     }
 
     return updated;
+  }
+
+  async assignAssessmentToApplication(
+    userId: string,
+    applicationId: string,
+    assessmentId: string,
+    note?: string,
+  ) {
+    return this.updateApplicationStatus(
+      userId,
+      applicationId,
+      ApplicationStatus.TECHNICAL_TEST,
+      note || 'Assigned skill assessment test',
+      assessmentId,
+    );
   }
 
   // GAP-COM-02 (TC-COM-13): Applicant Batch Data Export (CSV Export)

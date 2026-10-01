@@ -205,6 +205,16 @@ export class JobsService {
         skills: {
           include: { skill: true },
         },
+        customAssessment: {
+          select: {
+            id: true,
+            title: true,
+            type: true,
+            passingScore: true,
+            timeLimitMinutes: true,
+            description: true,
+          },
+        },
         _count: { select: { applications: true } },
       },
     });
