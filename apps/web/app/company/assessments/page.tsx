@@ -26,6 +26,7 @@ import {
   FileCode,
   Send,
   Eye,
+  ExternalLink,
   ShieldAlert,
   ChevronUp,
   ChevronDown,
@@ -1556,7 +1557,14 @@ export default function CompanyAssessmentsPage() {
                         {attemptsList.map((att) => (
                           <tr key={att.id} className="hover:bg-slate-50/80 transition">
                             <td className="py-3 px-4 font-semibold text-slate-900">
-                              <div>{att.candidate?.fullName || 'ผู้สมัคร'}</div>
+                              <Link
+                                href={`/company/applications?candidateId=${att.candidate?.id || att.candidateId}`}
+                                className="group inline-flex items-center gap-1 hover:text-[#4f46e5] transition"
+                                title="คลิกเพื่อดูโปรไฟล์และเรดาร์ทักษะของผู้สมัคร"
+                              >
+                                <span>{att.candidate?.fullName || 'ผู้สมัคร'}</span>
+                                <ExternalLink className="h-3 w-3 text-slate-400 group-hover:text-[#4f46e5] opacity-0 group-hover:opacity-100 transition" />
+                              </Link>
                               <div className="text-[10px] text-slate-400 font-normal">
                                 {att.candidate?.targetCareer || 'Developer'}
                               </div>

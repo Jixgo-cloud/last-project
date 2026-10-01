@@ -1,10 +1,14 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CandidateService } from '../candidate/candidate.service';
 import { VerificationStatus, ApplicationStatus } from '@smartcareer/shared';
 
 @Injectable()
 export class CompanyService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private candidateService: CandidateService,
+  ) {}
 
   async getCompanyByUserId(userId: string) {
     const member = await this.prisma.companyMember.findFirst({
@@ -635,4 +639,126 @@ export class CompanyService {
       };
     });
   }
+
+  async getCandidateProfile(userId: string, candidateId: string) {
+    const company = await this.getCompanyByUserId(userId);
+
+    // Verify authorization: Ensure candidate has applied to at least one job from this company
+    const application = await this.prisma.jobApplication.findFirst({
+      where: {
+        candidateId,
+        job: { companyId: company.id },
+      },
+      include: {
+        job: {
+          select: {
+            id: true,
+            title: true,
+            location: true,
+            employmentType: true,
+            customAssessmentId: true,
+            customAssessment: {
+              select: {
+                id: true,
+                title: true,
+                passingScore: true,
+                type: true,
+              },
+            },
+          },
+        },
+        evaluation: true,
+        statusHistory: { orderBy: { createdAt: 'desc' } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!application) {
+      throw new ForbiddenException(
+        'You can only view profiles of candidates who have applied to your company.',
+      );
+    }
+
+    const candidate = await this.prisma.candidateProfile.findUnique({
+      where: { id: candidateId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            avatarUrl: true,
+            createdAt: true,
+          },
+        },
+        skills: {
+          include: {
+            skill: true,
+            evidences: {
+              include: { repository: true },
+            },
+          },
+        },
+        githubRepos: {
+          orderBy: { stargazersCount: 'desc' },
+        },
+        assessmentAttempts: {
+          orderBy: { startedAt: 'desc' },
+          include: {
+            assessment: {
+              select: {
+                id: true,
+                title: true,
+                type: true,
+                passingScore: true,
+                companyId: true,
+              },
+            },
+          },
+        },
+        evaluations: {
+          where: { companyId: company.id },
+          include: {
+            company: {
+              select: { id: true, name: true, logoUrl: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!candidate) {
+      throw new NotFoundException('Candidate profile not found');
+    }
+
+    // Process attempts integrity summaries
+    const attemptsWithIntegrity = (candidate.assessmentAttempts || []).map((att) => {
+      const events: any[] = Array.isArray(att.integrityEvents) ? (att.integrityEvents as any[]) : [];
+      const tabSwitchCount = events.filter(
+        (e) => e.type === 'TAB_BLUR' || e.eventType === 'TAB_BLUR',
+      ).length;
+      let riskLevel: 'NORMAL' | 'SUSPICIOUS' | 'HIGH_RISK' = 'NORMAL';
+      if (tabSwitchCount >= 8) riskLevel = 'HIGH_RISK';
+      else if (tabSwitchCount >= 3) riskLevel = 'SUSPICIOUS';
+
+      return {
+        ...att,
+        integritySummary: {
+          tabSwitchCount,
+          riskLevel,
+          events,
+        },
+      };
+    });
+
+    // Compute radar data using candidateService
+    const radarData = await this.candidateService.getRadarData(candidate.userId);
+
+    return {
+      ...candidate,
+      assessmentAttempts: attemptsWithIntegrity,
+      radarData,
+      application,
+    };
+  }
 }
+

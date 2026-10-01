@@ -87,6 +87,14 @@ export class CompanyController {
     return this.companyService.updateApplicationStatus(req.user.id, id, body.status, body.note);
   }
 
+  @Get('candidates/:candidateId')
+  async getCandidateProfile(
+    @Request() req: any,
+    @Param('candidateId') candidateId: string,
+  ) {
+    return this.companyService.getCandidateProfile(req.user.id, candidateId);
+  }
+
   // --- Company Custom Assessments ---
   @Get('assessments')
   async listCompanyAssessments(@Request() req: any) {

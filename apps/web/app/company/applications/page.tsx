@@ -26,7 +26,27 @@ import {
   Layers,
   Code2,
   Download,
+  ExternalLink,
+  Eye,
+  UserCheck,
+  GraduationCap,
+  FileText,
+  Activity,
+  ShieldAlert,
+  GitBranch,
+  Mail,
+  MapPin,
+  Calendar,
+  Check,
 } from 'lucide-react';
+import {
+  Radar,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  ResponsiveContainer,
+} from 'recharts';
 import { ApplicationStatus } from '@smartcareer/shared';
 
 const STATUS_OPTIONS: { value: ApplicationStatus; label: string; labelTh: string; color: string }[] = [
@@ -47,6 +67,12 @@ export default function CompanyApplicationsPage() {
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+
+  // Candidate Profile Dossier Modal states
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+  const [candidateProfile, setCandidateProfile] = useState<any | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [profileTab, setProfileTab] = useState<'overview' | 'skills' | 'github' | 'assessments' | 'experience'>('overview');
 
   // Evaluation form state
   const [technicalScore, setTechnicalScore] = useState(4);
@@ -70,8 +96,58 @@ export default function CompanyApplicationsPage() {
     }
   };
 
+  const handleOpenProfile = async (candidateId: string) => {
+    if (!candidateId) return;
+    setSelectedCandidateId(candidateId);
+    setLoadingProfile(true);
+    setProfileTab('overview');
+    try {
+      const data = await apiRequest(`/company/candidates/${candidateId}`);
+      setCandidateProfile(data);
+    } catch (err: any) {
+      alert(`ไม่สามารถดึงข้อมูลโปรไฟล์ผู้สมัครได้: ${err.message}`);
+      setSelectedCandidateId(null);
+    } finally {
+      setLoadingProfile(false);
+    }
+  };
+
+  const handleCloseProfile = () => {
+    setSelectedCandidateId(null);
+    setCandidateProfile(null);
+  };
+
+  const handleOpenEvalFromProfile = () => {
+    const currentApp = applications.find((a) => (a.candidate?.id || a.candidateId) === selectedCandidateId) || candidateProfile?.application;
+    if (currentApp) {
+      handleCloseProfile();
+      handleOpenEvaluation(currentApp);
+    }
+  };
+
+  const handleStatusChangeFromProfile = async (newStatus: ApplicationStatus) => {
+    const appId = candidateProfile?.application?.id || applications.find((a) => (a.candidate?.id || a.candidateId) === selectedCandidateId)?.id;
+    if (!appId) return;
+    await handleStatusChange(appId, newStatus);
+    setCandidateProfile((prev: any) =>
+      prev
+        ? {
+            ...prev,
+            application: prev.application ? { ...prev.application, status: newStatus } : undefined,
+          }
+        : null,
+    );
+  };
+
   useEffect(() => {
     fetchApps();
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const candidateIdParam = urlParams.get('candidateId');
+      if (candidateIdParam) {
+        handleOpenProfile(candidateIdParam);
+      }
+    }
   }, []);
 
   const handleStatusChange = async (appId: string, newStatus: ApplicationStatus) => {
@@ -329,21 +405,41 @@ export default function CompanyApplicationsPage() {
                   className="rounded-[24px] border border-slate-200/90 bg-white/95 p-6 shadow-[0_12px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm hover:shadow-[0_16px_40px_rgba(79,70,229,0.08)] hover:border-indigo-200/80 transition-all flex flex-col justify-between"
                 >
                   <div>
-                    {/* Top Header */}
+                    {/* Top Header with Clickable Profile Link */}
                     <div className="flex items-start justify-between gap-3 mb-4">
-                      <div>
-                        <h3 className="text-base font-black text-slate-900">
-                          {app.candidate?.fullName || 'Candidate'}
-                        </h3>
-                        <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium mt-0.5">
-                          <Briefcase className="h-3 w-3 text-slate-400" />
-                          <span>{app.job?.title || 'Position'}</span>
+                      <div className="flex items-start gap-3">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenProfile(app.candidate?.id || app.candidateId)}
+                          className="h-11 w-11 rounded-2xl bg-gradient-to-tr from-[#6366f1] via-[#4f46e5] to-[#3730a3] text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs hover:ring-2 hover:ring-indigo-400 hover:scale-105 transition cursor-pointer overflow-hidden group"
+                          title="คลิกเพื่อดูโปรไฟล์ผู้สมัครแบบเต็ม"
+                        >
+                          {app.candidate?.avatarUrl ? (
+                            <img src={app.candidate.avatarUrl} alt={app.candidate?.fullName} className="h-full w-full object-cover" />
+                          ) : (
+                            <span>{(app.candidate?.fullName || 'C').charAt(0).toUpperCase()}</span>
+                          )}
+                        </button>
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenProfile(app.candidate?.id || app.candidateId)}
+                            className="text-base font-black text-slate-900 hover:text-[#4f46e5] transition flex items-center gap-1.5 text-left group cursor-pointer"
+                            title="คลิกดูโปรไฟล์ผู้สมัครและเรดาร์ทักษะ"
+                          >
+                            <span>{app.candidate?.fullName || 'Candidate'}</span>
+                            <Eye className="h-3.5 w-3.5 text-slate-400 group-hover:text-[#4f46e5] opacity-60 group-hover:opacity-100 transition shrink-0" />
+                          </button>
+                          <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium mt-0.5">
+                            <Briefcase className="h-3 w-3 text-slate-400 shrink-0" />
+                            <span>{app.job?.title || 'Position'}</span>
+                          </div>
                         </div>
                       </div>
 
                       {/* Match Score Badge */}
                       <div
-                        className={`px-3 py-1 rounded-full text-xs font-black border flex items-center gap-1 ${
+                        className={`px-3 py-1 rounded-full text-xs font-black border flex items-center gap-1 shrink-0 ${
                           isHighMatch
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                             : isMedMatch
@@ -451,11 +547,20 @@ export default function CompanyApplicationsPage() {
                     </div>
                   </div>
 
-                  {/* Evaluation Trigger Button */}
-                  <div className="mt-5 pt-3 border-t border-slate-100">
+                  {/* Action Buttons: View Profile + Evaluation */}
+                  <div className="mt-5 pt-3 border-t border-slate-100 flex flex-col sm:flex-row gap-2">
                     <button
+                      type="button"
+                      onClick={() => handleOpenProfile(app.candidate?.id || app.candidateId)}
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-full text-xs font-bold border border-slate-200/90 bg-slate-50/70 hover:bg-indigo-50/80 hover:border-indigo-200 hover:text-[#4f46e5] text-slate-700 transition shadow-2xs cursor-pointer group"
+                    >
+                      <UserCheck className="h-3.5 w-3.5 text-[#4f46e5] group-hover:scale-110 transition" />
+                      <span>ดูโปรไฟล์ & เรดาร์</span>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleOpenEvaluation(app)}
-                      className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-full text-xs font-bold transition shadow-xs ${
+                      className={`flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-full text-xs font-bold transition shadow-2xs cursor-pointer ${
                         app.evaluation
                           ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                           : 'bg-[#6366f1] hover:bg-[#4f46e5] text-white shadow-indigo-500/20'
@@ -464,12 +569,12 @@ export default function CompanyApplicationsPage() {
                       {app.evaluation ? (
                         <>
                           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                          <span>ดู/แก้ไขผลประเมิน (Evaluation Done)</span>
+                          <span>ผลประเมิน</span>
                         </>
                       ) : (
                         <>
                           <MessageSquare className="h-3.5 w-3.5" />
-                          <span>ให้คะแนนประเมิน (Evaluate Candidate)</span>
+                          <span>ประเมิน</span>
                         </>
                       )}
                     </button>
@@ -674,6 +779,632 @@ export default function CompanyApplicationsPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+        {/* Candidate Dossier Modal */}
+        {selectedCandidateId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-3 sm:p-6 overflow-y-auto">
+            <div className="bg-white rounded-[32px] max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200/90 my-auto overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              {loadingProfile ? (
+                <div className="p-20 text-center flex flex-col items-center justify-center gap-3">
+                  <div className="h-10 w-10 rounded-full border-4 border-indigo-200 border-t-indigo-600 animate-spin" />
+                  <p className="text-xs font-bold text-slate-500">กำลังโหลดโปรไฟล์ผู้สมัครและคำนวณเรดาร์ทักษะ... (Fetching Candidate Dossier)</p>
+                </div>
+              ) : candidateProfile ? (
+                <>
+                  {/* Modal Header */}
+                  <div className="p-6 bg-gradient-to-r from-slate-50 via-white to-indigo-50/40 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-start gap-4">
+                      <div className="h-16 w-16 rounded-2xl bg-gradient-to-tr from-[#6366f1] via-[#4f46e5] to-[#3730a3] text-white flex items-center justify-center font-black text-2xl shrink-0 shadow-md overflow-hidden ring-4 ring-indigo-50">
+                        {candidateProfile.avatarUrl ? (
+                          <img src={candidateProfile.avatarUrl} alt={candidateProfile.fullName} className="h-full w-full object-cover" />
+                        ) : (
+                          <span>{(candidateProfile.fullName || 'C').charAt(0).toUpperCase()}</span>
+                        )}
+                      </div>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h2 className="text-xl sm:text-2xl font-black text-slate-900">{candidateProfile.fullName}</h2>
+                          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#e8eaff] text-[#4f46e5] border border-[#dce0ff]">
+                            {candidateProfile.targetCareer || 'Developer'}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 mt-1 font-medium">
+                          {candidateProfile.user?.email && (
+                            <span className="flex items-center gap-1">
+                              <Mail className="h-3.5 w-3.5 text-slate-400" />
+                              <span>{candidateProfile.user.email}</span>
+                            </span>
+                          )}
+                          {candidateProfile.githubUsername && (
+                            <a
+                              href={`https://github.com/${candidateProfile.githubUsername}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex items-center gap-1 text-[#4f46e5] hover:underline font-bold"
+                            >
+                              <Github className="h-3.5 w-3.5" />
+                              <span>@{candidateProfile.githubUsername}</span>
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          )}
+                          <span className="flex items-center gap-1 text-slate-400">
+                            <Calendar className="h-3.5 w-3.5" />
+                            <span>
+                              สมัครเมื่อ{' '}
+                              {new Date(
+                                candidateProfile.application?.createdAt || candidateProfile.createdAt,
+                              ).toLocaleDateString('th-TH')}
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-end sm:self-center">
+                      {/* Match Score Badge */}
+                      <div className="px-3.5 py-1.5 rounded-2xl bg-indigo-50 border border-indigo-200/90 text-[#4f46e5] flex items-center gap-1.5 shadow-2xs">
+                        <Sparkles className="h-4 w-4" />
+                        <span className="text-sm font-black">
+                          {candidateProfile.application?.matchScoreAtApplication || 0}% Match
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleCloseProfile}
+                        className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition cursor-pointer"
+                        title="ปิดหน้าต่าง"
+                      >
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Modal Tabs Navigation */}
+                  <div className="px-6 py-2.5 border-b border-slate-100 bg-slate-50/60 flex items-center gap-1.5 overflow-x-auto">
+                    <button
+                      type="button"
+                      onClick={() => setProfileTab('overview')}
+                      className={`px-3 py-2 text-xs font-bold rounded-xl transition whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+                        profileTab === 'overview'
+                          ? 'bg-[#6366f1] text-white shadow-xs shadow-indigo-500/20'
+                          : 'bg-white border border-slate-200/80 text-slate-600 hover:border-indigo-300'
+                      }`}
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span>ภาพรวม & เรดาร์ทักษะ</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setProfileTab('skills')}
+                      className={`px-3 py-2 text-xs font-bold rounded-xl transition whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+                        profileTab === 'skills'
+                          ? 'bg-[#6366f1] text-white shadow-xs shadow-indigo-500/20'
+                          : 'bg-white border border-slate-200/80 text-slate-600 hover:border-indigo-300'
+                      }`}
+                    >
+                      <Award className="h-3.5 w-3.5" />
+                      <span>ทักษะและหลักฐาน ({candidateProfile.skills?.length || 0})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setProfileTab('github')}
+                      className={`px-3 py-2 text-xs font-bold rounded-xl transition whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+                        profileTab === 'github'
+                          ? 'bg-[#6366f1] text-white shadow-xs shadow-indigo-500/20'
+                          : 'bg-white border border-slate-200/80 text-slate-600 hover:border-indigo-300'
+                      }`}
+                    >
+                      <Github className="h-3.5 w-3.5" />
+                      <span>คลังโค้ด GitHub ({candidateProfile.githubRepos?.length || 0})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setProfileTab('assessments')}
+                      className={`px-3 py-2 text-xs font-bold rounded-xl transition whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+                        profileTab === 'assessments'
+                          ? 'bg-[#6366f1] text-white shadow-xs shadow-indigo-500/20'
+                          : 'bg-white border border-slate-200/80 text-slate-600 hover:border-indigo-300'
+                      }`}
+                    >
+                      <Code2 className="h-3.5 w-3.5" />
+                      <span>การทดสอบ & ความซื่อสัตย์ ({candidateProfile.assessmentAttempts?.length || 0})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setProfileTab('experience')}
+                      className={`px-3 py-2 text-xs font-bold rounded-xl transition whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+                        profileTab === 'experience'
+                          ? 'bg-[#6366f1] text-white shadow-xs shadow-indigo-500/20'
+                          : 'bg-white border border-slate-200/80 text-slate-600 hover:border-indigo-300'
+                      }`}
+                    >
+                      <GraduationCap className="h-3.5 w-3.5" />
+                      <span>การศึกษา & ประสบการณ์</span>
+                    </button>
+                  </div>
+
+                  {/* Modal Body / Tab Content */}
+                  <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    {/* Tab 1: Overview & Radar */}
+                    {profileTab === 'overview' && (
+                      <div className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          {/* 5-axis Radar Chart */}
+                          <div className="bg-slate-50/70 border border-slate-200/90 rounded-2xl p-5 flex flex-col items-center shadow-2xs">
+                            <div className="flex items-center justify-between w-full mb-3">
+                              <span className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                                <Sparkles className="h-3.5 w-3.5 text-[#4f46e5]" />
+                                เรดาร์ทักษะ 5 มิติ (Skill Radar)
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-semibold">คะแนนเต็ม 100</span>
+                            </div>
+                            <div className="h-64 sm:h-72 w-full">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <RadarChart data={candidateProfile.radarData || []}>
+                                  <PolarGrid stroke="#e2e8f0" />
+                                  <PolarAngleAxis
+                                    dataKey="category"
+                                    tick={{ fill: '#475569', fontSize: 11, fontWeight: 700 }}
+                                  />
+                                  <PolarRadiusAxis
+                                    angle={30}
+                                    domain={[0, 100]}
+                                    stroke="#cbd5e1"
+                                    tick={{ fill: '#94a3b8', fontSize: 9 }}
+                                  />
+                                  <Radar
+                                    name="Candidate Score"
+                                    dataKey="score"
+                                    stroke="#4f46e5"
+                                    fill="#6366f1"
+                                    fillOpacity={0.45}
+                                  />
+                                </RadarChart>
+                              </ResponsiveContainer>
+                            </div>
+                            <div className="grid grid-cols-5 gap-1.5 w-full mt-3 pt-3 border-t border-slate-200/80 text-center">
+                              {(candidateProfile.radarData || []).map((pt: any) => (
+                                <div key={pt.category} className="bg-white rounded-xl p-2 border border-slate-200/60 shadow-2xs">
+                                  <div className="text-[9px] font-bold text-slate-400 uppercase truncate">{pt.category}</div>
+                                  <div className="text-xs font-black text-[#4f46e5] mt-0.5">{pt.score}%</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Profile Overview & Bio */}
+                          <div className="space-y-4">
+                            {/* Headline & Bio */}
+                            <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-2xs">
+                              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1.5">
+                                สรุปประวัติและความเชี่ยวชาญ (Headline & Bio)
+                              </span>
+                              <h4 className="text-sm font-bold text-slate-900 mb-2">
+                                {candidateProfile.headline || candidateProfile.targetCareer || 'Software Engineer'}
+                              </h4>
+                              <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">
+                                {candidateProfile.bio || 'ผู้สมัครยังไม่ได้ระบุคำแนะนำตัว'}
+                              </p>
+                            </div>
+
+                            {/* Cover Letter if provided */}
+                            {candidateProfile.application?.coverLetter && (
+                              <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-5 shadow-2xs">
+                                <span className="text-[10px] uppercase font-bold text-indigo-700 tracking-wider block mb-1.5">
+                                  จดหมายแนะนำตัว (Cover Letter)
+                                </span>
+                                <p className="text-xs text-slate-700 italic leading-relaxed whitespace-pre-line">
+                                  &ldquo;{candidateProfile.application.coverLetter}&rdquo;
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Quick Stats Grid */}
+                            <div className="grid grid-cols-3 gap-3">
+                              <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-3.5 text-center">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase block">Verified Skills</span>
+                                <span className="text-lg font-black text-slate-900 mt-1 block">
+                                  {candidateProfile.skills?.length || 0}
+                                </span>
+                              </div>
+                              <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-3.5 text-center">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase block">GitHub Repos</span>
+                                <span className="text-lg font-black text-[#4f46e5] mt-1 block">
+                                  {candidateProfile.githubRepos?.length || 0}
+                                </span>
+                              </div>
+                              <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-3.5 text-center">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase block">Assessments</span>
+                                <span className="text-lg font-black text-emerald-600 mt-1 block">
+                                  {candidateProfile.assessmentAttempts?.length || 0}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Tab 2: Verified Skills & Evidences */}
+                    {profileTab === 'skills' && (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-sm font-bold text-slate-900">
+                            ทักษะที่ผ่านการตรวจสอบและหลักฐานเชิงประจักษ์ (Evidence-based Skills)
+                          </h3>
+                          <span className="text-xs text-slate-500 font-medium">
+                            ทั้งหมด {candidateProfile.skills?.length || 0} ทักษะ
+                          </span>
+                        </div>
+
+                        {candidateProfile.skills && candidateProfile.skills.length > 0 ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {candidateProfile.skills.map((cs: any) => (
+                              <div
+                                key={cs.id}
+                                className="bg-slate-50/70 border border-slate-200/90 rounded-2xl p-4.5 space-y-3"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <h4 className="text-sm font-bold text-slate-900">{cs.skill?.name}</h4>
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200/80 text-slate-600">
+                                        {cs.skill?.category}
+                                      </span>
+                                    </div>
+                                    <span className="text-[11px] text-slate-500">
+                                      ระดับความเชี่ยวชาญ: {cs.isVerified ? '✓ ตรวจสอบแล้ว' : 'รอการยืนยัน'}
+                                    </span>
+                                  </div>
+                                  <div className="text-right">
+                                    <span className="text-base font-black text-[#4f46e5]">{cs.verifiedScore}%</span>
+                                    <span className="text-[10px] text-slate-400 block font-semibold">Verified Score</span>
+                                  </div>
+                                </div>
+
+                                {/* Score Bar */}
+                                <div className="w-full bg-slate-200/80 rounded-full h-2 overflow-hidden">
+                                  <div
+                                    className="bg-gradient-to-r from-indigo-500 to-indigo-600 h-2 rounded-full transition-all"
+                                    style={{ width: `${Math.min(100, cs.verifiedScore)}%` }}
+                                  />
+                                </div>
+
+                                {/* Score Breakdown */}
+                                <div className="grid grid-cols-3 gap-2 text-[10px] font-bold text-slate-500 pt-1 border-t border-slate-200/60">
+                                  <div>ทฤษฎี: <strong className="text-slate-800">{cs.theoryScore || 0}%</strong></div>
+                                  <div>ปฏิบัติ: <strong className="text-slate-800">{cs.codingScore || 0}%</strong></div>
+                                  <div>GitHub: <strong className="text-slate-800">{cs.practicalScore || 0}%</strong></div>
+                                </div>
+
+                                {/* Evidences from GitHub */}
+                                {cs.evidences && cs.evidences.length > 0 && (
+                                  <div className="pt-2 border-t border-slate-200/60 space-y-1.5">
+                                    <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                                      หลักฐานจาก Repositories ({cs.evidences.length})
+                                    </span>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {cs.evidences.map((ev: any) => (
+                                        <span
+                                          key={ev.id}
+                                          className="text-[10px] font-semibold bg-white border border-slate-200/80 px-2 py-0.5 rounded-lg text-slate-700 flex items-center gap-1 shadow-2xs"
+                                        >
+                                          <GitBranch className="h-2.5 w-2.5 text-indigo-500" />
+                                          <span>{ev.repository?.repoName || 'repo'}</span>
+                                          {ev.commitCount > 0 && (
+                                            <span className="text-slate-400">({ev.commitCount} commits)</span>
+                                          )}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-500">
+                            ยังไม่มีข้อมูลทักษะที่ผ่านการตรวจสอบ
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Tab 3: GitHub Portfolio */}
+                    {profileTab === 'github' && (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-sm font-bold text-slate-900">
+                            คลังโค้ดและผลงานซอฟต์แวร์บน GitHub (GitHub Repositories)
+                          </h3>
+                          {candidateProfile.githubUsername && (
+                            <a
+                              href={`https://github.com/${candidateProfile.githubUsername}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs font-bold text-[#4f46e5] hover:underline flex items-center gap-1"
+                            >
+                              <span>ดูโปรไฟล์บน GitHub</span>
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          )}
+                        </div>
+
+                        {candidateProfile.githubRepos && candidateProfile.githubRepos.length > 0 ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {candidateProfile.githubRepos.map((repo: any) => (
+                              <div
+                                key={repo.id}
+                                className="bg-slate-50/70 border border-slate-200/90 rounded-2xl p-4.5 flex flex-col justify-between hover:border-indigo-200 hover:bg-white transition shadow-2xs group"
+                              >
+                                <div>
+                                  <div className="flex items-start justify-between gap-2 mb-1.5">
+                                    <a
+                                      href={repo.url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-sm font-bold text-slate-900 group-hover:text-[#4f46e5] transition flex items-center gap-1 truncate"
+                                    >
+                                      <span className="truncate">{repo.repoName}</span>
+                                      <ExternalLink className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-100 transition" />
+                                    </a>
+                                    {repo.language && (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-[#4f46e5] border border-indigo-100 shrink-0">
+                                        {repo.language}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed mb-3">
+                                    {repo.description || 'ไม่มีคำอธิบายโครงการ'}
+                                  </p>
+                                </div>
+
+                                <div className="flex items-center justify-between text-xs text-slate-500 pt-3 border-t border-slate-200/60 font-medium">
+                                  <div className="flex items-center gap-3">
+                                    <span className="flex items-center gap-1">
+                                      <Star className="h-3.5 w-3.5 text-amber-500" />
+                                      <span>{repo.stargazersCount || 0}</span>
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                      <GitBranch className="h-3.5 w-3.5 text-slate-400" />
+                                      <span>{repo.forksCount || 0}</span>
+                                    </span>
+                                  </div>
+                                  {repo.lastCommitAt && (
+                                    <span className="text-[10px] text-slate-400">
+                                      อัปเดต {new Date(repo.lastCommitAt).toLocaleDateString('th-TH')}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-500">
+                            ผู้สมัครยังไม่ได้เชื่อมต่อหรือยังไม่มี Repositories บน GitHub
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Tab 4: Assessments & Integrity */}
+                    {profileTab === 'assessments' && (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-sm font-bold text-slate-900">
+                            ประวัติการทำแบบทดสอบเชิงปฏิบัติการ & รายงานความซื่อสัตย์ (Integrity)
+                          </h3>
+                          <span className="text-xs text-slate-500 font-medium">
+                            ทำแล้ว {candidateProfile.assessmentAttempts?.length || 0} ครั้ง
+                          </span>
+                        </div>
+
+                        {candidateProfile.assessmentAttempts && candidateProfile.assessmentAttempts.length > 0 ? (
+                          <div className="space-y-4">
+                            {candidateProfile.assessmentAttempts.map((att: any) => {
+                              const isPassed =
+                                att.score >= (att.assessment?.passingScore || 70) || att.passed === true;
+                              const integrity = att.integritySummary;
+                              const tabSwitches = integrity?.tabSwitchCount || 0;
+                              const riskLevel = integrity?.riskLevel || 'NORMAL';
+
+                              return (
+                                <div
+                                  key={att.id}
+                                  className="bg-slate-50/70 border border-slate-200/90 rounded-2xl p-5 space-y-4"
+                                >
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <h4 className="text-sm font-bold text-slate-900">
+                                          {att.assessment?.title || 'แบบทดสอบทักษะ'}
+                                        </h4>
+                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200/80 text-slate-700">
+                                          {att.assessment?.type || 'PRACTICAL'}
+                                        </span>
+                                      </div>
+                                      <span className="text-xs text-slate-500 font-medium mt-0.5 block">
+                                        ทำเมื่อ {new Date(att.startedAt).toLocaleString('th-TH')} · เกณฑ์ผ่าน{' '}
+                                        {att.assessment?.passingScore || 70}%
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-3">
+                                      <div className="text-right">
+                                        <span className="text-xl font-black text-[#4f46e5]">
+                                          {att.score !== null ? `${att.score}%` : 'รอตรวจ'}
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 block font-semibold">คะแนนที่ได้</span>
+                                      </div>
+                                      <span
+                                        className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                                          isPassed
+                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                            : 'bg-rose-50 text-rose-700 border-rose-200'
+                                        }`}
+                                      >
+                                        {isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ไม่ผ่านเกณฑ์ (Failed)'}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Anti-cheat Integrity Telemetry Box */}
+                                  <div className="bg-white rounded-xl p-3.5 border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                                    <div className="flex items-center gap-2.5">
+                                      <ShieldAlert
+                                        className={`h-4 w-4 shrink-0 ${
+                                          riskLevel === 'HIGH_RISK'
+                                            ? 'text-rose-600'
+                                            : riskLevel === 'SUSPICIOUS'
+                                            ? 'text-amber-500'
+                                            : 'text-emerald-600'
+                                        }`}
+                                      />
+                                      <div>
+                                        <span className="text-xs font-bold text-slate-800 block">
+                                          ระบบตรวจจับความซื่อสัตย์ (Anti-Cheat Telemetry)
+                                        </span>
+                                        <span className="text-[11px] text-slate-500">
+                                          สลับหน้าจอ (Tab Switches): <strong>{tabSwitches} ครั้ง</strong>
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    <div>
+                                      <span
+                                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border inline-flex items-center gap-1 ${
+                                          riskLevel === 'HIGH_RISK'
+                                            ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                            : riskLevel === 'SUSPICIOUS'
+                                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                        }`}
+                                      >
+                                        {riskLevel === 'HIGH_RISK'
+                                          ? '🚨 ความเสี่ยงสูง (High Risk)'
+                                          : riskLevel === 'SUSPICIOUS'
+                                          ? '⚠️ น่าสงสัย (Suspicious)'
+                                          : '✓ พฤติกรรมปกติ (Normal)'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-500">
+                            ยังไม่มีประวัติการทำแบบทดสอบ
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Tab 5: Education & Experience */}
+                    {profileTab === 'experience' && (
+                      <div className="space-y-6">
+                        {/* Work Experience */}
+                        <div className="space-y-3">
+                          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                            <Briefcase className="h-4 w-4 text-[#4f46e5]" />
+                            <span>ประสบการณ์การทำงาน (Work Experience)</span>
+                          </h3>
+                          {Array.isArray(candidateProfile.experience) && candidateProfile.experience.length > 0 ? (
+                            <div className="space-y-3">
+                              {candidateProfile.experience.map((exp: any, idx: number) => (
+                                <div key={idx} className="bg-slate-50/70 border border-slate-200/90 rounded-2xl p-4">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <h4 className="text-sm font-bold text-slate-900">{exp.title || 'Position'}</h4>
+                                    <span className="text-[10px] text-slate-500 font-semibold bg-white border border-slate-200 px-2 py-0.5 rounded-lg">
+                                      {exp.duration || exp.year || 'ช่วงเวลา'}
+                                    </span>
+                                  </div>
+                                  <div className="text-xs font-semibold text-slate-600 mt-0.5">{exp.company}</div>
+                                  {exp.description && (
+                                    <p className="text-xs text-slate-500 mt-2 leading-relaxed whitespace-pre-line">
+                                      {exp.description}
+                                    </p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="p-6 text-center bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-500">
+                              ไม่มีข้อมูลประวัติการทำงานที่ระบุไว้
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Education */}
+                        <div className="space-y-3 pt-4 border-t border-slate-100">
+                          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                            <GraduationCap className="h-4 w-4 text-[#4f46e5]" />
+                            <span>ประวัติการศึกษา (Education)</span>
+                          </h3>
+                          {Array.isArray(candidateProfile.education) && candidateProfile.education.length > 0 ? (
+                            <div className="space-y-3">
+                              {candidateProfile.education.map((edu: any, idx: number) => (
+                                <div key={idx} className="bg-slate-50/70 border border-slate-200/90 rounded-2xl p-4">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <h4 className="text-sm font-bold text-slate-900">{edu.degree || 'Degree'}</h4>
+                                    <span className="text-[10px] text-slate-500 font-semibold bg-white border border-slate-200 px-2 py-0.5 rounded-lg">
+                                      {edu.year || 'ปีการศึกษา'}
+                                    </span>
+                                  </div>
+                                  <div className="text-xs font-semibold text-slate-600 mt-0.5">{edu.school || edu.institution}</div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="p-6 text-center bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-500">
+                              ไม่มีข้อมูลประวัติการศึกษาที่ระบุไว้
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Modal Footer Action Bar */}
+                  <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    {/* Stage Selector inside Modal */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-600 whitespace-nowrap">ขั้นตอน:</span>
+                      <select
+                        value={candidateProfile.application?.status || ApplicationStatus.APPLIED}
+                        onChange={(e) => handleStatusChangeFromProfile(e.target.value as ApplicationStatus)}
+                        className="text-xs font-bold rounded-xl border border-slate-200 bg-white py-2 px-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition cursor-pointer shadow-2xs"
+                      >
+                        {STATUS_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label} — {opt.labelTh}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2.5">
+                      <button
+                        type="button"
+                        onClick={handleCloseProfile}
+                        className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200/60 rounded-full transition cursor-pointer"
+                      >
+                        ปิดหน้าต่าง
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleOpenEvalFromProfile}
+                        className="px-5 py-2 text-xs font-bold text-white bg-[#6366f1] hover:bg-[#4f46e5] rounded-full shadow-xs shadow-indigo-500/20 transition inline-flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <MessageSquare className="h-3.5 w-3.5" />
+                        <span>ให้คะแนนประเมิน (Evaluate)</span>
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : null}
             </div>
           </div>
         )}
