@@ -15,6 +15,7 @@ import {
   AttemptStatus,
   QuestionEvaluationMethod,
   AssessmentReviewStatus,
+  CandidateEarnedBadge,
 } from '@smartcareer/shared';
 
 @Injectable()
@@ -885,5 +886,52 @@ export class AssessmentsService {
         verifiedAt: isPassing ? new Date() : candidateSkill.verifiedAt,
       },
     });
+  }
+
+  async getCandidateBadges(userId: string): Promise<CandidateEarnedBadge[]> {
+    const candidate = await this.prisma.candidateProfile.findUnique({
+      where: { userId },
+    });
+    if (!candidate) return [];
+
+    const attempts = await this.prisma.assessmentAttempt.findMany({
+      where: {
+        candidateId: candidate.id,
+        passed: true,
+      },
+      include: {
+        assessment: {
+          include: {
+            skill: true,
+          },
+        },
+      },
+      orderBy: { completedAt: 'desc' },
+    });
+
+    // Deduplicate by assessmentId (keep highest scoring / latest passed attempt)
+    const badgeMap = new Map<string, CandidateEarnedBadge>();
+
+    for (const att of attempts) {
+      if (!badgeMap.has(att.assessmentId)) {
+        const isCoding = (att.assessment.type as string) === 'PRACTICAL_CODING';
+        const typeTitle = isCoding ? 'Code Challenge' : 'Theory Quiz';
+        const badgeName = `${att.assessment.title} • ${typeTitle} Certified`;
+        badgeMap.set(att.assessmentId, {
+          attemptId: att.id,
+          assessmentId: att.assessmentId,
+          title: att.assessment.title,
+          badgeName,
+          type: att.assessment.type as any,
+          skillName: att.assessment.skill?.name || null,
+          skillCategory: (att.assessment.skill?.category as any) || null,
+          score: Math.round(att.finalScore ?? att.percentage ?? att.score ?? 0),
+          passedAt: att.completedAt || att.startedAt || new Date(),
+          timeSpentSeconds: att.timeSpentSeconds,
+        });
+      }
+    }
+
+    return Array.from(badgeMap.values());
   }
 }

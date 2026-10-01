@@ -22,6 +22,13 @@ export class AssessmentsController {
     return this.assessmentsService.getCandidateAttempts(req.user.id);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.CANDIDATE)
+  @Get('my-badges')
+  async getMyBadges(@Request() req: any) {
+    return this.assessmentsService.getCandidateBadges(req.user.id);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   async getOne(@Param('id') id: string) {

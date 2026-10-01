@@ -264,3 +264,16 @@ export interface IngestionLogSummary {
   errorCount: number;
   errorMessage?: string | null;
 }
+
+export interface CandidateEarnedBadge {
+  attemptId: string;
+  assessmentId: string;
+  title: string;
+  badgeName: string;
+  type: AssessmentType;
+  skillName: string | null;
+  skillCategory: SkillCategory | null;
+  score: number;
+  passedAt: string | Date;
+  timeSpentSeconds?: number;
+}

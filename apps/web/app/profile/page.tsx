@@ -33,7 +33,7 @@ import {
   TrendingUp,
   Flame,
 } from 'lucide-react';
-import { RadarChartDataPoint } from '@smartcareer/shared';
+import { RadarChartDataPoint, CandidateEarnedBadge } from '@smartcareer/shared';
 
 function ProfileHubLoading() {
   return (
@@ -73,6 +73,7 @@ function ProfileHubContent() {
   // Profile data states
   const [profile, setProfile] = useState<any>(null);
   const [radarData, setRadarData] = useState<RadarChartDataPoint[]>([]);
+  const [badges, setBadges] = useState<CandidateEarnedBadge[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Edit form states
@@ -93,13 +94,15 @@ function ProfileHubContent() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [profData, radar] = await Promise.all([
+      const [profData, radar, badgesData] = await Promise.all([
         apiRequest('/candidate/profile'),
         apiRequest('/candidate/radar').catch(() => []),
+        apiRequest('/assessments/my-badges').catch(() => []),
       ]);
 
       setProfile(profData);
       setRadarData(radar || []);
+      setBadges(badgesData || []);
 
       setFullName(profData.fullName || '');
       setHeadline(profData.headline || '');
@@ -497,6 +500,80 @@ function ProfileHubContent() {
                     ) : (
                       <div className="text-center py-8 text-xs text-slate-400">
                         ยังไม่มีทักษะที่ผ่านการยืนยัน ทำแบบทดสอบในหน้า Assessments เพื่อรับเหรียญทักษะ
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Assessment Badges & Certifications Showcase */}
+                  <div className="rounded-[20px] border border-slate-200/90 bg-white/95 p-6 sm:p-7 shadow-[0_12px_32px_rgba(15,23,42,0.04)]">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2.5">
+                        <span className="grid place-items-center w-8 h-8 rounded-xl bg-amber-50 text-amber-600">
+                          <Award className="h-4 w-4" />
+                        </span>
+                        <div>
+                          <h2 className="text-base font-bold text-slate-900 tracking-tight">
+                            เหรียญรางวัลรายบททดสอบ (Assessment Badges)
+                          </h2>
+                          <span className="text-[11px] text-[#667085]">เหรียญรับรองมาตรฐานแยกตามการทดสอบที่ผ่านจริง</span>
+                        </div>
+                      </div>
+                      <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200/80 px-2.5 py-1 rounded-full">
+                        {badges.length} เหรียญ
+                      </span>
+                    </div>
+
+                    {badges.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[280px] overflow-y-auto pr-1">
+                        {badges.map((b) => (
+                          <div
+                            key={b.attemptId}
+                            className="p-3.5 rounded-xl border border-amber-200/70 bg-gradient-to-br from-amber-50/40 via-white to-amber-50/20 shadow-2xs hover:shadow-xs transition"
+                          >
+                            <div className="flex items-start gap-2.5">
+                              <span className="text-2xl select-none">
+                                {b.type === 'PRACTICAL_CODING' ? '🥇' : '🥉'}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between gap-1">
+                                  <h3 className="font-bold text-slate-900 text-xs truncate" title={b.title}>
+                                    {b.title}
+                                  </h3>
+                                  <span className="text-xs font-black text-amber-700 shrink-0">
+                                    {b.score}%
+                                  </span>
+                                </div>
+                                <div className="mt-1 flex items-center gap-1.5 flex-wrap text-[10px] text-[#667085]">
+                                  <span className="font-semibold text-slate-700 bg-white/80 px-1.5 py-0.5 rounded border border-slate-200/80">
+                                    {b.type === 'PRACTICAL_CODING' ? 'Live Coding' : 'Theory Quiz'}
+                                  </span>
+                                  {b.skillName && (
+                                    <span className="text-[#4f46e5] font-bold">
+                                      {b.skillName}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="mt-1.5 text-[9px] text-slate-400">
+                                  ผ่านเมื่อ {new Date(b.passedAt).toLocaleDateString('th-TH')}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6 px-4 rounded-xl border border-dashed border-slate-200 bg-[#fbfcfd]">
+                        <p className="text-xs text-slate-500 font-medium">ยังไม่มีเหรียญรางวัลรายบททดสอบ</p>
+                        <p className="text-[11px] text-slate-400 mt-1">
+                          เมื่อทำแบบทดสอบ Quiz หรือ Coding Challenge ผ่าน 60% จะได้รับเหรียญรับรองเฉพาะวิชานั้นทันที
+                        </p>
+                        <Link
+                          href="/assessments"
+                          className="mt-3 inline-flex items-center gap-1 px-3.5 py-1.5 rounded-lg text-xs font-bold text-white bg-[#6366f1] hover:bg-[#4f46e5] shadow-xs transition"
+                        >
+                          <span>ไปที่คลังแบบทดสอบ</span>
+                          <span>&rarr;</span>
+                        </Link>
                       </div>
                     )}
                   </div>
