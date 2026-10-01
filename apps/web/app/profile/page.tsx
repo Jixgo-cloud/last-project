@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useAuth } from '@/lib/auth-context';
@@ -354,9 +355,9 @@ function ProfileHubContent() {
                         </span>
                         <div>
                           <h2 className="text-base font-bold text-slate-900 tracking-tight">
-                            การกระจายตัวของทักษะ (Radar Distribution)
+                            การกระจายตัวของทักษะ (Skill Competency Radar)
                           </h2>
-                          <span className="text-[11px] text-[#667085]">วิเคราะห์ความครอบคลุมแต่ละหมวดหมู่</span>
+                          <span className="text-[11px] text-[#667085]">วิเคราะห์ความครอบคลุมและศักยภาพจากผลงานจริง</span>
                         </div>
                       </div>
                       <span className="inline-flex items-center rounded-full bg-[#f4f5fa] border border-slate-200/80 px-3 py-1 text-[11px] font-semibold text-slate-700">
@@ -395,12 +396,24 @@ function ProfileHubContent() {
 
                   {/* Score Badges Footer */}
                   <div className="grid grid-cols-5 gap-2 pt-4 border-t border-slate-100 text-center">
-                    {radarData.map((d) => (
-                      <div key={d.category} className="p-2.5 rounded-xl bg-[#f9fafb] border border-slate-100/80">
-                        <p className="text-[9px] uppercase font-bold text-[#667085] tracking-wider truncate">{d.category}</p>
-                        <p className="text-base font-extrabold text-[#4f46e5] mt-0.5">{d.score}</p>
-                      </div>
-                    ))}
+                    {radarData.map((d) => {
+                      const isHigh = d.score >= 80;
+                      return (
+                        <div
+                          key={d.category}
+                          className={`p-2.5 rounded-xl border transition ${
+                            isHigh
+                              ? 'bg-indigo-50/70 border-indigo-200/80 shadow-2xs'
+                              : 'bg-[#f9fafb] border-slate-100/80'
+                          }`}
+                        >
+                          <p className="text-[9px] uppercase font-bold text-[#667085] tracking-wider truncate">{d.category}</p>
+                          <p className={`text-base font-extrabold mt-0.5 ${isHigh ? 'text-[#4338ca]' : 'text-[#4f46e5]'}`}>
+                            {d.score}%
+                          </p>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -417,7 +430,7 @@ function ProfileHubContent() {
                           <h2 className="text-base font-bold text-slate-900 tracking-tight">
                             เหรียญทักษะที่ผ่านการตรวจ (Verified Skills)
                           </h2>
-                          <span className="text-[11px] text-[#667085]">คะแนนรวมจากทุกมิติ</span>
+                          <span className="text-[11px] text-[#667085]">เกณฑ์ 3 เสาหลัก: Git 50% + Quiz 20% + Code 30%</span>
                         </div>
                       </div>
                       <span className="text-[11px] font-bold text-[#4f46e5] bg-[#e8eaff] px-2.5 py-1 rounded-full">
@@ -426,39 +439,61 @@ function ProfileHubContent() {
                     </div>
 
                     {profile?.skills && profile.skills.length > 0 ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-1">
-                        {profile.skills.map((cs: any) => (
-                          <div
-                            key={cs.id}
-                            className="p-3.5 rounded-xl border border-slate-200/80 bg-[#fbfcfd] hover:bg-white hover:border-[#6366f1]/40 hover:shadow-xs transition duration-150"
-                          >
-                            <div className="flex items-start justify-between">
-                              <div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-bold text-slate-900 text-xs sm:text-sm">{cs.skill.name}</span>
-                                  {cs.isVerified && (
-                                    <span title="ยืนยันแล้ว">
-                                      <CheckCircle2 className="h-3.5 w-3.5 text-[#4f46e5]" />
-                                    </span>
-                                  )}
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-1">
+                          {profile.skills.map((cs: any) => (
+                            <div
+                              key={cs.id}
+                              className="p-3.5 rounded-xl border border-slate-200/80 bg-[#fbfcfd] hover:bg-white hover:border-[#6366f1]/40 hover:shadow-xs transition duration-150"
+                            >
+                              <div className="flex items-start justify-between">
+                                <div>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-bold text-slate-900 text-xs sm:text-sm">{cs.skill.name}</span>
+                                    {cs.isVerified ? (
+                                      <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-200">
+                                        <CheckCircle2 className="h-2.5 w-2.5" /> ยืนยันแล้ว
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full border border-amber-200" title="ทำแบบทดสอบ Quiz/Code เพื่อเพิ่มคะแนนยืนยัน">
+                                        รอสอบยืนยัน
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] font-medium text-[#667085]">{cs.skill.category}</span>
                                 </div>
-                                <span className="text-[10px] font-medium text-[#667085]">{cs.skill.category}</span>
+                                <div className="text-right">
+                                  <span className={`text-sm sm:text-base font-extrabold ${cs.isVerified ? 'text-emerald-600' : 'text-[#4f46e5]'}`}>
+                                    {cs.verifiedScore}
+                                  </span>
+                                  <span className="text-[9px] text-slate-400 block">/ 100</span>
+                                </div>
                               </div>
-                              <div className="text-right">
-                                <span className="text-sm sm:text-base font-extrabold text-[#4f46e5]">{cs.verifiedScore}</span>
-                                <span className="text-[9px] text-slate-400 block">/ 100</span>
-                              </div>
-                            </div>
 
-                            {/* Score breakdown pills */}
-                            <div className="mt-3 grid grid-cols-3 gap-1 text-[10px] pt-2 border-t border-slate-100 text-[#667085]">
-                              <div>Git: <span className="font-bold text-slate-800">{cs.practicalScore}%</span></div>
-                              <div>Quiz: <span className="font-bold text-slate-800">{cs.theoryScore}%</span></div>
-                              <div>Code: <span className="font-bold text-slate-800">{cs.codingScore}%</span></div>
+                              {/* Score breakdown pills */}
+                              <div className="mt-3 grid grid-cols-3 gap-1 text-[10px] pt-2 border-t border-slate-100 text-[#667085]">
+                                <div>Git: <span className="font-bold text-slate-800">{cs.practicalScore}%</span></div>
+                                <div>Quiz: <span className="font-bold text-slate-800">{cs.theoryScore}%</span></div>
+                                <div>Code: <span className="font-bold text-slate-800">{cs.codingScore}%</span></div>
+                              </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+
+                        {/* Verification Guidance Note */}
+                        <div className="mt-3.5 p-3 rounded-xl bg-indigo-50/70 border border-indigo-100/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-[#4338ca]">
+                          <span className="font-medium">
+                            💡 <strong>เกณฑ์ Verified Badge:</strong> คะแนนรวมต้องได้ 60+ (ทำแบบทดสอบ Quiz และ Coding เพื่อปลดล็อก)
+                          </span>
+                          <Link
+                            href="/assessments"
+                            className="inline-flex items-center gap-1 font-bold text-[#4f46e5] hover:text-[#3730a3] hover:underline shrink-0"
+                          >
+                            <span>ทำแบบทดสอบ</span>
+                            <span aria-hidden="true">&rarr;</span>
+                          </Link>
+                        </div>
+                      </>
                     ) : (
                       <div className="text-center py-8 text-xs text-slate-400">
                         ยังไม่มีทักษะที่ผ่านการยืนยัน ทำแบบทดสอบในหน้า Assessments เพื่อรับเหรียญทักษะ

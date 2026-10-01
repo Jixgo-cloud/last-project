@@ -96,12 +96,15 @@ export class CandidateService {
       where: { userId },
       include: {
         skills: {
-          include: { skill: true },
+          include: {
+            skill: true,
+            evidences: true,
+          },
         },
       },
     });
 
-    if (!profile) {
+    if (!profile || !profile.skills || profile.skills.length === 0) {
       return this.getDefaultRadar();
     }
 
@@ -114,24 +117,49 @@ export class CandidateService {
       SkillCategory.TESTING,
     ];
 
+    const skillCountMap = new Map<
+      string,
+      { count: number; category: SkillCategory; totalWeight: number; bonus: number }
+    >();
+
+    for (const cs of profile.skills) {
+      const evidences = cs.evidences || [];
+      const uniqueRepoCount = new Set(evidences.map((e) => e.repositoryId)).size || 1;
+      const totalWeight = uniqueRepoCount * 20;
+      const bonus = Math.round((cs.theoryScore || 0) * 0.2 + (cs.codingScore || 0) * 0.3);
+
+      skillCountMap.set(cs.skill.name, {
+        count: uniqueRepoCount,
+        category: cs.skill.category as unknown as SkillCategory,
+        totalWeight,
+        bonus,
+      });
+    }
+
     const radarPoints: RadarChartDataPoint[] = categories.map((cat) => {
-      const skillsInCat = profile.skills.filter((cs) => cs.skill.category === cat);
+      const skillsInCat = Array.from(skillCountMap.entries()).filter(
+        ([_, data]) => data.category === cat,
+      );
+
       if (skillsInCat.length === 0) {
         return {
           category: cat,
           subject: cat,
-          score: 20, // baseline
+          score: 35, // realistic baseline for unexercised category
           fullMark: 100,
         };
       }
-      const avgScore =
-        skillsInCat.reduce((acc, curr) => acc + (curr.verifiedScore || curr.practicalScore || 30), 0) /
-        skillsInCat.length;
+
+      const totalScore = skillsInCat.reduce((acc, [_, d]) => acc + d.totalWeight + d.count * 12, 0);
+      const avgScore = Math.min(95, Math.max(45, Math.round(50 + totalScore / (skillsInCat.length * 1.5))));
+      const bonusAvg = Math.round(
+        skillsInCat.reduce((acc, [_, d]) => acc + d.bonus, 0) / skillsInCat.length,
+      );
 
       return {
         category: cat,
         subject: cat,
-        score: Math.round(Math.min(100, Math.max(10, avgScore))),
+        score: Math.min(100, avgScore + bonusAvg),
         fullMark: 100,
       };
     });

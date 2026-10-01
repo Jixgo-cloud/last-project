@@ -231,6 +231,14 @@ export class GithubService {
           },
         });
 
+        // Avoid duplicate evidence accumulation on re-sync
+        await this.prisma.gitHubEvidence.deleteMany({
+          where: {
+            candidateSkillId: candidateSkill.id,
+            repositoryId: dbRepo.id,
+          },
+        });
+
         // Create Evidence
         await this.prisma.gitHubEvidence.create({
           data: {
