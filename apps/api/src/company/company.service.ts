@@ -1,13 +1,15 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CandidateService } from '../candidate/candidate.service';
-import { VerificationStatus, ApplicationStatus } from '@smartcareer/shared';
+import { VerificationStatus, ApplicationStatus, NotificationType } from '@smartcareer/shared';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class CompanyService {
   constructor(
     private prisma: PrismaService,
     private candidateService: CandidateService,
+    private notificationsService: NotificationsService,
   ) {}
 
   async getCompanyByUserId(userId: string) {
@@ -214,7 +216,7 @@ export class CompanyService {
 
     const application = await this.prisma.jobApplication.findUnique({
       where: { id: applicationId },
-      include: { job: true },
+      include: { job: true, candidate: true },
     });
 
     if (!application || application.job.companyId !== company.id) {
@@ -241,6 +243,71 @@ export class CompanyService {
         statusHistory: true,
       },
     });
+
+    // Notify Candidate about application status update
+    try {
+      const candidateUserId = application.candidate?.userId;
+      if (candidateUserId) {
+        const statusNotifMap: Record<ApplicationStatus, { title: string; message: string }> = {
+          [ApplicationStatus.INTERVIEW]: {
+            title: 'นัดหมายสัมภาษณ์งาน',
+            message: `บริษัท ${company.name} ได้นัดหมายสัมภาษณ์งานสำหรับตำแหน่ง "${application.job.title}"`,
+          },
+          [ApplicationStatus.OFFER]: {
+            title: '🎉 ได้รับข้อเสนองาน (Job Offer)',
+            message: `ยินดีด้วย! บริษัท ${company.name} ได้ยื่นข้อเสนองานตำแหน่ง "${application.job.title}" ให้กับคุณ`,
+          },
+          [ApplicationStatus.TECHNICAL_TEST]: {
+            title: 'มอบหมายแบบทดสอบทักษะ (Skill Assessment)',
+            message: `บริษัท ${company.name} เชิญให้คุณทำแบบทดสอบทักษะสำหรับตำแหน่ง "${application.job.title}"`,
+          },
+          [ApplicationStatus.ACCEPTED]: {
+            title: '✅ ยืนยันการตอบรับเข้าทำงาน (Accepted)',
+            message: `บริษัท ${company.name} ได้ยืนยันการรับคุณเข้าทำงานตำแหน่ง "${application.job.title}" เรียบร้อยแล้ว`,
+          },
+          [ApplicationStatus.REJECTED]: {
+            title: 'อัปเดตผลการพิจารณาใบสมัคร',
+            message: `บริษัท ${company.name} ได้แจ้งผลการพิจารณาสำหรับตำแหน่ง "${application.job.title}"`,
+          },
+          [ApplicationStatus.REVIEWING]: {
+            title: 'ใบสมัครกำลังอยู่ระหว่างพิจารณา',
+            message: `บริษัท ${company.name} กำลังตรวจสอบประวัติของคุณสำหรับตำแหน่ง "${application.job.title}"`,
+          },
+          [ApplicationStatus.APPLIED]: {
+            title: 'อัปเดตสถานะใบสมัครงาน',
+            message: `สถานะใบสมัครงานตำแหน่ง "${application.job.title}" ถูกปรับเป็น ยื่นใบสมัครแล้ว`,
+          },
+          [ApplicationStatus.CANCELLED]: {
+            title: 'ยกเลิกใบสมัครงาน',
+            message: `ใบสมัครงานตำแหน่ง "${application.job.title}" ได้ถูกยกเลิกแล้ว`,
+          },
+        };
+
+        const notifPayload = statusNotifMap[newStatus] || {
+          title: 'อัปเดตสถานะการสมัครงาน',
+          message: `ใบสมัครงานตำแหน่ง "${application.job.title}" ได้รับการปรับสถานะเป็น ${newStatus}`,
+        };
+
+        await this.notificationsService.createNotification(candidateUserId, {
+          type: NotificationType.APPLICATION_STATUS_CHANGED,
+          title: notifPayload.title,
+          message: notifPayload.message,
+          link: '/applications',
+          metadata: {
+            applicationId: application.id,
+            jobId: application.jobId,
+            jobTitle: application.job.title,
+            companyId: company.id,
+            companyName: company.name,
+            previousStatus,
+            newStatus,
+            note: note || null,
+          },
+        });
+      }
+    } catch (notifErr) {
+      console.error('Failed to dispatch candidate status notification:', notifErr);
+    }
 
     // GAP-COM-01 (TC-COM-05): Job Quota Auto-Close
     // If the application is marked as ACCEPTED and job has an acceptedQuota,

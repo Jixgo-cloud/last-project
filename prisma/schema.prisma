@@ -88,6 +88,14 @@ enum SkillCategory {
   SECURITY
 }
 
+enum NotificationType {
+  APPLICATION_STATUS_CHANGED
+  INTERVIEW_INVITATION
+  ASSESSMENT_ASSIGNED
+  OFFER_RECEIVED
+  SYSTEM_ANNOUNCEMENT
+}
+
 enum AuthProvider {
   LOCAL
   GOOGLE
@@ -110,6 +118,7 @@ model User {
   candidateProfile CandidateProfile?
   companyMembers   CompanyMember[]
   statusHistories  ApplicationStatusHistory[]
+  notifications    Notification[]
 
   @@map("users")
 }
@@ -617,4 +626,22 @@ model IngestionLog {
   metadata       Json?
 
   @@map("ingestion_logs")
+}
+
+// 25. Notification
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType @default(APPLICATION_STATUS_CHANGED)
+  title     String
+  message   String
+  link      String?
+  metadata  Json?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@map("notifications")
 }

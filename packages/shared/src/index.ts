@@ -28,6 +28,14 @@ export enum ApplicationStatus {
   CANCELLED = 'CANCELLED'
 }
 
+export enum NotificationType {
+  APPLICATION_STATUS_CHANGED = 'APPLICATION_STATUS_CHANGED',
+  INTERVIEW_INVITATION = 'INTERVIEW_INVITATION',
+  ASSESSMENT_ASSIGNED = 'ASSESSMENT_ASSIGNED',
+  OFFER_RECEIVED = 'OFFER_RECEIVED',
+  SYSTEM_ANNOUNCEMENT = 'SYSTEM_ANNOUNCEMENT',
+}
+
 export enum AssessmentType {
   THEORY = 'THEORY',
   PRACTICAL_CODING = 'PRACTICAL_CODING'
@@ -276,4 +284,16 @@ export interface CandidateEarnedBadge {
   score: number;
   passedAt: string | Date;
   timeSpentSeconds?: number;
+}
+
+export interface NotificationItem {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  link?: string | null;
+  metadata?: any;
+  isRead: boolean;
+  createdAt: string | Date;
 }

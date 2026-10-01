@@ -14,6 +14,7 @@ import {
   Sparkles,
   ArrowRight,
   TrendingUp,
+  Bell,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -195,6 +196,36 @@ export default function ApplicationsPage() {
                     )}
                   </div>
                 </div>
+
+                {/* Status Update Alert Banner */}
+                {app.statusHistory && app.statusHistory.length > 0 && app.statusHistory[0].newStatus !== 'APPLIED' && (
+                  <div
+                    className={`p-4 rounded-xl border flex items-start gap-3 ${
+                      app.status === 'OFFER' || app.status === 'ACCEPTED'
+                        ? 'bg-emerald-50/70 border-emerald-200 text-emerald-800'
+                        : app.status === 'INTERVIEW' || app.status === 'TECHNICAL_TEST'
+                        ? 'bg-indigo-50/70 border-indigo-200 text-indigo-800'
+                        : app.status === 'REJECTED'
+                        ? 'bg-rose-50/70 border-rose-200 text-rose-800'
+                        : 'bg-amber-50/70 border-amber-200 text-amber-800'
+                    }`}
+                  >
+                    <Bell className="h-4 w-4 shrink-0 mt-0.5" />
+                    <div className="flex-1 text-xs">
+                      <div className="font-bold flex items-center justify-between gap-2">
+                        <span>การแจ้งเตือนสถานะ: {getStatusLabel(app.statusHistory[0].newStatus)}</span>
+                        <span className="text-[10px] opacity-75 font-normal">
+                          {new Date(app.statusHistory[0].createdAt).toLocaleString('th-TH')}
+                        </span>
+                      </div>
+                      {app.statusHistory[0].note && (
+                        <p className="mt-1 opacity-90 leading-relaxed font-medium">
+                          {app.statusHistory[0].note}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Pipeline Progression Steps */}
                 <div className="py-1">

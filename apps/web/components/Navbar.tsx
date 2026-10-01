@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { UserRole } from '@smartcareer/shared';
+import NotificationBell from './NotificationBell';
 import {
   ChevronDown,
   LogOut,
@@ -198,8 +199,12 @@ export default function Navbar() {
                 </Link>
               </div>
             ) : (
-              /* Signed-in Interactive Account Status Capsule & Dropdown */
-              <div className="relative" ref={userMenuRef}>
+              <div className="flex items-center gap-2">
+                {/* Notification Bell Hub */}
+                <NotificationBell />
+
+                {/* Signed-in Interactive Account Status Capsule & Dropdown */}
+                <div className="relative" ref={userMenuRef}>
                 <button
                   type="button"
                   onClick={() => {
@@ -395,6 +400,7 @@ export default function Navbar() {
                   </div>
                 )}
               </div>
+            </div>
             )}
           </div>
         </div>
