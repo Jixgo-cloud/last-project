@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { apiRequest } from '@/lib/api';
@@ -16,10 +16,22 @@ import {
   FileText,
   AlertCircle,
   HelpCircle,
-  Sparkles,
+  Phone,
+  Upload,
+  Trash2,
+  Paperclip,
+  FileCheck2,
   ExternalLink,
+  ImageIcon,
 } from 'lucide-react';
 import { VerificationStatus } from '@smartcareer/shared';
+
+interface UploadedDocument {
+  name: string;
+  type: string;
+  size: number;
+  dataUrl: string;
+}
 
 export default function CompanyProfilePage() {
   const [company, setCompany] = useState<any>(null);
@@ -28,12 +40,21 @@ export default function CompanyProfilePage() {
   const [verifying, setVerifying] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // Profile Form States
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [website, setWebsite] = useState('');
   const [address, setAddress] = useState('');
   const [contactEmail, setContactEmail] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
+  // Verification Form States
   const [taxId, setTaxId] = useState('');
+  const [documents, setDocuments] = useState<UploadedDocument[]>([]);
+  const docInputRef = useRef<HTMLInputElement>(null);
 
   const fetchProfile = async () => {
     try {
@@ -44,6 +65,8 @@ export default function CompanyProfilePage() {
       setWebsite(data.website || '');
       setAddress(data.address || '');
       setContactEmail(data.contactEmail || '');
+      setContactPhone(data.contactPhone || '');
+      setLogoUrl(data.logoUrl || null);
       setTaxId(data.verifications?.[0]?.businessRegNo || '');
     } catch (e) {
       console.error(e);
@@ -56,6 +79,79 @@ export default function CompanyProfilePage() {
     fetchProfile();
   }, []);
 
+  // Handle Logo Upload (Direct file selection to Base64)
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'];
+    if (!validTypes.includes(file.type)) {
+      setLogoError('รองรับเฉพาะไฟล์รูปภาพ (JPG, PNG, WebP, SVG)');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setLogoError('ขนาดไฟล์โลโก้ต้องไม่เกิน 5MB');
+      return;
+    }
+
+    setLogoError(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      setLogoUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveLogo = () => {
+    setLogoUrl(null);
+    setLogoError(null);
+    if (logoInputRef.current) {
+      logoInputRef.current.value = '';
+    }
+  };
+
+  // Handle Document Upload (Multiple files to Base64)
+  const handleDocumentUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const validTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+
+    Array.from(files).forEach((file) => {
+      if (!validTypes.includes(file.type)) {
+        alert(`ไฟล์ "${file.name}" ไม่รองรับ (รองรับเฉพาะ PDF, JPG, PNG)`);
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        alert(`ไฟล์ "${file.name}" มีขนาดเกิน 10MB`);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        setDocuments((prev) => [
+          ...prev,
+          {
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            dataUrl: reader.result as string,
+          },
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+
+    if (docInputRef.current) {
+      docInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveDocument = (index: number) => {
+    setDocuments((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -63,7 +159,15 @@ export default function CompanyProfilePage() {
     try {
       await apiRequest('/company/profile', {
         method: 'PUT',
-        body: JSON.stringify({ name, description, website, address, contactEmail }),
+        body: JSON.stringify({
+          name,
+          description,
+          website,
+          address,
+          contactEmail,
+          contactPhone,
+          logoUrl,
+        }),
       });
       setSuccess('บันทึกข้อมูลโปรไฟล์บริษัทเรียบร้อยแล้ว (Profile updated successfully)');
       setTimeout(() => setSuccess(null), 4000);
@@ -83,9 +187,21 @@ export default function CompanyProfilePage() {
     try {
       await apiRequest('/company/verify', {
         method: 'POST',
-        body: JSON.stringify({ businessRegNo: taxId }),
+        body: JSON.stringify({
+          businessRegNo: taxId,
+          documents: {
+            taxId,
+            submittedAt: new Date().toISOString(),
+            files: documents.map((d) => ({
+              name: d.name,
+              type: d.type,
+              size: d.size,
+              dataUrl: d.dataUrl,
+            })),
+          },
+        }),
       });
-      setSuccess('ส่งคำขอรับรองนิติบุคคลไปยังผู้ดูแลระบบแล้ว (Verification request submitted)');
+      setSuccess('ส่งคำขอรับรองนิติบุคคลและเอกสารไปยังผู้ดูแลระบบเรียบร้อยแล้ว');
       setTimeout(() => setSuccess(null), 4000);
       fetchProfile();
     } catch (err: any) {
@@ -97,6 +213,8 @@ export default function CompanyProfilePage() {
 
   const isVerified = company?.verificationStatus === VerificationStatus.VERIFIED;
   const isPending = company?.verificationStatus === VerificationStatus.PENDING;
+  const existingVerification = company?.verifications?.[0];
+  const existingFiles: any[] = existingVerification?.documents?.files || [];
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#f9fbfe] via-[#f3f6fb] to-[#eef2f8] text-[#111827] antialiased">
@@ -113,7 +231,7 @@ export default function CompanyProfilePage() {
             โปรไฟล์บริษัท & การยืนยันตัวตน
           </h1>
           <p className="text-slate-600 text-sm mt-1">
-            จัดการข้อมูลแบรนด์องค์กร การติดต่อ และยื่นคำขอยืนยันนิติบุคคลด้วยเลขประจำตัวผู้เสียภาษี 13 หลักเพื่อรับตรา Verified
+            จัดการข้อมูลแบรนด์องค์กร โลโก้ ช่องทางการติดต่อ และยื่นเอกสารรับรองนิติบุคคลเพื่อรับตรา Verified Employer
           </p>
         </div>
 
@@ -190,6 +308,62 @@ export default function CompanyProfilePage() {
                 </h3>
               </div>
 
+              {/* Company Logo Upload Section */}
+              <div className="p-5 rounded-2xl bg-[#f8fafc] border border-slate-200/80 flex flex-col sm:flex-row items-center gap-5">
+                <div className="h-20 w-20 rounded-2xl bg-white border-2 border-slate-200 flex items-center justify-center overflow-hidden shrink-0 shadow-sm relative group">
+                  {logoUrl ? (
+                    <img
+                      src={logoUrl}
+                      alt="Company Logo Preview"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <Building2 className="h-9 w-9 text-slate-400" />
+                  )}
+                </div>
+
+                <div className="flex-1 text-center sm:text-left space-y-2">
+                  <div className="flex items-center justify-center sm:justify-start gap-2">
+                    <span className="text-xs font-bold text-slate-800">โลโก้บริษัท (Company Logo)</span>
+                    <span className="text-[10px] text-slate-400 font-medium">PNG, JPG, WebP, SVG ไม่เกิน 5MB</span>
+                  </div>
+
+                  <input
+                    type="file"
+                    ref={logoInputRef}
+                    accept="image/png, image/jpeg, image/webp, image/svg+xml"
+                    onChange={handleLogoUpload}
+                    className="hidden"
+                  />
+
+                  <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => logoInputRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90 text-xs font-bold shadow-2xs transition"
+                    >
+                      <Upload className="h-3.5 w-3.5 text-indigo-600" />
+                      <span>{logoUrl ? 'เปลี่ยนโลโก้ (Change)' : 'อัปโหลดโลโก้ (Upload)'}</span>
+                    </button>
+
+                    {logoUrl && (
+                      <button
+                        type="button"
+                        onClick={handleRemoveLogo}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-xs font-semibold transition"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        <span>ลบรูป</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {logoError && (
+                    <p className="text-[11px] font-semibold text-rose-600">{logoError}</p>
+                  )}
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1.5">
@@ -235,23 +409,23 @@ export default function CompanyProfilePage() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    ที่ตั้งสำนักงานใหญ่ (HQ Address)
-                  </label>
-                  <div className="relative">
-                    <MapPin className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
-                    <input
-                      type="text"
-                      value={address}
-                      onChange={(e) => setAddress(e.target.value)}
-                      placeholder="เช่น อาคาร AIA Sathorn Tower ชั้น 24 กรุงเทพฯ"
-                      className="w-full pl-10 pr-4 py-3 rounded-2xl border border-slate-200/90 text-xs text-slate-900 bg-slate-50/60 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
-                    />
-                  </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  ที่ตั้งสำนักงานใหญ่ (HQ Address)
+                </label>
+                <div className="relative">
+                  <MapPin className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
+                  <input
+                    type="text"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    placeholder="เช่น อาคาร AIA Sathorn Tower ชั้น 24 กรุงเทพฯ"
+                    className="w-full pl-10 pr-4 py-3 rounded-2xl border border-slate-200/90 text-xs text-slate-900 bg-slate-50/60 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+                  />
                 </div>
+              </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1.5">
                     อีเมลติดต่อฝ่ายสรรหา (Recruiting Contact Email)
@@ -267,11 +441,27 @@ export default function CompanyProfilePage() {
                     />
                   </div>
                 </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    เบอร์โทรศัพท์ติดต่อ (Contact Phone)
+                  </label>
+                  <div className="relative">
+                    <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <input
+                      type="tel"
+                      value={contactPhone}
+                      onChange={(e) => setContactPhone(e.target.value)}
+                      placeholder="เช่น 02-123-4567 หรือ 081-234-5678"
+                      className="w-full pl-10 pr-4 py-3 rounded-2xl border border-slate-200/90 text-xs text-slate-900 bg-slate-50/60 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
                 <span className="text-[11px] text-slate-400">
-                  ข้อมูลจะแสดงต่อผู้สมัครเมื่อเปิดดูหน้ารายละเอียดงานของคุณ
+                  ข้อมูลและโลโก้จะแสดงต่อผู้สมัครเมื่อเปิดดูหน้ารายละเอียดงานของคุณ
                 </span>
                 <button
                   type="submit"
@@ -287,7 +477,7 @@ export default function CompanyProfilePage() {
             {/* Official Verification Submission Form */}
             <form
               onSubmit={handleVerify}
-              className="bg-white/95 border border-slate-200/90 rounded-[28px] p-6 sm:p-8 shadow-[0_12px_32px_rgba(15,23/42,0.04)] backdrop-blur-sm space-y-5"
+              className="bg-white/95 border border-slate-200/90 rounded-[28px] p-6 sm:p-8 shadow-[0_12px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm space-y-6"
             >
               <div className="flex items-center justify-between pb-4 border-b border-slate-100">
                 <div className="flex items-center gap-2">
@@ -304,7 +494,7 @@ export default function CompanyProfilePage() {
               </div>
 
               <p className="text-xs text-slate-600 leading-relaxed">
-                กรอกเลขทะเบียนพาณิชย์ หรือเลขประจำตัวผู้เสียภาษีอากร 13 หลักของกรมพัฒนาธุรกิจการค้า (DBD) เพื่อให้ผู้ดูแลระบบตรวจสอบความน่าเชื่อถือ และปลดล็อกสัญลักษณ์ <strong className="text-indigo-600">Verified Employer</strong> ซึ่งช่วยเพิ่มอัตราการคลิกสมัครงานจากผู้หางานชั้นนำ
+                กรอกเลขทะเบียนพาณิชย์ หรือเลขประจำตัวผู้เสียภาษีอากร 13 หลักของกรมพัฒนาธุรกิจการค้า (DBD) พร้อมแนบเอกสารรับรอง เพื่อให้ผู้ดูแลระบบตรวจสอบความถูกต้อง และปลดล็อกสัญลักษณ์ <strong className="text-indigo-600">Verified Employer</strong> ซึ่งช่วยเพิ่มความเชื่อมั่นและอัตราการคลิกสมัครงาน
               </p>
 
               <div>
@@ -320,6 +510,112 @@ export default function CompanyProfilePage() {
                   maxLength={13}
                   className="w-full rounded-2xl border border-slate-200/90 px-4 py-3 text-xs font-mono font-bold text-slate-900 bg-slate-50/60 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition tracking-wider"
                 />
+              </div>
+
+              {/* Documents Attachment Area */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700">
+                    เอกสารแนบประกอบการพิจารณา (Verification Documents)
+                  </label>
+                  <span className="text-[11px] text-slate-400">PDF, JPG, PNG ไม่เกิน 10MB/ไฟล์</span>
+                </div>
+
+                <input
+                  type="file"
+                  ref={docInputRef}
+                  multiple
+                  accept=".pdf,image/png,image/jpeg"
+                  onChange={handleDocumentUpload}
+                  className="hidden"
+                />
+
+                <div
+                  onClick={() => docInputRef.current?.click()}
+                  className="border-2 border-dashed border-slate-200/90 hover:border-indigo-400 hover:bg-indigo-50/20 rounded-2xl p-6 text-center cursor-pointer transition flex flex-col items-center justify-center gap-2 group bg-slate-50/40"
+                >
+                  <div className="h-10 w-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition">
+                    <Paperclip className="h-5 w-5" />
+                  </div>
+                  <div className="text-xs font-bold text-slate-800">
+                    คลิกเพื่อเลือกไฟล์เอกสารแนบ (เช่น หนังสือรับรองบริษัท, ภ.พ.20)
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    สามารถเลือกได้หลายไฟล์พร้อมกัน
+                  </p>
+                </div>
+
+                {/* Newly Added Documents to Upload */}
+                {documents.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      ไฟล์ที่เลือกแนบ ({documents.length})
+                    </span>
+                    <div className="space-y-2">
+                      {documents.map((doc, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <FileCheck2 className="h-4 w-4 text-indigo-600 shrink-0" />
+                            <span className="font-semibold text-slate-800 truncate">{doc.name}</span>
+                            <span className="text-[10px] text-slate-400 shrink-0">
+                              ({(doc.size / 1024).toFixed(1)} KB)
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveDocument(idx)}
+                            className="p-1 text-slate-400 hover:text-rose-600 transition shrink-0"
+                            title="ลบไฟล์นี้"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Previously Uploaded Documents */}
+                {existingFiles.length > 0 && documents.length === 0 && (
+                  <div className="mt-3 space-y-2">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      เอกสารที่เคยยื่นไว้ ({existingFiles.length})
+                    </span>
+                    <div className="space-y-2">
+                      {existingFiles.map((doc: any, idx: number) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between p-3 rounded-xl bg-emerald-50/50 border border-emerald-200/70 text-xs"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <FileCheck2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                            <span className="font-semibold text-slate-800 truncate">{doc.name}</span>
+                            {doc.size && (
+                              <span className="text-[10px] text-slate-400 shrink-0">
+                                ({(doc.size / 1024).toFixed(1)} KB)
+                              </span>
+                            )}
+                          </div>
+                          {doc.dataUrl && (
+                            <a
+                              href={doc.dataUrl}
+                              download={doc.name}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] text-indigo-600 hover:underline font-bold shrink-0"
+                            >
+                              <span>ดาวน์โหลด</span>
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="pt-3 flex items-center justify-between">
@@ -338,7 +634,7 @@ export default function CompanyProfilePage() {
                       ? 'กำลังส่งคำขอ...'
                       : isVerified
                       ? 'ยืนยันตัวตนแล้ว (Verified)'
-                      : 'ยื่นตรวจสอบสิทธิ์ (Submit Verification)'}
+                      : 'ยื่นตรวจสอบสิทธิ์พร้อมเอกสาร (Submit Verification)'}
                   </span>
                 </button>
               </div>
@@ -351,4 +647,3 @@ export default function CompanyProfilePage() {
     </div>
   );
 }
-

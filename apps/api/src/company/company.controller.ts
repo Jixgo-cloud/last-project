@@ -18,6 +18,10 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole, ApplicationStatus } from '@smartcareer/shared';
+import {
+  UpdateCompanyProfileDto,
+  SubmitCompanyVerificationDto,
+} from './dto/company-profile.dto';
 
 @Controller('company')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -31,14 +35,14 @@ export class CompanyController {
   }
 
   @Put('profile')
-  async updateProfile(@Request() req: any, @Body() body: any) {
+  async updateProfile(@Request() req: any, @Body() body: UpdateCompanyProfileDto) {
     return this.companyService.updateProfile(req.user.id, body);
   }
 
   @Post('verify')
   async submitVerification(
     @Request() req: any,
-    @Body() body: { businessRegNo: string; documents?: any },
+    @Body() body: SubmitCompanyVerificationDto,
   ) {
     return this.companyService.submitVerification(req.user.id, body.businessRegNo, body.documents);
   }

@@ -15,6 +15,7 @@ import {
   AlertCircle,
   ExternalLink,
   Search,
+  Paperclip,
 } from 'lucide-react';
 import { VerificationStatus } from '@smartcareer/shared';
 
@@ -216,6 +217,28 @@ export default function AdminVerificationsPage() {
                             {v.businessRegNo || 'N/A'}
                           </span>
                         </div>
+
+                        {/* Attached Documents */}
+                        {v.documents?.files && Array.isArray(v.documents.files) && v.documents.files.length > 0 && (
+                          <div className="mt-2 flex items-center gap-2 flex-wrap">
+                            <span className="text-[11px] font-semibold text-slate-500">เอกสารแนบ:</span>
+                            {v.documents.files.map((file: any, fIdx: number) => (
+                              <a
+                                key={fIdx}
+                                href={file.dataUrl}
+                                download={file.name}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-semibold border border-indigo-200/80 transition shadow-2xs"
+                                title={`คลิกเพื่อเปิด/ดาวน์โหลด ${file.name}`}
+                              >
+                                <Paperclip className="h-3 w-3" />
+                                <span className="truncate max-w-[160px]">{file.name}</span>
+                                <ExternalLink className="h-2.5 w-2.5 opacity-70" />
+                              </a>
+                            ))}
+                          </div>
+                        )}
 
                         {/* Metadata */}
                         <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1.5">

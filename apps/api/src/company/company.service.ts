@@ -43,7 +43,7 @@ export class CompanyService {
   async updateProfile(userId: string, data: any) {
     const company = await this.getCompanyByUserId(userId);
 
-    return this.prisma.company.update({
+    const updated = await this.prisma.company.update({
       where: { id: company.id },
       data: {
         name: data.name ?? company.name,
@@ -55,6 +55,16 @@ export class CompanyService {
         logoUrl: data.logoUrl,
       },
     });
+
+    // Sync updated logo to company's jobs if logoUrl was provided
+    if (data.logoUrl !== undefined) {
+      await this.prisma.job.updateMany({
+        where: { companyId: company.id },
+        data: { companyLogoUrl: data.logoUrl },
+      });
+    }
+
+    return updated;
   }
 
   async submitVerification(userId: string, businessRegNo: string, documents?: any) {
