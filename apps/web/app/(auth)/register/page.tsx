@@ -68,7 +68,8 @@ function RegisterForm() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 
   const handleOAuthLogin = (provider: 'google' | 'github') => {
-    window.location.href = `${apiUrl}/auth/${provider}?role=${role}&mode=register`;
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    window.location.href = `${apiUrl}/auth/${provider}?role=${role}&mode=register&origin=${encodeURIComponent(origin)}`;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

@@ -65,7 +65,8 @@ function LoginForm() {
 
   const handleOAuthLogin = (provider: 'google' | 'github') => {
     const role = provider === 'github' ? 'CANDIDATE' : 'COMPANY';
-    window.location.href = `${apiUrl}/auth/${provider}?role=${role}&mode=login`;
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    window.location.href = `${apiUrl}/auth/${provider}?role=${role}&mode=login&origin=${encodeURIComponent(origin)}`;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

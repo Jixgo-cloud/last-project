@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Query, Res, UseGuards, Request, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Controller, Post, Body, Get, Query, Res, Req, UseGuards, Request, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
@@ -33,15 +33,47 @@ export class AuthController {
     return this.authService.getMe(req.user.id);
   }
 
+  private getFrontendUrl(origin?: string): string {
+    if (origin && (origin.includes('vercel.app') || origin.includes('localhost'))) {
+      return origin.replace(/\/$/, '');
+    }
+    const envUrl = (this.configService.get<string>('FRONTEND_URL') || '').trim().replace(/\/$/, '');
+    if (envUrl.includes('smartcareer.vercel.app') && !envUrl.includes('smartcareerplatform')) {
+      return 'https://smartcareerplatform.vercel.app';
+    }
+    return envUrl || 'https://smartcareerplatform.vercel.app';
+  }
+
+  private getCallbackUrl(provider: 'google' | 'github'): string {
+    const envCallback = this.configService.get<string>(
+      provider === 'google' ? 'GOOGLE_CALLBACK_URL' : 'GITHUB_CALLBACK_URL',
+    );
+    if (process.env.NODE_ENV !== 'production' && envCallback) {
+      return envCallback.trim();
+    }
+    if (envCallback && !envCallback.includes('localhost:4000')) {
+      return envCallback.trim();
+    }
+    if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+      return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/api/auth/${provider}/callback`;
+    }
+    if (process.env.NODE_ENV === 'production') {
+      return `https://smartcareerapi-production.up.railway.app/api/auth/${provider}/callback`;
+    }
+    return envCallback || `http://localhost:4000/api/auth/${provider}/callback`;
+  }
+
   // --- OAuth: Google ---
   @Public()
   @Get('google')
   async googleAuth(
     @Query('role') role: UserRole = UserRole.COMPANY,
     @Query('mode') mode: string = 'login',
+    @Query('origin') origin: string,
+    @Req() req: any,
     @Res() res: Response,
   ) {
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
+    const frontendUrl = this.getFrontendUrl(origin || req.headers?.referer);
 
     // Strict Rule: CANDIDATE is NOT allowed to sign up or sign in with Google!
     if (role === UserRole.CANDIDATE) {
@@ -53,8 +85,7 @@ export class AuthController {
     }
 
     const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
-    const callbackUrl =
-      this.configService.get<string>('GOOGLE_CALLBACK_URL') || 'http://localhost:4000/api/auth/google/callback';
+    const callbackUrl = this.getCallbackUrl('google');
 
     // If client ID is not configured, fallback to Dev / Mock OAuth mode only in development
     if (!clientId) {
@@ -68,7 +99,7 @@ export class AuthController {
       return res.redirect(`${frontendUrl}/mock-oauth?provider=google&role=${role}&mode=${mode}`);
     }
 
-    const state = Buffer.from(JSON.stringify({ role, mode })).toString('base64');
+    const state = Buffer.from(JSON.stringify({ role, mode, frontendUrl })).toString('base64');
     const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(
       callbackUrl,
     )}&response_type=code&scope=${encodeURIComponent('openid profile email')}&state=${state}&prompt=select_account`;
@@ -84,22 +115,21 @@ export class AuthController {
     @Query('error') error: string,
     @Res() res: Response,
   ) {
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
+    let state = { role: UserRole.COMPANY, mode: 'login', frontendUrl: this.getFrontendUrl() };
+    if (stateStr) {
+      try {
+        state = { ...state, ...JSON.parse(Buffer.from(stateStr, 'base64').toString('utf-8')) };
+      } catch {
+        // keep default
+      }
+    }
+    const frontendUrl = this.getFrontendUrl(state.frontendUrl);
 
     if (error) {
       return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(error)}`);
     }
 
     try {
-      let state = { role: UserRole.COMPANY, mode: 'login' };
-      if (stateStr) {
-        try {
-          state = JSON.parse(Buffer.from(stateStr, 'base64').toString('utf-8'));
-        } catch {
-          // keep default
-        }
-      }
-
       // Security Guard: Reject Candidate on Google callback
       if (state.role === UserRole.CANDIDATE) {
         return res.redirect(
@@ -111,8 +141,7 @@ export class AuthController {
 
       const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
       const clientSecret = this.configService.get<string>('GOOGLE_CLIENT_SECRET');
-      const callbackUrl =
-        this.configService.get<string>('GOOGLE_CALLBACK_URL') || 'http://localhost:4000/api/auth/google/callback';
+      const callbackUrl = this.getCallbackUrl('google');
 
       // Exchange code for token
       const tokenRes = await axios.post(
@@ -155,9 +184,11 @@ export class AuthController {
   async githubAuth(
     @Query('role') role: UserRole = UserRole.CANDIDATE,
     @Query('mode') mode: string = 'login',
+    @Query('origin') origin: string,
+    @Req() req: any,
     @Res() res: Response,
   ) {
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
+    const frontendUrl = this.getFrontendUrl(origin || req.headers?.referer);
 
     // Strict Rule: COMPANY is NOT allowed to sign up or sign in with GitHub!
     if (role === UserRole.COMPANY) {
@@ -169,8 +200,7 @@ export class AuthController {
     }
 
     const clientId = this.configService.get<string>('GITHUB_CLIENT_ID');
-    const callbackUrl =
-      this.configService.get<string>('GITHUB_CALLBACK_URL') || 'http://localhost:4000/api/auth/github/callback';
+    const callbackUrl = this.getCallbackUrl('github');
 
     // If client ID is not configured, fallback to Dev / Mock OAuth mode only in development
     if (!clientId) {
@@ -184,7 +214,7 @@ export class AuthController {
       return res.redirect(`${frontendUrl}/mock-oauth?provider=github&role=${role}&mode=${mode}`);
     }
 
-    const state = Buffer.from(JSON.stringify({ role, mode })).toString('base64');
+    const state = Buffer.from(JSON.stringify({ role, mode, frontendUrl })).toString('base64');
     const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(
       callbackUrl,
     )}&scope=${encodeURIComponent('read:user user:email')}&state=${state}`;
@@ -200,22 +230,21 @@ export class AuthController {
     @Query('error') error: string,
     @Res() res: Response,
   ) {
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
+    let state = { role: UserRole.CANDIDATE, mode: 'login', frontendUrl: this.getFrontendUrl() };
+    if (stateStr) {
+      try {
+        state = { ...state, ...JSON.parse(Buffer.from(stateStr, 'base64').toString('utf-8')) };
+      } catch {
+        // keep default
+      }
+    }
+    const frontendUrl = this.getFrontendUrl(state.frontendUrl);
 
     if (error) {
       return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(error)}`);
     }
 
     try {
-      let state = { role: UserRole.CANDIDATE, mode: 'login' };
-      if (stateStr) {
-        try {
-          state = JSON.parse(Buffer.from(stateStr, 'base64').toString('utf-8'));
-        } catch {
-          // keep default
-        }
-      }
-
       // Security Guard: Reject Company on GitHub callback
       if (state.role === UserRole.COMPANY) {
         return res.redirect(
