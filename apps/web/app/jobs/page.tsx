@@ -407,7 +407,19 @@ export default function JobsPage() {
                     <div className="flex items-center gap-3.5 min-w-0">
                       <div className="h-12 w-12 rounded-xl bg-[#f4f5fa] border border-slate-200/80 flex items-center justify-center overflow-hidden flex-shrink-0">
                         {job.companyLogoUrl ? (
-                          <img src={job.companyLogoUrl} alt={job.companyName} className="h-full w-full object-cover" />
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={job.companyLogoUrl}
+                            alt={job.companyName}
+                            className="h-full w-full object-contain p-1"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                              const parent = e.currentTarget.parentElement;
+                              if (parent) {
+                                parent.innerHTML = '<span class="font-bold text-[#4f46e5] text-sm">' + (job.companyName || 'S').charAt(0).toUpperCase() + '</span>';
+                              }
+                            }}
+                          />
                         ) : (
                           <Building2 className="h-6 w-6 text-slate-400" />
                         )}

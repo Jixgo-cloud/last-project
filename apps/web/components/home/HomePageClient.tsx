@@ -763,14 +763,36 @@ export default function HomePageClient({ initialJobs = [], initialCourses = [] }
                 >
                   {/* Top: Mark + Title + Company */}
                   <div className="flex items-start gap-3">
-                    <span className="grid place-items-center w-11 h-11 rounded-[13px] font-extrabold text-[#4f46e5] bg-[#e8eaff] flex-shrink-0">
-                      {job.companyName.charAt(0) || 'S'}
-                    </span>
-                    <div>
+                    <div className="w-12 h-12 rounded-[14px] bg-[#f8fafc] border border-slate-200/90 flex items-center justify-center overflow-hidden flex-shrink-0 shadow-2xs">
+                      {job.companyLogoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={job.companyLogoUrl}
+                          alt={job.companyName}
+                          className="w-full h-full object-contain p-1.5"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            const parent = e.currentTarget.parentElement;
+                            if (parent) {
+                              parent.classList.add('bg-[#e8eaff]');
+                              const fallbackSpan = document.createElement('span');
+                              fallbackSpan.className = 'font-extrabold text-[#4f46e5] text-base';
+                              fallbackSpan.textContent = (job.companyName || 'S').charAt(0).toUpperCase();
+                              parent.appendChild(fallbackSpan);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <span className="font-extrabold text-[#4f46e5] text-base">
+                          {(job.companyName || 'S').charAt(0).toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
                       <h3 className="text-[15px] font-[750] text-slate-900 leading-snug">
                         {job.title}
                       </h3>
-                      <p className="text-xs text-[#667085] mt-0.5">{job.companyName}</p>
+                      <p className="text-xs text-[#667085] mt-0.5 truncate">{job.companyName}</p>
                     </div>
                   </div>
 

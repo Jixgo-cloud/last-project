@@ -13,6 +13,7 @@ export function formatJobItem(j: any) {
     id: j.id,
     title: j.title,
     companyName: j.company?.name || j.companyName || 'SmartCareer Partner',
+    companyLogoUrl: j.companyLogoUrl || j.company?.logoUrl || null,
     source: j.source ? `Source: ${j.source}` : 'Source: SmartCareer',
     location: j.location || 'กรุงเทพมหานคร',
     workMode: j.isRemote ? 'Remote' : 'Hybrid',
