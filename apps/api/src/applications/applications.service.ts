@@ -1,10 +1,12 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MatchingService } from '../matching/matching.service';
 import { ApplicationStatus } from '@smartcareer/shared';
 
 @Injectable()
 export class ApplicationsService {
+  private readonly logger = new Logger(ApplicationsService.name);
+
   constructor(
     private prisma: PrismaService,
     private matchingService: MatchingService,
@@ -15,10 +17,11 @@ export class ApplicationsService {
     jobId: string,
     data: { coverLetter?: string; resumeUrl?: string },
   ) {
-    const candidate = await this.prisma.candidateProfile.findUnique({
-      where: { userId: candidateUserId },
-    });
-    if (!candidate) throw new NotFoundException('Candidate profile not found');
+    try {
+      const candidate = await this.prisma.candidateProfile.findUnique({
+        where: { userId: candidateUserId },
+      });
+      if (!candidate) throw new NotFoundException('Candidate profile not found');
 
     const job = await this.prisma.job.findUnique({ where: { id: jobId } });
     if (!job) throw new NotFoundException('Job not found');
@@ -71,7 +74,11 @@ export class ApplicationsService {
       },
     });
 
-    return application;
+      return application;
+    } catch (err: any) {
+      this.logger.error(`Failed to apply for job ${jobId} (candidateUserId: ${candidateUserId}): ${err.message}`, err.stack);
+      throw err;
+    }
   }
 
   async cancelApplication(candidateUserId: string, applicationId: string) {

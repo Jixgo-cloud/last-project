@@ -53,8 +53,12 @@ export class MatchingService {
       // Assessments do not dilute match score; passing grants the Verified Badge
       const effectiveScore = cs.practicalScore || (cs.isVerified ? 85 : 70);
       const isVerified = Boolean(cs.isVerified);
-      candidateSkillMap.set(cs.skill.name.toLowerCase(), { score: effectiveScore, isVerified });
-      candidateSkillMap.set(cs.skill.id, { score: effectiveScore, isVerified });
+      if (cs.skill?.name) {
+        candidateSkillMap.set(cs.skill.name.toLowerCase(), { score: effectiveScore, isVerified });
+      }
+      if (cs.skillId) {
+        candidateSkillMap.set(cs.skillId, { score: effectiveScore, isVerified });
+      }
     }
 
     const requiredSkills = job.skills.filter((s) => s.isRequired);
@@ -68,8 +72,9 @@ export class MatchingService {
     let requiredScoreSum = 0;
     if (requiredSkills.length > 0) {
       for (const req of requiredSkills) {
+        const skillName = req.skill?.name || 'Skill';
         const skillData =
-          candidateSkillMap.get(req.skill.name.toLowerCase()) ||
+          (req.skill?.name ? candidateSkillMap.get(req.skill.name.toLowerCase()) : null) ||
           candidateSkillMap.get(req.skillId);
         const userScore = skillData?.score || 0;
         const isVerified = skillData?.isVerified || false;
@@ -78,20 +83,22 @@ export class MatchingService {
           verifiedBadgesCount++;
         }
 
+        const minScore = req.minimumScore || 50;
+
         if (userScore >= 40) {
           matchedSkills.push({
             skillId: req.skillId,
-            name: req.skill.name,
+            name: skillName,
             userScore,
-            requiredScore: req.minimumScore,
+            requiredScore: minScore,
             isVerified,
           });
-          requiredScoreSum += Math.min(1, userScore / req.minimumScore);
+          requiredScoreSum += Math.min(1, userScore / minScore);
         } else {
           missingSkills.push({
             skillId: req.skillId,
-            name: req.skill.name,
-            requiredScore: req.minimumScore,
+            name: skillName,
+            requiredScore: minScore,
             userScore,
           });
         }
@@ -104,8 +111,9 @@ export class MatchingService {
     let preferredScoreSum = 0;
     if (preferredSkills.length > 0) {
       for (const pref of preferredSkills) {
+        const skillName = pref.skill?.name || 'Skill';
         const skillData =
-          candidateSkillMap.get(pref.skill.name.toLowerCase()) ||
+          (pref.skill?.name ? candidateSkillMap.get(pref.skill.name.toLowerCase()) : null) ||
           candidateSkillMap.get(pref.skillId);
         const userScore = skillData?.score || 0;
         const isVerified = skillData?.isVerified || false;
@@ -114,20 +122,22 @@ export class MatchingService {
           verifiedBadgesCount++;
         }
 
+        const minScore = pref.minimumScore || 50;
+
         if (userScore >= 30) {
           matchedSkills.push({
             skillId: pref.skillId,
-            name: pref.skill.name,
+            name: skillName,
             userScore,
-            requiredScore: pref.minimumScore,
+            requiredScore: minScore,
             isVerified,
           });
           preferredScoreSum += 1;
         } else {
           missingSkills.push({
             skillId: pref.skillId,
-            name: pref.skill.name,
-            requiredScore: pref.minimumScore,
+            name: skillName,
+            requiredScore: minScore,
             userScore,
           });
         }
