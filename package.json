@@ -9,6 +9,9 @@
   "scripts": {
     "dev": "npm run dev --workspaces",
     "dev:api": "npm run start:dev --workspace=@smartcareer/api",
+    "dev:web": "npm run dev --workspace=@smartcareer/web",
+    "start:api": "npm run start:dev --workspace=@smartcareer/api",
+    "start:web": "npm run dev --workspace=@smartcareer/web",
     "build": "npm run build --workspaces",
     "build:web": "npm run build --workspace=@smartcareer/shared && npm run build --workspace=@smartcareer/web",
     "build:api": "npm run build --workspace=@smartcareer/shared && npx prisma generate && npm run build --workspace=@smartcareer/api",
