@@ -147,127 +147,80 @@ export class GithubService {
     // 1. Fetch repositories
     const repos = await this.fetchUserRepositories(targetUsername);
 
-    // Commit only after the complete remote snapshot has been fetched successfully.
-    await this.prisma.$transaction(async (tx) => {
-      if (!profile.githubUsername) {
-        await tx.candidateProfile.update({ where: { id: profile.id }, data: {
-          githubUsername: targetUsername, githubConnectedAt: new Date(),
-        } });
-      }
-      await tx.gitHubEvidence.deleteMany({ where: { candidateSkill: { candidateId: profile.id } } });
-      await tx.gitHubRepository.deleteMany({ where: {
-        candidateId: profile.id, fullName: { notIn: repos.map((repo) => repo.fullName) },
-      } });
-    // 2. Process and save repositories & evidences
+    // Aggregate repeated skills before writing, retaining the original last-repository score.
+    const detectedByName = new Map<string, { category: SkillCategory; practicalScore: number }>();
     for (const repo of repos) {
-      const dbRepo = await tx.gitHubRepository.upsert({
-        where: {
-          candidateId_fullName: {
-            candidateId: profile.id,
-            fullName: repo.fullName,
-          },
-        },
-        update: {
-          repoName: repo.repoName,
-          description: repo.description,
-          url: repo.url,
-          language: repo.language,
-          stargazersCount: repo.stars,
-          forksCount: repo.forks,
-          topics: repo.topics,
-          languagesBreakdown: repo.languages,
-        },
-        create: {
-          candidateId: profile.id,
-          repoName: repo.repoName,
-          fullName: repo.fullName,
-          description: repo.description,
-          url: repo.url,
-          language: repo.language,
-          stargazersCount: repo.stars,
-          forksCount: repo.forks,
-          topics: repo.topics,
-          languagesBreakdown: repo.languages,
-        },
-      });
-
-      // Map detected skills
       for (const detected of repo.detectedSkills) {
-        // Ensure skill exists in master table
-        const skill = await tx.skill.upsert({
-          where: { name: detected.skillName },
-          update: {},
-          create: {
-            name: detected.skillName,
-            slug: detected.skillName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-            category: detected.category,
-          },
-        });
-
-        // Upsert candidate skill with practical score calculation
-        const candidateSkill = await tx.candidateSkill.upsert({
-          where: {
-            candidateId_skillId: {
-              candidateId: profile.id,
-              skillId: skill.id,
-            },
-          },
-          update: {
-            practicalScore: Math.min(95, Math.max(50, 60 + repo.stars * 5 + detected.scoreWeight)),
-          },
-          create: {
-            candidateId: profile.id,
-            skillId: skill.id,
-            practicalScore: Math.min(95, Math.max(50, 60 + repo.stars * 5 + detected.scoreWeight)),
-          },
-        });
-
-        // Calculate verified score
-        const verifiedScore = Math.round(
-          candidateSkill.practicalScore * 0.5 +
-            candidateSkill.theoryScore * 0.2 +
-            candidateSkill.codingScore * 0.3,
-        );
-
-        await tx.candidateSkill.update({
-          where: { id: candidateSkill.id },
-          data: {
-            verifiedScore,
-            isVerified: verifiedScore >= 60,
-          },
-        });
-
-        // Avoid duplicate evidence accumulation on re-sync
-        await tx.gitHubEvidence.deleteMany({
-          where: {
-            candidateSkillId: candidateSkill.id,
-            repositoryId: dbRepo.id,
-          },
-        });
-
-        // Create Evidence
-        await tx.gitHubEvidence.create({
-          data: {
-            candidateSkillId: candidateSkill.id,
-            repositoryId: dbRepo.id,
-            dependencyMatches: [detected.dependency],
-            commitCount: 0,
-            linesOfCode: 0,
-            scoreContribution: detected.scoreWeight,
-          },
+        detectedByName.set(detected.skillName, {
+          category: detected.category,
+          practicalScore: Math.min(95, Math.max(50, 60 + repo.stars * 5 + detected.scoreWeight)),
         });
       }
     }
 
-      // Remove stale practical contributions while preserving quiz/code history.
-      const skills = await tx.candidateSkill.findMany({ where: { candidateId: profile.id }, include: { evidences: true } });
-      for (const skill of skills) {
-        if (skill.evidences.length === 0) {
+    // Commit the complete snapshot atomically. Each skill is updated once, not once per repository.
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        if (!profile.githubUsername) {
+          await tx.candidateProfile.update({ where: { id: profile.id }, data: {
+            githubUsername: targetUsername, githubConnectedAt: new Date(),
+          } });
+        }
+        await tx.gitHubEvidence.deleteMany({ where: { candidateSkill: { candidateId: profile.id } } });
+        await tx.gitHubRepository.deleteMany({ where: {
+          candidateId: profile.id, fullName: { notIn: repos.map((repo) => repo.fullName) },
+        } });
+        const repositoryIds = new Map<string, string>();
+        for (const repo of repos) {
+          const data = {
+            repoName: repo.repoName, description: repo.description, url: repo.url,
+            language: repo.language, stargazersCount: repo.stars, forksCount: repo.forks,
+            topics: repo.topics, languagesBreakdown: repo.languages,
+          };
+          const saved = await tx.gitHubRepository.upsert({
+            where: { candidateId_fullName: { candidateId: profile.id, fullName: repo.fullName } },
+            update: data, create: { ...data, candidateId: profile.id, fullName: repo.fullName },
+          });
+          repositoryIds.set(repo.fullName, saved.id);
+        }
+        if (detectedByName.size) {
+          await tx.skill.createMany({ skipDuplicates: true, data: [...detectedByName].map(([name, detected]) => ({
+            name, slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), category: detected.category,
+          })) });
+        }
+        const masterSkills = await tx.skill.findMany({ where: { name: { in: [...detectedByName.keys()] } } });
+        const existingSkills = await tx.candidateSkill.findMany({ where: { candidateId: profile.id } });
+        const existingBySkill = new Map(existingSkills.map(skill => [skill.skillId, skill]));
+        const candidateSkillIds = new Map<string, string>();
+        for (const skill of masterSkills) {
+          const practicalScore = detectedByName.get(skill.name)!.practicalScore;
+          const existing = existingBySkill.get(skill.id);
+          const verifiedScore = Math.round(practicalScore * 0.5 + (existing?.theoryScore || 0) * 0.2 + (existing?.codingScore || 0) * 0.3);
+          const data = { practicalScore, verifiedScore, isVerified: verifiedScore >= 60 };
+          const saved = await tx.candidateSkill.upsert({
+            where: { candidateId_skillId: { candidateId: profile.id, skillId: skill.id } },
+            update: data, create: { ...data, candidateId: profile.id, skillId: skill.id },
+          });
+          candidateSkillIds.set(skill.name, saved.id);
+          existingBySkill.delete(skill.id);
+        }
+        const evidence = repos.flatMap(repo => repo.detectedSkills.map(detected => ({
+          repositoryId: repositoryIds.get(repo.fullName)!,
+          candidateSkillId: candidateSkillIds.get(detected.skillName)!,
+          dependencyMatches: [detected.dependency], commitCount: 0, linesOfCode: 0,
+          scoreContribution: detected.scoreWeight,
+        })));
+        if (evidence.length) await tx.gitHubEvidence.createMany({ data: evidence });
+        // Remove stale practical contributions while preserving quiz/code history.
+        for (const skill of existingBySkill.values()) {
           const verifiedScore = Math.round(skill.theoryScore * 0.2 + skill.codingScore * 0.3);
           await tx.candidateSkill.update({ where: { id: skill.id }, data: { practicalScore: 0, verifiedScore, isVerified: verifiedScore >= 60 } });
         }
-      }
-    }, { timeout: 60000 });
+      }, { timeout: 60000 });
+    } catch (error) {
+      this.logger.error('GitHub snapshot transaction failed', error instanceof Error ? error.stack : undefined);
+      throw new ServiceUnavailableException('บันทึกข้อมูล GitHub ไม่สำเร็จ กรุณาลองใหม่ ข้อมูลเดิมยังคงอยู่');
+    }
 
     return this.prisma.candidateProfile.findUnique({
       where: { id: profile.id },

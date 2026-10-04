@@ -65,6 +65,30 @@ test('Unavailable GitHub does not bind an account or replace existing evidence',
   } finally {axios.get = original;}
 });
 
+test('A repeated GitHub skill is written once, keeps quiz/code scores and batches all evidence', async () => {
+  let skillWrites = 0;
+  let evidence;
+  let staleUpdate;
+  const tx = {
+    gitHubRepository:{deleteMany:async()=>{},upsert:async args=>({id:args.create.fullName})},
+    gitHubEvidence:{deleteMany:async()=>{},createMany:async args=>{evidence=args.data;}},
+    skill:{createMany:async()=>{},findMany:async()=>[{id:'js',name:'JavaScript'}]},
+    candidateSkill:{
+      findMany:async()=>[{id:'existing',skillId:'js',theoryScore:100,codingScore:50},{id:'stale',skillId:'old',theoryScore:50,codingScore:100}],
+      upsert:async args=>{skillWrites++;assert.deepEqual(args.update,{practicalScore:65,verifiedScore:68,isVerified:true});return{id:'existing'};},
+      update:async args=>{staleUpdate=args;},
+    },
+  };
+  const profile={id:'candidate',githubUsername:'qa'};
+  const service=new GithubService({candidateProfile:{findUnique:async()=>profile},$transaction:async fn=>fn(tx)});
+  service.fetchUserRepositories=async()=>Array.from({length:16},(_,i)=>({repoName:`r${i}`,fullName:`qa/r${i}`,description:'',url:'https://github.com/qa',language:'JavaScript',stars:0,forks:0,topics:[],languages:{JavaScript:10},detectedSkills:[{skillName:'JavaScript',category:'FRONTEND',dependency:'JavaScript',scoreWeight:i===15?5:10}]}));
+  await service.syncCandidateGithub('user');
+  assert.equal(skillWrites,1);
+  assert.equal(evidence.length,16);
+  assert.ok(evidence.every(row=>row.commitCount===0&&row.linesOfCode===0));
+  assert.deepEqual(staleUpdate.data,{practicalScore:0,verifiedScore:40,isVerified:false});
+});
+
 test('Foreign job scope fails before querying any applications; owned scope reaches the database', async () => {
   let query;
   const prisma = {job:{findFirst:async()=>null},jobApplication:{findMany:async args=>{query=args;return[];}}};

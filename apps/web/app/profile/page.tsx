@@ -85,6 +85,7 @@ function ProfileHubContent() {
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   // Fetch candidate profile & radar data simultaneously
   const fetchData = async () => {
@@ -159,6 +160,7 @@ function ProfileHubContent() {
     try {
       setSyncing(true);
       setSyncSuccess(null);
+      setSyncError(null);
       await apiRequest('/github/sync', {
         method: 'POST',
         body: JSON.stringify({ username: targetUser }),
@@ -166,7 +168,7 @@ function ProfileHubContent() {
       setSyncSuccess(`วิเคราะห์และซิงค์หลักฐานจาก GitHub @${targetUser} สำเร็จเรียบร้อย!`);
       await fetchData();
     } catch (err: any) {
-      alert(`Sync failed: ${err.message}`);
+      setSyncError(err.message || 'ซิงค์ GitHub ไม่สำเร็จ กรุณาลองใหม่ ข้อมูลเดิมยังคงอยู่');
     } finally {
       setSyncing(false);
     }
@@ -284,6 +286,11 @@ function ProfileHubContent() {
         </section>
 
         {/* Sync Success Notification */}
+        {syncError && (
+          <div role="alert" className="mb-6 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-xs sm:text-sm">
+            {syncError}
+          </div>
+        )}
         {syncSuccess && (
           <div className="mb-6 p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm flex items-center gap-3 animate-in fade-in duration-200">
             <CheckCircle2 className="h-5 w-5 text-emerald-600 flex-shrink-0" />
