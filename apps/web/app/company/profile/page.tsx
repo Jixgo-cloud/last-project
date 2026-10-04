@@ -25,6 +25,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { VerificationStatus } from '@smartcareer/shared';
+import { companyVerificationLabels, getCompanyVerificationState } from '@/lib/company-verification';
 
 interface UploadedDocument {
   name: string;
@@ -181,7 +182,7 @@ export default function CompanyProfilePage() {
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!taxId) return;
+    if (!taxId || isVerified || isPending) return;
     setVerifying(true);
     setSuccess(null);
     try {
@@ -211,8 +212,9 @@ export default function CompanyProfilePage() {
     }
   };
 
-  const isVerified = company?.verificationStatus === VerificationStatus.VERIFIED;
-  const isPending = company?.verificationStatus === VerificationStatus.PENDING;
+  const verificationState = getCompanyVerificationState(company);
+  const isVerified = verificationState === VerificationStatus.VERIFIED;
+  const isPending = verificationState === VerificationStatus.PENDING;
   const existingVerification = company?.verifications?.[0];
   const existingFiles: any[] = existingVerification?.documents?.files || [];
 
@@ -266,14 +268,16 @@ export default function CompanyProfilePage() {
                         : 'bg-slate-100 text-slate-700 border-slate-200'
                     }`}
                   >
-                    {company?.verificationStatus || 'UNVERIFIED'}
+                    {companyVerificationLabels[verificationState]}
                   </span>
                   <span className="text-xs font-medium text-slate-500">
                     {isVerified
                       ? 'ได้รับการยืนยันความถูกต้องแล้ว'
                       : isPending
                       ? 'อยู่ระหว่างรอผู้ดูแลระบบตรวจสอบเอกสาร'
-                      : 'ยังไม่ได้ยืนยันตัวตน'}
+                      : verificationState === VerificationStatus.REJECTED
+                      ? 'กรุณาตรวจข้อมูลและเอกสารก่อนส่งคำขอใหม่'
+                      : 'ยังไม่ได้ส่งคำขอและเอกสารให้ผู้ดูแลระบบ'}
                   </span>
                 </div>
               </div>
@@ -291,7 +295,7 @@ export default function CompanyProfilePage() {
               ) : (
                 <div className="flex items-center gap-2.5 text-xs font-bold text-slate-600 bg-slate-100 px-4 py-2.5 rounded-full border border-slate-200 shadow-xs">
                   <AlertCircle className="h-5 w-5 text-slate-400" />
-                  <span>Not Verified</span>
+                  <span>{verificationState === VerificationStatus.REJECTED ? 'Request Rejected' : 'Not Submitted'}</span>
                 </div>
               )}
             </div>
@@ -628,7 +632,7 @@ export default function CompanyProfilePage() {
                 </span>
                 <button
                   type="submit"
-                  disabled={verifying || isVerified}
+                  disabled={verifying || isVerified || isPending}
                   className="inline-flex items-center gap-2 rounded-full bg-slate-900 hover:bg-slate-800 text-white px-6 py-2.5 text-xs font-bold shadow-xs transition disabled:opacity-50"
                 >
                   <ShieldCheck className="h-4 w-4" />
@@ -637,6 +641,8 @@ export default function CompanyProfilePage() {
                       ? 'กำลังส่งคำขอ...'
                       : isVerified
                       ? 'ยืนยันตัวตนแล้ว (Verified)'
+                      : isPending
+                      ? 'ส่งคำขอแล้ว รอผู้ดูแลตรวจสอบ'
                       : 'ยื่นตรวจสอบสิทธิ์พร้อมเอกสาร (Submit Verification)'}
                   </span>
                 </button>

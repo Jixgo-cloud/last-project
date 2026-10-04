@@ -17,6 +17,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { VerificationStatus } from '@smartcareer/shared';
+import { companyVerificationLabels, getCompanyVerificationState } from '@/lib/company-verification';
 
 export default function CompanyDashboardPage() {
   useAuth();
@@ -29,6 +30,8 @@ export default function CompanyDashboardPage() {
       .catch((e) => console.error(e))
       .finally(() => setLoading(false));
   }, []);
+
+  const verificationState = getCompanyVerificationState(company);
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#f9fbfe] via-[#f3f6fb] to-[#eef2f8] text-[#111827] antialiased">
@@ -64,7 +67,7 @@ export default function CompanyDashboardPage() {
                           : 'bg-amber-50 text-amber-700 border-amber-200'
                       }`}
                     >
-                      {company?.verificationStatus === VerificationStatus.VERIFIED ? '✓ ยืนยันแล้ว' : 'รอการตรวจสอบ'}
+                      {companyVerificationLabels[verificationState]}
                     </span>
                   </div>
                   <p className="text-xs text-[#667085] mt-1">{company?.address || 'ประเทศไทย'}</p>
@@ -90,16 +93,20 @@ export default function CompanyDashboardPage() {
             </div>
 
             {/* Verification Alert if Pending */}
-            {company?.verificationStatus === VerificationStatus.PENDING && (
+            {verificationState !== VerificationStatus.VERIFIED && (
               <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4 text-amber-600 flex-shrink-0" />
                   <span>
-                    เอกสารยืนยันสถานประกอบการของคุณกำลังอยู่ระหว่างการตรวจสอบโดยทีมผู้ดูแลระบบ (Admin)
+                    {verificationState === VerificationStatus.PENDING
+                      ? 'ส่งคำขอแล้ว กำลังรอผู้ดูแลระบบตรวจสอบเอกสาร'
+                      : verificationState === VerificationStatus.REJECTED
+                      ? 'คำขอไม่ผ่านการตรวจสอบ กรุณาตรวจข้อมูลและเอกสารก่อนส่งใหม่'
+                      : 'ยังไม่ได้ส่งคำขอยืนยันบริษัท กรุณากรอกข้อมูลและแนบเอกสาร'}
                   </span>
                 </div>
                 <Link href="/company/profile" className="font-bold underline hover:text-amber-900 ml-2">
-                  ตรวจดูเอกสาร
+                  {verificationState === 'NOT_SUBMITTED' ? 'เตรียมเอกสาร' : 'ตรวจดูเอกสาร'}
                 </Link>
               </div>
             )}
@@ -132,7 +139,7 @@ export default function CompanyDashboardPage() {
                   <ShieldCheck className="h-4 w-4 text-emerald-600" />
                 </div>
                 <div className="text-xl font-extrabold text-slate-900 mt-1">
-                  {company?.verificationStatus === VerificationStatus.VERIFIED ? 'ยืนยันเรียบร้อย' : 'รอการอนุมัติ'}
+                  {companyVerificationLabels[verificationState]}
                 </div>
               </div>
             </div>

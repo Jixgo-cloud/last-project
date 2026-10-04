@@ -126,7 +126,7 @@ async function run() {
   const candidate = await db.user.create({ data: { email: 'candidate@smartcareer.dev', passwordHash: hash, role: 'CANDIDATE', candidateProfile: { create: { fullName: 'Regression Candidate', targetCareer: 'Backend Developer' } } }, include: { candidateProfile: true } });
   const employer = await db.user.create({ data: { email: 'hr@techcorp.co.th', passwordHash: hash, role: 'COMPANY' } });
   await db.user.create({ data: { email: 'admin@smartcareer.dev', passwordHash: await bcrypt.hash('admin123', 10), role: 'ADMIN' } });
-  const company = await db.company.create({ data: { name: 'Regression Test Company', slug: databaseName, verificationStatus: 'VERIFIED', members: { create: { userId: employer.id, role: 'OWNER' } } } });
+  const company = await db.company.create({ data: { name: 'Regression Test Company', slug: databaseName, members: { create: { userId: employer.id, role: 'OWNER' } } } });
   const skill = await db.skill.create({ data: { name: 'JavaScript', slug: 'javascript', category: 'BACKEND' } });
   await db.candidateSkill.create({ data: { candidateId: candidate.candidateProfile.id, skillId: skill.id, practicalScore: 80 } });
   const theory = await db.assessment.create({ data: { title: 'Regression Theory', slug: 'regression-theory', type: 'THEORY', skillId: skill.id, questions: { create: { title: 'Regression choice', prompt: 'Choose the correct regression answer.', points: 10, choices: { create: [{ text: 'Correct regression answer', isCorrect: true, order: 0 }, { text: 'Incorrect regression answer', isCorrect: false, order: 1 }] } } } }, include: { questions: { include: { choices: true } } } });
@@ -158,6 +158,50 @@ async function run() {
   let companyToken;
   let invalidLegacyAssessment;
   await check('Company login through UI', async () => { companyToken = await login('hr@techcorp.co.th', 'password123', '/company/dashboard'); await screenshot('company-login'); assert.equal((await request('/auth/me', 'GET', undefined, companyToken)).role, 'COMPANY'); });
+  await check('Company without a request is not awaiting review', async () => {
+    await goto('/company/dashboard');
+    await page.waitForFunction(() => document.body.innerText.includes('ยังไม่ส่งเอกสาร'));
+    assert(!(await page.$eval('body', el => el.innerText)).includes('กำลังรอผู้ดูแลระบบตรวจสอบเอกสาร'));
+    assert.equal(await db.companyVerification.count(), 0);
+    await goto('/company/profile');
+    await page.waitForFunction(() => document.body.innerText.includes('ยังไม่ส่งเอกสาร'));
+    await screenshot('company-not-submitted');
+  });
+  const submitCompanyDocuments = async () => {
+    await fill('input[maxlength="13"]', '1234567890123');
+    // A screenshot of this disposable test site is a non-identity upload fixture.
+    await (await page.$('input[type="file"][multiple]')).uploadFile(path.join(evidenceDir, 'home.png'));
+    await page.waitForFunction(() => document.body.innerText.includes('home.png'));
+    await clickText('ยื่นตรวจสอบสิทธิ์พร้อมเอกสาร');
+    await page.waitForFunction(() => document.body.innerText.includes('ส่งคำขอแล้ว รอผู้ดูแลตรวจสอบ'));
+    assert(await page.$$eval('button', buttons => buttons.some(b => b.disabled && b.innerText.includes('ส่งคำขอแล้ว รอผู้ดูแลตรวจสอบ'))));
+  };
+  await check('Submitted documents and rejected requests show their actual state', async () => {
+    await submitCompanyDocuments();
+    await screenshot('company-pending-review');
+    await login('admin@smartcareer.dev', 'admin123', '/admin/dashboard');
+    await goto('/admin/verifications');
+    await clickText('ปฏิเสธ (Reject)');
+    await page.waitForFunction(() => document.body.innerText.includes('ดำเนินการ ปฏิเสธคำขอ'));
+    assert.equal((await db.company.findUnique({ where: { id: company.id } })).verificationStatus, 'REJECTED');
+    await login('hr@techcorp.co.th', 'password123', '/company/dashboard');
+    await goto('/company/profile');
+    await page.waitForFunction(() => document.body.innerText.includes('คำขอไม่ผ่านการตรวจสอบ'));
+    await screenshot('company-rejected');
+  });
+  await check('Resubmitted documents can be approved through the admin UI', async () => {
+    await submitCompanyDocuments();
+    await login('admin@smartcareer.dev', 'admin123', '/admin/dashboard');
+    await goto('/admin/verifications');
+    await clickText('อนุมัติ (Approve)');
+    await page.waitForFunction(() => document.body.innerText.includes('ดำเนินการ อนุมัติการรับรอง'));
+    assert.equal((await db.company.findUnique({ where: { id: company.id } })).verificationStatus, 'VERIFIED');
+    assert.equal(await db.companyVerification.count({ where: { status: 'PENDING' } }), 0);
+    companyToken = await login('hr@techcorp.co.th', 'password123', '/company/dashboard');
+    await goto('/company/profile');
+    await page.waitForFunction(() => document.body.innerText.includes('Verified Employer Active'));
+    await screenshot('company-verified');
+  });
   await check('Browser session is private and cross-site writes are refused', async () => {
     const me = await fetch('http://localhost:3000/api/auth/me', { headers: { Cookie: 'smartcareer_session=' + companyToken } });
     assert(me.ok); assert.equal((await me.json()).token, undefined);
