@@ -1,4 +1,7 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, StreamableFile } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { VerificationQueryDto } from './dto/verification-query.dto';
+import { decodeVerificationFile } from '../company/verification-documents';
 import { PrismaService } from '../prisma/prisma.service';
 import { assessmentQuestionsMatch, getAssessmentValidationError, VerificationStatus } from '@smartcareer/shared';
 
@@ -45,13 +48,63 @@ export class AdminService {
     };
   }
 
-  async listVerifications(status?: VerificationStatus) {
-    return this.prisma.companyVerification.findMany({
-      where: status ? { status } : undefined,
-      include: {
-        company: true,
-      },
-      orderBy: { createdAt: 'desc' },
+  async listVerifications(query: VerificationQueryDto) {
+    return this.prisma.$transaction(async tx => {
+      const groups = await tx.companyVerification.groupBy({ by: ['status'], _count: { _all: true } });
+      const counts = { total: 0, pending: 0, verified: 0, rejected: 0 };
+      for (const group of groups) {
+        counts.total += group._count._all;
+        counts[group.status.toLowerCase() as 'pending' | 'verified' | 'rejected'] = group._count._all;
+      }
+      const status = query.status ?? null;
+      const total = status ? counts[status.toLowerCase() as 'pending' | 'verified' | 'rejected'] : counts.total;
+      const pageSize = query.pageSize;
+      const pageCount = Math.max(1, Math.ceil(total / pageSize));
+      const page = Math.min(query.page, pageCount);
+      // Extract small metadata inside PostgreSQL; never transfer all base64 files
+      // or embedded company logos into the list response or application process.
+      const rows = await tx.$queryRaw<any[]>`
+        SELECT v.id, left(v."businessRegNo", 64) AS "businessRegNo", v.status, v."createdAt", v."reviewedAt", left(v."rejectionReason", 2000) AS "rejectionReason",
+          jsonb_build_object('id', c.id, 'name', left(c.name, 255), 'logoUrl',
+            CASE WHEN length(c."logoUrl") <= 2048 AND c."logoUrl" NOT LIKE 'data:%' THEN c."logoUrl" ELSE NULL END) AS company,
+          jsonb_build_object('files', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+              'name', left(f.file->>'name', 255), 'type', left(f.file->>'type', 100),
+              'size', CASE WHEN jsonb_typeof(f.file->'size') = 'number' AND length(f.file->>'size') < 20 THEN f.file->'size' ELSE NULL END,
+              'index', f.ordinality - 1, 'available', jsonb_typeof(f.file->'dataUrl') = 'string'
+            ) ORDER BY f.ordinality)
+            FROM jsonb_array_elements(CASE WHEN jsonb_typeof(v.documents->'files') = 'array' THEN v.documents->'files' ELSE '[]'::jsonb END)
+              WITH ORDINALITY AS f(file, ordinality) WHERE f.ordinality <= 50
+          ), '[]'::jsonb)) AS documents
+        FROM company_verifications v JOIN companies c ON c.id = v."companyId"
+        WHERE (${status}::text IS NULL OR v.status::text = ${status})
+        ORDER BY v."createdAt" DESC, v.id DESC
+        LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
+      `;
+      const items = rows.map(row => ({ ...row, documents: { files: row.documents.files.map((file: any) => {
+        const downloadUrl = file.available ? `/api/admin/verifications/${encodeURIComponent(row.id)}/documents/${file.index}` : null;
+        return { name: file.name || 'เอกสารแนบ', type: file.type, size: file.size, index: file.index, downloadUrl, dataUrl: downloadUrl };
+      }) } }));
+      return { items, total, counts, page, pageSize, pageCount };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  }
+
+  async downloadVerificationDocument(verificationId: string, index: number) {
+    if (!Number.isSafeInteger(index) || index < 0) throw new BadRequestException('Invalid document index');
+    const verification = await this.prisma.companyVerification.findUnique({ where: { id: verificationId }, select: { documents: true } });
+    const documents = verification?.documents as any;
+    const file = Array.isArray(documents?.files) ? documents.files[index] : undefined;
+    if (!file || typeof file.dataUrl !== 'string' || typeof file.name !== 'string' || typeof file.type !== 'string' || !Number.isSafeInteger(file.size)) {
+      throw new NotFoundException('ไม่พบเอกสารนี้');
+    }
+    // Older requests may have attachments above today's 3 MiB upload limit.
+    if (file.dataUrl.length > 14 * 1024 * 1024) throw new BadRequestException('ไฟล์เอกสารมีขนาดใหญ่เกินกว่าที่ระบบรองรับ');
+    const bytes = decodeVerificationFile(file);
+    const filename = file.name.replace(/[\x00-\x1f\x7f/\\]/g, '_').slice(0, 255) || 'document';
+    return new StreamableFile(bytes, {
+      type: file.type,
+      disposition: `attachment; filename="document"; filename*=UTF-8''${encodeURIComponent(filename).replace(/['()*]/g, character => '%' + character.charCodeAt(0).toString(16).toUpperCase())}`,
+      length: bytes.length,
     });
   }
 

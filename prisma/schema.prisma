@@ -221,6 +221,9 @@ model CompanyVerification {
   rejectionReason String?
   createdAt       DateTime           @default(now())
 
+  @@index([createdAt, id])
+  @@index([status, createdAt, id])
+  @@index([companyId, createdAt])
   @@map("company_verifications")
 }
 

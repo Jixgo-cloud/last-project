@@ -18,4 +18,16 @@ Submissions and administrator reviews lock the same company row inside a databas
 
 Validation: build and lint passed; 9 security checks and 27 isolated regression checks passed. Regression covers API rejection cases, four simultaneous submissions (one creation and three conflicts), simultaneous reviews (one success and one conflict), stale-review rejection and resubmission/approval. A maximum-size upload serializes below Vercel's 4.5 MB limit. Production identity verification still requires genuine company information and documents.
 
-Follow-up: the administrator list still embeds document contents for every request. Several large requests can exceed Vercel's response limit. Move document retrieval out of the list, add pagination, and use authenticated per-document downloads or private file storage before scaling the review queue.
+## Administrator queue and document retrieval — 5 October 2026
+
+The administrator page loads ten requests at a time, filters on the server, and displays counts across the full queue. Stable ordering uses creation time and ID; an out-of-range page is clamped to the last page. Loading failures display an error and retry control, and stale browser requests cannot replace a newer filter result.
+
+`GET /admin/verifications?paginated=true&page=1&pageSize=10` returns `{ items, total, counts, page, pageSize, pageCount }`. Query values are validated (1–50 rows per page). PostgreSQL extracts attachment names/types/sizes and download links without returning base64 content. Inline logos are omitted from this list to prevent large embedded images from inflating the response. Text and legacy attachment metadata are bounded. Without `paginated=true`, a bounded array response with authenticated download links supports the previous frontend during rollout.
+
+`GET /admin/verifications/:id/documents/:index` requires an active administrator session. It validates the stored file, streams its original bytes as an attachment, supplies a safe UTF-8 filename and `nosniff`, and disables caching. The frontend proxy forwards those download headers and its existing private session cookie; no token appears in the link. Company and candidate sessions cannot download the documents. Files remain in the existing database; this phase requires no new storage account or public file links.
+
+Three additive indexes cover global ordering, status ordering and per-company history. API startup applies them through the existing Prisma db-push workflow; no data deletion is required.
+
+Validation: build and lint passed, with 10 security tests and 30 isolated regression checks. Regression includes 24 large document requests, metadata size limits, stable paging, complete filtered counts, invalid query rejection, authenticated binary download byte equality through the frontend proxy, denied company/candidate access, missing-file cases and UI next-page/filter checks. Computer use confirmed page 2 of 3 and filtering two approved requests out of 28. A 3 MiB document was downloaded through the supported browser download control, saved locally and verified against the original fixture by SHA-256. All fixture accounts and documents were in a disposable local database, which was removed after testing.
+
+Next improvement: require a useful rejection reason in the administrator form and display it to the company, with a notification and a clear resubmission path. Private object storage can subsequently reduce database size as the document volume grows.

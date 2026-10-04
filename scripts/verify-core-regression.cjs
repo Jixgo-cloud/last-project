@@ -249,6 +249,80 @@ async function run() {
     const blocked = await fetch('http://localhost:3000/api/auth/logout', { method: 'POST', headers: { Origin: 'https://unrelated.example' } });
     assert.equal(blocked.status, 403);
   });
+  let documentFixture;
+  let documentBytes;
+  let verificationAdminToken;
+  await check('Paginated verification metadata stays small despite many large documents', async () => {
+    const fixtureCompany = await db.company.create({ data: { name: 'Paged document fixture', slug: databaseName + '-documents', verificationStatus: 'REJECTED' } });
+    documentBytes = Buffer.alloc(3 * 1024 * 1024, 32);
+    Buffer.from('%PDF-1.7\nDisposable regression fixture\n').copy(documentBytes);
+    const documents = { files: [{ name: 'เอกสารทดสอบ "บริษัท".pdf', type: 'application/pdf', size: documentBytes.length, dataUrl: 'data:application/pdf;base64,' + documentBytes.toString('base64') }] };
+    // Legacy document-bearing rows are deliberately big; metadata extraction
+    // must not return their content or the list would exceed production limits.
+    for (let i = 0; i < 24; i++) {
+      const row = await db.companyVerification.create({ data: { companyId: fixtureCompany.id, businessRegNo: '1234567890123', status: 'REJECTED', documents, createdAt: new Date(Date.UTC(2020, 0, i + 1)) } });
+      if (i === 23) documentFixture = row;
+    }
+    verificationAdminToken = (await request('/auth/login', 'POST', { email: 'admin@smartcareer.dev', password: 'admin123' })).token;
+    const first = await request('/admin/verifications?paginated=true&page=1&pageSize=10', 'GET', undefined, verificationAdminToken);
+    const second = await request('/admin/verifications?paginated=true&page=2&pageSize=10', 'GET', undefined, verificationAdminToken);
+    assert.equal(first.total, await db.companyVerification.count());
+    assert.equal(first.items.length, 10);
+    assert.equal(first.pageCount, 3);
+    assert.equal(first.counts.pending, 0);
+    assert.equal(first.counts.verified, 2);
+    assert.equal(first.counts.rejected, 26);
+    assert.equal(second.page, 2);
+    assert(!second.items.some(item => first.items.some(other => item.id === other.id)));
+    assert(Buffer.byteLength(JSON.stringify(first)) < 50000);
+    assert(!JSON.stringify(first).includes(';base64,'));
+    assert(first.items.some(item => item.documents.files.some(file => file.downloadUrl?.includes('/documents/0'))));
+    const rejected = await request('/admin/verifications?paginated=true&status=REJECTED&page=999&pageSize=10', 'GET', undefined, verificationAdminToken);
+    assert.equal(rejected.page, 3);
+    assert.equal(rejected.total, 26);
+    assert(rejected.items.every(item => item.status === 'REJECTED'));
+    assert.equal(rejected.counts.total, first.total);
+    const legacy = await request('/admin/verifications', 'GET', undefined, verificationAdminToken);
+    assert.equal(legacy.length, 20);
+    assert(!JSON.stringify(legacy).includes(';base64,'));
+    for (const query of ['page=-1', 'page=1.5', 'pageSize=51', 'status=INVALID']) {
+      assert.equal((await requestResult('/admin/verifications?' + query, 'GET', undefined, verificationAdminToken)).status, 400);
+    }
+  });
+  await check('Individual document downloads require admin access and preserve original file bytes', async () => {
+    const endpoint = '/admin/verifications/' + documentFixture.id + '/documents/0';
+    assert.equal((await requestResult(endpoint)).status, 401);
+    assert.equal((await requestResult(endpoint, 'GET', undefined, companyToken)).status, 403);
+    const forbiddenCandidate = (await request('/auth/login', 'POST', { email: 'candidate@smartcareer.dev', password: 'password123' })).token;
+    assert.equal((await requestResult(endpoint, 'GET', undefined, forbiddenCandidate)).status, 403);
+    const downloaded = await fetch('http://localhost:3000/api' + endpoint, { headers: { Cookie: 'smartcareer_session=' + verificationAdminToken } });
+    assert.equal(downloaded.status, 200);
+    assert.equal(downloaded.headers.get('content-type'), 'application/pdf');
+    assert(downloaded.headers.get('content-disposition').startsWith('attachment;'));
+    assert(downloaded.headers.get('content-disposition').includes(encodeURIComponent('เอกสารทดสอบ "บริษัท".pdf')));
+    assert.equal(downloaded.headers.get('cache-control'), 'no-store');
+    assert.equal(downloaded.headers.get('x-content-type-options'), 'nosniff');
+    assert(Buffer.from(await downloaded.arrayBuffer()).equals(documentBytes));
+    assert.equal((await requestResult(endpoint.replace('/0', '/99'), 'GET', undefined, verificationAdminToken)).status, 404);
+    assert.equal((await requestResult(endpoint.replace('/0', '/-1'), 'GET', undefined, verificationAdminToken)).status, 400);
+    assert.equal((await requestResult('/admin/verifications/missing/documents/0', 'GET', undefined, verificationAdminToken)).status, 404);
+  });
+  await check('Admin verification UI pages and filters the full queue without loading every file', async () => {
+    await login('admin@smartcareer.dev', 'admin123', '/admin/dashboard');
+    await goto('/admin/verifications');
+    await page.waitForFunction(() => document.body.innerText.includes('ทั้งหมด (28)'));
+    assert.equal(await page.$$eval('a[download]', elements => elements.length), 10);
+    assert(await page.$$eval('a[download]', elements => elements.every(element => element.getAttribute('href').startsWith('/api/admin/verifications/'))));
+    await clickText('หน้าถัดไป');
+    await page.waitForFunction(() => document.body.innerText.includes('หน้า 2 / 3'));
+    await screenshot('admin-verifications-page-2');
+    await clickText('อนุมัติแล้ว (2)');
+    await page.waitForFunction(() => document.body.innerText.includes('หน้า 1 / 1'));
+    assert.equal(await page.$$eval('a[download]', elements => elements.length), 2);
+    await clickText('รอการตรวจสอบ (0)');
+    await page.waitForFunction(() => document.body.innerText.includes('ไม่พบคำขอรับรองในหมวดหมู่นี้'));
+    await login('hr@techcorp.co.th', 'password123', '/company/dashboard');
+  });
   await check('Company API rejects placeholder theory choices', async () => {
     const result = await requestResult('/company/assessments', 'POST', {
       title: 'Invalid regression assessment', type: 'THEORY', timeLimitMinutes: 30, passingScore: 70,

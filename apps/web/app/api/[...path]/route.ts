@@ -59,7 +59,7 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
       cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(120000),
     });
     const responseHeaders = new Headers({ 'Cache-Control': 'no-store' });
-    for (const name of ['content-type', 'content-disposition']) {
+    for (const name of ['content-type', 'content-disposition', 'x-content-type-options']) {
       const value = upstream.headers.get(name); if (value) responseHeaders.set(name, value);
     }
     if (upstream.status >= 300 && upstream.status < 400) {

@@ -13,6 +13,17 @@ const { Judge0Client } = require('../apps/api/dist/assessments/judge0.client');
 const axios = require('axios').default;
 const { SubmitCompanyVerificationDto } = require('../apps/api/dist/company/dto/company-profile.dto');
 const { validateVerificationDocuments } = require('../apps/api/dist/company/verification-documents');
+const { VerificationQueryDto } = require('../apps/api/dist/admin/dto/verification-query.dto');
+
+test('Verification pagination rejects invalid limits, statuses and unknown query fields', async () => {
+  for (const input of [{ page: '0' }, { page: '1.5' }, { pageSize: '51' }, { status: 'INVALID' }, { paginated: 'yes' }, { includeDocuments: 'true' }]) {
+    assert((await validate(plainToInstance(VerificationQueryDto, input), { whitelist: true, forbidNonWhitelisted: true })).length);
+  }
+  const query = plainToInstance(VerificationQueryDto, { page: '2', pageSize: '10', status: 'PENDING', paginated: 'true' });
+  assert.equal((await validate(query)).length, 0);
+  assert.equal(query.page, 2);
+  assert.equal(query.pageSize, 10);
+});
 
 test('Verification rejects missing attachments, malformed IDs and nested file fields', async () => {
   for (const input of [

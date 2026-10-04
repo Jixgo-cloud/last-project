@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, UseGuards, Request, ParseIntPipe, Header } from '@nestjs/common';
+import { VerificationQueryDto } from './dto/verification-query.dto';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -17,8 +18,16 @@ export class AdminController {
   }
 
   @Get('verifications')
-  async listVerifications(@Query('status') status?: VerificationStatus) {
-    return this.adminService.listVerifications(status);
+  async listVerifications(@Query() query: VerificationQueryDto) {
+    const result = await this.adminService.listVerifications(query);
+    return query.paginated === 'true' ? result : result.items;
+  }
+
+  @Get('verifications/:id/documents/:index')
+  @Header('Cache-Control', 'private, no-store')
+  @Header('X-Content-Type-Options', 'nosniff')
+  async downloadVerificationDocument(@Param('id') id: string, @Param('index', ParseIntPipe) index: number) {
+    return this.adminService.downloadVerificationDocument(id, index);
   }
 
   @Put('verifications/:id/review')
