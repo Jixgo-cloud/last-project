@@ -6,7 +6,6 @@ import {
   HttpException,
   HttpStatus,
   Logger,
-  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Judge0Client, TestCase } from './judge0.client';
@@ -234,7 +233,10 @@ export class AssessmentsService {
   async saveDraftCode(
     attemptId: string,
     candidateUserId: string,
-    draftCode: Record<string, string>,
+    draftCode: Record<string, string> | {
+      codes: Record<string, string>;
+      selectedChoices: Record<string, string>;
+    },
   ) {
     const attempt = await this.validateAttemptOwnership(attemptId, candidateUserId);
     if (attempt.status !== AttemptStatus.IN_PROGRESS) {
@@ -528,7 +530,6 @@ export class AssessmentsService {
         aiErrorMessage = err.message || 'AI service unavailable';
       }
 
-      const finalStatus = isExpired ? AttemptStatus.EXPIRED : AttemptStatus.COMPLETED;
       const isCompanyAssessment = attempt.assessment.companyId !== null;
 
       // Handle AI Outage: Graceful fallback to EVALUATION_PENDING with null score (no 0% fail!)
@@ -572,7 +573,7 @@ export class AssessmentsService {
           ? AttemptStatus.COMPLETED
           : AttemptStatus.IN_PROGRESS;
 
-        const updatedAttempt = await tx.assessmentAttempt.update({
+        await tx.assessmentAttempt.update({
           where: { id: attemptId },
           data: {
             status: currentAttemptStatus,
@@ -625,9 +626,6 @@ export class AssessmentsService {
       : AssessmentReviewStatus.NOT_REQUIRED;
 
     const aiFinalScore = isCompanyAssessment ? null : overallScore;
-    const aiPassed = isCompanyAssessment
-      ? null
-      : !isExpired && overallScore >= attempt.assessment.passingScore;
 
     return this.prisma.$transaction(async (tx) => {
       const existingAnswer = await tx.assessmentAnswer.findFirst({
@@ -673,7 +671,7 @@ export class AssessmentsService {
       const percentage = isExpired ? 0 : maxScore > 0 ? Math.round((totalPointsEarned / maxScore) * 100) : 0;
       const passed = !isExpired && percentage >= attempt.assessment.passingScore;
 
-      const updatedAttempt = await tx.assessmentAttempt.update({
+      await tx.assessmentAttempt.update({
         where: { id: attemptId },
         data: {
           status: currentAttemptStatus,
@@ -788,7 +786,7 @@ export class AssessmentsService {
       ? AttemptStatus.COMPLETED
       : AttemptStatus.IN_PROGRESS;
 
-    const updatedAttempt = await tx.assessmentAttempt.update({
+    await tx.assessmentAttempt.update({
       where: { id: attemptId },
       data: {
         status: currentAttemptStatus,

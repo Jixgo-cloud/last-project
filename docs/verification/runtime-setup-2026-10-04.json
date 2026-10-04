@@ -1,0 +1,97 @@
+{
+  "startedAt": "2026-10-04T11:30:17.468Z",
+  "database": "smartcareer_regression_1791113417457",
+  "isolated": true,
+  "results": [
+    {
+      "name": "Home and login pages render",
+      "verdict": "PASS"
+    },
+    {
+      "name": "Company login through UI",
+      "verdict": "PASS"
+    },
+    {
+      "name": "Create job through UI and verify database",
+      "verdict": "PASS"
+    },
+    {
+      "name": "Toggle job off and on through UI",
+      "verdict": "PASS"
+    },
+    {
+      "name": "Candidate login through UI",
+      "verdict": "PASS"
+    },
+    {
+      "name": "Apply for job through UI and verify database",
+      "verdict": "PASS"
+    },
+    {
+      "name": "Cancel and reapply as next round",
+      "verdict": "PASS"
+    },
+    {
+      "name": "Theory selection autosaves and integrity event persists",
+      "verdict": "PASS"
+    },
+    {
+      "name": "Submit theory through UI and persist score",
+      "verdict": "PASS"
+    },
+    {
+      "name": "Coding submission through UI persists completed attempt and score",
+      "verdict": "PASS"
+    },
+    {
+      "name": "Company changes applicant status and candidate sees notification",
+      "verdict": "PASS"
+    },
+    {
+      "name": "Admin login and dashboard data",
+      "verdict": "PASS"
+    },
+    {
+      "name": "Delete test job through UI",
+      "verdict": "PASS"
+    },
+    {
+      "name": "No browser runtime exceptions",
+      "verdict": "PASS"
+    },
+    {
+      "name": "No failed browser API requests",
+      "verdict": "PASS"
+    },
+    {
+      "name": "Configured database remains unchanged",
+      "verdict": "PASS"
+    }
+  ],
+  "apiFailures": [],
+  "cleanedUp": true,
+  "codingExecution": {
+    "status": "ACCEPTED",
+    "stdout": "Executed 1 test cases. 1 passed.",
+    "stderr": null,
+    "compileOutput": null,
+    "totalTestCases": 1,
+    "passedTestCases": 1,
+    "details": [
+      {
+        "input": "[2,3]",
+        "expected": "5",
+        "actual": "5",
+        "status": "ACCEPTED",
+        "passed": true,
+        "isHidden": false,
+        "timeMs": 23,
+        "memoryKb": 7892,
+        "error": null
+      }
+    ],
+    "engine": "Judge0-Isolated-Container"
+  },
+  "verdict": "PASS",
+  "finishedAt": "2026-10-04T11:30:54.603Z"
+}

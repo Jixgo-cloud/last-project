@@ -5,6 +5,7 @@
   "scripts": {
     "prebuild": "npm run build --workspace=@smartcareer/shared && npx prisma generate --schema=../../prisma/schema.prisma",
     "build": "nest build",
+    "build:app": "nest build",
     "format": "prettier --write \"src/**/*.ts\"",
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",

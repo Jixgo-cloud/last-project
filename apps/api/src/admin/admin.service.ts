@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { VerificationStatus, UserRole } from '@smartcareer/shared';
+import { VerificationStatus } from '@smartcareer/shared';
 
 @Injectable()
 export class AdminService {

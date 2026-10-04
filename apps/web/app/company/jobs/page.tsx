@@ -8,7 +8,6 @@ import Link from 'next/link';
 import {
   Briefcase,
   PlusCircle,
-  Users,
   MapPin,
   ArrowRight,
   Sparkles,
@@ -34,7 +33,7 @@ export default function CompanyJobsManagePage() {
     fetchCompany();
   }, []);
 
-  const handleToggleJob = async (jobId: string, currentActive: boolean) => {
+  const handleToggleJob = async (jobId: string) => {
     try {
       setActionLoading(jobId);
       await apiRequest(`/company/jobs/${jobId}/toggle`, { method: 'PATCH' });
@@ -180,7 +179,7 @@ export default function CompanyJobsManagePage() {
                   {/* Actions Bar: Toggle Status & Delete */}
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
                     <button
-                      onClick={() => handleToggleJob(job.id, job.isActive)}
+                      onClick={() => handleToggleJob(job.id)}
                       disabled={actionLoading === job.id}
                       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-bold border transition ${
                         job.isActive

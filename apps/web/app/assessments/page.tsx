@@ -16,7 +16,6 @@ import {
   CheckCircle2,
   XCircle,
   RotateCcw,
-  ShieldCheck,
 } from 'lucide-react';
 import { AssessmentType } from '@smartcareer/shared';
 

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { AuthUserResponse, UserRole } from '@smartcareer/shared';
+import { AuthUserResponse } from '@smartcareer/shared';
 import { apiRequest } from './api';
 import { useRouter } from 'next/navigation';
 

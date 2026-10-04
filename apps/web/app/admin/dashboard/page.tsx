@@ -8,18 +8,13 @@ import Link from 'next/link';
 import {
   ShieldCheck,
   Users,
-  Building2,
   Briefcase,
   BookOpen,
   Activity,
-  CheckCircle2,
-  AlertTriangle,
   ArrowRight,
-  Sparkles,
   Zap,
   Layers,
   FileCheck2,
-  Clock,
   ChevronRight,
   Code2,
 } from 'lucide-react';

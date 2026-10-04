@@ -10,12 +10,6 @@ import {
   CheckCircle2,
   Award,
   Search,
-  BookOpen,
-  Sparkles,
-  Briefcase,
-  ChevronRight,
-  Shield,
-  Tag,
 } from 'lucide-react';
 import { SkillCategory } from '@smartcareer/shared';
 

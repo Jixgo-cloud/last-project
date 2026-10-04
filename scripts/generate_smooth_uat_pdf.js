@@ -1769,14 +1769,11 @@ async function main() {
   }
 
   const htmlPath = path.join(docsUatDir, 'UAT_SmartCareer_Smooth_Journey_Manual.html');
-  const rootHtmlPath = path.join(rootDir, 'UAT_SmartCareer_Smooth_Journey_Manual.html');
   const pdfPath = path.join(docsUatDir, 'UAT_SmartCareer_Smooth_Journey_Manual.pdf');
-  const rootPdfPath = path.join(rootDir, 'UAT_SmartCareer_Smooth_Journey_Manual.pdf');
 
   console.log('Generating Smooth UAT Document HTML...');
   const htmlContent = generateSmoothUatDocument();
   fs.writeFileSync(htmlPath, htmlContent, 'utf8');
-  fs.writeFileSync(rootHtmlPath, htmlContent, 'utf8');
   console.log('Saved HTML to:', htmlPath);
 
   // Convert to PDF using headless Edge
@@ -1799,10 +1796,6 @@ async function main() {
     execFileSync(edgePath, args, { stdio: 'inherit' });
     console.log('Successfully generated PDF at:', pdfPath);
     
-    // Copy to root as well
-    fs.copyFileSync(pdfPath, rootPdfPath);
-    console.log('Copied PDF to root:', rootPdfPath);
-
     const stats = fs.statSync(pdfPath);
     console.log(`PDF File Size: ${(stats.size / 1024).toFixed(2)} KB`);
   } catch (err) {

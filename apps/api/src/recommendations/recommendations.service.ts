@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { SkillGapItem, SkillCategory, CourseSource, CareerTrack } from '@smartcareer/shared';
+import { SkillGapItem, SkillCategory, CourseSource } from '@smartcareer/shared';
 import { CAREER_DEFINITIONS } from '../jobs/jobs.service';
 
 @Injectable()

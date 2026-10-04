@@ -22,7 +22,6 @@ import {
   Paperclip,
   FileCheck2,
   ExternalLink,
-  ImageIcon,
 } from 'lucide-react';
 import { VerificationStatus } from '@smartcareer/shared';
 

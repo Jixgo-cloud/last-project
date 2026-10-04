@@ -17,14 +17,11 @@ import {
   ArrowLeft,
   Award,
   Terminal,
-  FileQuestion,
   RefreshCw,
   Send,
   Lock,
-  Eye,
   ShieldAlert,
   RotateCcw,
-  Save,
   Check,
   Sparkles,
 } from 'lucide-react';
@@ -115,12 +112,17 @@ export default function AssessmentRunnerPage() {
         // Restore draft code if available
         if (attemptData?.draftCode) {
           try {
-            const parsed = JSON.parse(attemptData.draftCode);
+            const parsed = typeof attemptData.draftCode === 'string'
+              ? JSON.parse(attemptData.draftCode)
+              : attemptData.draftCode;
             if (parsed.codes) {
               setCodes((prev) => ({ ...prev, ...parsed.codes }));
             }
             if (parsed.selectedChoices) {
               setSelectedChoices((prev) => ({ ...prev, ...parsed.selectedChoices }));
+            }
+            if (!parsed.codes && !parsed.selectedChoices && typeof parsed === 'object') {
+              setCodes((prev) => ({ ...prev, ...parsed }));
             }
           } catch {
             if (assessData.questions?.[0]) {
@@ -165,7 +167,7 @@ export default function AssessmentRunnerPage() {
 
   // 3-Second Debounced Autosave for Candidate Draft
   useEffect(() => {
-    if (!attempt || attempt.status === 'COMPLETED' || theoryResult || codingFinalResult) return;
+    if (!attempt || attempt.status !== 'IN_PROGRESS' || theoryResult || codingFinalResult || submittingTheory || submittingCoding || finalizingAttempt) return;
     if (Object.keys(codes).length === 0 && Object.keys(selectedChoices).length === 0) return;
 
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
@@ -173,13 +175,13 @@ export default function AssessmentRunnerPage() {
 
     autosaveTimerRef.current = setTimeout(async () => {
       try {
-        const payload = JSON.stringify({
+        const draftCode = {
           codes,
           selectedChoices,
-        });
+        };
         await apiRequest(`/assessments/${id}/autosave`, {
           method: 'POST',
-          body: JSON.stringify({ draftCode: payload }),
+          body: JSON.stringify({ attemptId: attempt.id, draftCode }),
         });
         setAutosaveStatus('saved');
       } catch (err) {
@@ -191,7 +193,7 @@ export default function AssessmentRunnerPage() {
     return () => {
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
     };
-  }, [codes, selectedChoices, attempt, id, theoryResult, codingFinalResult]);
+  }, [codes, selectedChoices, attempt, id, theoryResult, codingFinalResult, submittingTheory, submittingCoding, finalizingAttempt]);
 
   // Anti-Cheat: Visibility Change & Window Blur (Tab switch detector + Server Integrity Event Logging)
   useEffect(() => {
@@ -202,8 +204,11 @@ export default function AssessmentRunnerPage() {
         method: 'POST',
         body: JSON.stringify({
           attemptId: attempt.id,
-          eventType,
-          payload,
+          event: {
+            type: eventType,
+            timestamp: new Date().toISOString(),
+            details: payload,
+          },
         }),
       }).catch((e) => console.warn('Integrity log failed', e));
     };

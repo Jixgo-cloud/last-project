@@ -43,9 +43,20 @@ services:
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GITHUB_CALLBACK_URL: ${GITHUB_CALLBACK_URL:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      JUDGE0_BASE_URL: ${JUDGE0_BASE_URL:-https://judge0-ce.p.rapidapi.com}
+      AI_EVALUATOR_MODEL: ${AI_EVALUATOR_MODEL:-}
+      JUDGE0_BASE_URL: ${JUDGE0_BASE_URL:-}
+      JUDGE0_API_URL: ${JUDGE0_API_URL:-https://judge0-ce.p.rapidapi.com}
+      JUDGE0_AUTH_HEADER: ${JUDGE0_AUTH_HEADER:-X-RapidAPI-Key}
       JUDGE0_API_KEY: ${JUDGE0_API_KEY:-}
       RAPIDAPI_KEY: ${RAPIDAPI_KEY:-}
+      JSEARCH_API_URL: ${JSEARCH_API_URL:-https://jsearch.p.rapidapi.com}
+      JSEARCH_API_KEY: ${JSEARCH_API_KEY:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      UDEMY_CLIENT_ID: ${UDEMY_CLIENT_ID:-}
+      UDEMY_CLIENT_SECRET: ${UDEMY_CLIENT_SECRET:-}
+      INGESTION_CONFIG_DIR: /app/apps/api/config
+    volumes:
+      - api_config:/app/apps/api/config
     ports:
       - "127.0.0.1:4000:4000"
     healthcheck:
@@ -93,6 +104,7 @@ services:
       - api
 
 volumes:
+  api_config:
   postgres_data:
   caddy_data:
   caddy_config:

@@ -12,19 +12,14 @@ import {
   Plus,
   Trash2,
   Edit3,
-  Clock,
   Award,
-  CheckCircle2,
-  XCircle,
   ArrowLeft,
   Search,
   Building2,
-  Briefcase,
   Users,
   Lock,
   Sparkles,
   FileCode,
-  Send,
   Eye,
   ExternalLink,
   ShieldAlert,
@@ -38,11 +33,10 @@ import {
   QuestionDifficulty,
   QuestionEvaluationMethod,
   FeedbackVisibility,
-  AssessmentReviewStatus,
 } from '@smartcareer/shared';
 
 export default function CompanyAssessmentsPage() {
-  const { user } = useAuth();
+  useAuth();
   const [assessments, setAssessments] = useState<any[]>([]);
   const [skills, setSkills] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

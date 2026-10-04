@@ -5,16 +5,13 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { apiRequest } from '@/lib/api';
 import {
-  ShieldCheck,
   Check,
   X,
   Building2,
   Clock,
   CheckCircle2,
   FileCheck2,
-  AlertCircle,
   ExternalLink,
-  Search,
   Paperclip,
 } from 'lucide-react';
 import { VerificationStatus } from '@smartcareer/shared';

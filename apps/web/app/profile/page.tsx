@@ -16,7 +16,6 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import {
-  User,
   Briefcase,
   Github,
   Save,
@@ -27,11 +26,8 @@ import {
   Layers,
   Award,
   ExternalLink,
-  Code2,
-  FileCheck2,
   Sliders,
   TrendingUp,
-  Flame,
 } from 'lucide-react';
 import { RadarChartDataPoint, CandidateEarnedBadge } from '@smartcareer/shared';
 

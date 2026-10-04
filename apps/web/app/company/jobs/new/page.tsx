@@ -5,7 +5,7 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { apiRequest } from '@/lib/api';
 import { useRouter } from 'next/navigation';
-import { Briefcase, ArrowLeft, Plus, Trash2, CheckCircle2, Sparkles, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Sparkles, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 
 export default function NewJobPage() {

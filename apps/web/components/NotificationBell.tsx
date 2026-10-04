@@ -13,9 +13,7 @@ import {
   AlertCircle,
   Clock,
   CheckCheck,
-  ExternalLink,
   ChevronRight,
-  Briefcase,
   Sparkles,
 } from 'lucide-react';
 

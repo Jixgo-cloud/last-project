@@ -11,14 +11,12 @@ import {
   TrendingUp,
   AlertCircle,
   ExternalLink,
-  PlayCircle,
   Search,
   RotateCcw,
   Briefcase,
   Layers,
   Video,
   GraduationCap,
-  ArrowRight,
 } from 'lucide-react';
 import { SkillGapItem, CourseSource, CAREER_TRACK_LABELS } from '@smartcareer/shared';
 

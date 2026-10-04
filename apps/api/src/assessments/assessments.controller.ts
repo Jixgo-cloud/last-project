@@ -57,7 +57,13 @@ export class AssessmentsController {
   @Post(':id/autosave')
   async autosave(
     @Request() req: any,
-    @Body() body: { attemptId: string; draftCode: Record<string, string> },
+    @Body() body: {
+      attemptId: string;
+      draftCode: Record<string, string> | {
+        codes: Record<string, string>;
+        selectedChoices: Record<string, string>;
+      };
+    },
   ) {
     return this.assessmentsService.saveDraftCode(body.attemptId, req.user.id, body.draftCode);
   }

@@ -13,14 +13,13 @@ import {
   MessageSquare,
   Sparkles,
   ArrowRight,
-  TrendingUp,
   Bell,
   Code2,
 } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ApplicationsPage() {
-  const { user } = useAuth();
+  useAuth();
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [cancellingId, setCancellingId] = useState<string | null>(null);

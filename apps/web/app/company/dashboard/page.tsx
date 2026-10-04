@@ -14,12 +14,11 @@ import {
   PlusCircle,
   Clock,
   ArrowRight,
-  Sparkles,
 } from 'lucide-react';
 import { VerificationStatus } from '@smartcareer/shared';
 
 export default function CompanyDashboardPage() {
-  const { user } = useAuth();
+  useAuth();
   const [company, setCompany] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 

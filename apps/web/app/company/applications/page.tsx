@@ -7,38 +7,28 @@ import { apiRequest } from '@/lib/api';
 import Link from 'next/link';
 import {
   Users,
-  Building2,
   CheckCircle2,
   Clock,
   Sparkles,
   Award,
   Github,
   MessageSquare,
-  ArrowRight,
   Star,
   Search,
-  Filter,
-  SlidersHorizontal,
   ChevronDown,
   X,
   Send,
-  AlertCircle,
   Briefcase,
-  Layers,
   Code2,
   Download,
   ExternalLink,
   Eye,
   UserCheck,
   GraduationCap,
-  FileText,
-  Activity,
   ShieldAlert,
   GitBranch,
   Mail,
-  MapPin,
   Calendar,
-  Check,
 } from 'lucide-react';
 import {
   Radar,
@@ -461,7 +451,6 @@ export default function CompanyApplicationsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredApps.map((app) => {
-              const currentStatusMeta = STATUS_OPTIONS.find((s) => s.value === app.status) || STATUS_OPTIONS[0];
               const score = app.matchScoreAtApplication || 0;
               const isHighMatch = score >= 80;
               const isMedMatch = score >= 60;

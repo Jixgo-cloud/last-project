@@ -435,7 +435,7 @@ export class IngestionService {
                     .replace(/(\w+)\s*-\s*\n\s*(\w+)/g, '$1-$2')
                     .replace(
                       /(?:\n|^)\s*(Key Responsibilities|Responsibilities|Requirements|Position Summary|Position Overview|About the Role|About Us|Why Join Us\?|Benefits|Nice-to-Haves|Qualifications|Preferred Qualifications):/gi,
-                      (m: string, p1: string) => `\n\n**${p1.trim()}**\n`,
+                      (_match: string, p1: string) => `\n\n**${p1.trim()}**\n`,
                     )
                     .replace(/\n{3,}/g, '\n\n')
                     .trim()

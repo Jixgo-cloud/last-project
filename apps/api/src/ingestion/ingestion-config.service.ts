@@ -95,7 +95,9 @@ export class IngestionConfigService {
   private memoryQuotas: IngestionQuotasMap;
 
   constructor() {
-    this.configFilePath = path.resolve(process.cwd(), 'config', 'ingestion-quotas.json');
+    const configDirectory = process.env.INGESTION_CONFIG_DIR?.trim()
+      || path.resolve(__dirname, '../../config');
+    this.configFilePath = path.resolve(configDirectory, 'ingestion-quotas.json');
     this.memoryQuotas = this.loadPersistentQuotas();
   }
 

@@ -10,11 +10,6 @@ import {
   User,
   Building2,
   Search,
-  CheckCircle2,
-  Mail,
-  Calendar,
-  Sparkles,
-  Filter,
 } from 'lucide-react';
 import { UserRole } from '@smartcareer/shared';
 

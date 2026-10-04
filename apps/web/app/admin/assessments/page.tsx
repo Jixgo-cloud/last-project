@@ -12,7 +12,6 @@ import {
   Plus,
   Trash2,
   Edit3,
-  Clock,
   Award,
   CheckCircle2,
   XCircle,
@@ -20,7 +19,6 @@ import {
   Search,
   Building2,
   ShieldCheck,
-  RefreshCw,
   Lock,
   Sparkles,
   Users,
@@ -40,7 +38,7 @@ import {
 } from '@smartcareer/shared';
 
 export default function AdminAssessmentsPage() {
-  const { user } = useAuth();
+  useAuth();
   const [assessments, setAssessments] = useState<any[]>([]);
   const [skills, setSkills] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

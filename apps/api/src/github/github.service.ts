@@ -321,7 +321,7 @@ export class GithubService {
     try {
       const langRes = await axios.get(repo.languages_url, { headers, timeout: 3000 });
       realLanguages = langRes.data || {};
-      for (const [langName, bytes] of Object.entries(realLanguages)) {
+      for (const [langName] of Object.entries(realLanguages)) {
         const mapped = languageCategoryMap[langName];
         if (mapped && !detectedSkills.some((ds) => ds.skillName === mapped.skill)) {
           detectedSkills.push({

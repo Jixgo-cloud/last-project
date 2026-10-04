@@ -15,7 +15,14 @@ function runManifestVerification() {
     const content = fs.readFileSync(dockerfileApi, 'utf8');
     if (!content.includes('FROM node:22-alpine AS builder')) errors.push('Dockerfile.api missing builder stage');
     if (!content.includes('FROM node:22-alpine AS runner')) errors.push('Dockerfile.api missing runner stage');
-    if (!content.includes('npx prisma generate')) errors.push('Dockerfile.api missing prisma generate');
+    const rootPackage = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
+    const apiPackage = JSON.parse(fs.readFileSync(path.join(rootDir, 'apps/api/package.json'), 'utf8'));
+    const generatesPrisma = content.includes('npx prisma generate') || (
+      content.includes('npm run build:api') &&
+      rootPackage.scripts['build:api'].includes('build --workspace=@smartcareer/api') &&
+      apiPackage.scripts.prebuild.includes('prisma generate')
+    );
+    if (!generatesPrisma) errors.push('API Docker build does not generate Prisma Client');
     if (!content.includes('node apps/api/dist/main.js') && !content.includes('["node", "apps/api/dist/main.js"]')) {
       errors.push('Dockerfile.api CMD target incorrect');
     }
@@ -31,6 +38,9 @@ function runManifestVerification() {
     if (!content.includes('FROM node:22-alpine AS builder')) errors.push('Dockerfile.web missing builder stage');
     if (!content.includes('FROM node:22-alpine AS runner')) errors.push('Dockerfile.web missing runner stage');
     if (!content.includes('apps/web/.next')) errors.push('Dockerfile.web missing .next directory copy');
+    if (content.includes('/app/apps/web/public') && !fs.existsSync(path.join(rootDir, 'apps/web/public'))) {
+      errors.push('Dockerfile.web copies a missing public directory');
+    }
     console.log('✅ Dockerfile.web: Multi-stage structure and artifacts validated.');
   }
 
@@ -91,7 +101,7 @@ function runManifestVerification() {
     process.exit(1);
   }
 
-  console.log('--- ALL MANIFESTS VALIDATED SUCCESSFULLY (100% PASS) ---');
+  console.log('--- MANIFEST CHECKS PASSED (container build/start not exercised) ---');
 }
 
 runManifestVerification();

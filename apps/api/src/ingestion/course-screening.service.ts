@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import axios from 'axios';
-import { execFileSync } from 'child_process';
 import { IngestionStatus, CourseSource } from '@smartcareer/shared';
 
 export interface CourseScreeningResultItem {

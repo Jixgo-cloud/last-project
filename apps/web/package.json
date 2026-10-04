@@ -5,21 +5,20 @@
   "scripts": {
     "prebuild": "npm run build --workspace=@smartcareer/shared",
     "dev": "next dev -p 3000",
-    "build": "npm run build --workspace=@smartcareer/shared && next build",
-    "build:web": "npm run build --workspace=@smartcareer/shared && next build",
+    "build": "next build",
+    "build:app": "next build",
+    "build:web": "npm run build",
     "start": "next start -p 3000",
     "lint": "next lint"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",
     "@smartcareer/shared": "*",
-    "clsx": "^2.1.1",
     "lucide-react": "^0.462.0",
     "next": "^14.2.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "recharts": "^2.13.3",
-    "tailwind-merge": "^2.5.5"
+    "recharts": "^2.13.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",
