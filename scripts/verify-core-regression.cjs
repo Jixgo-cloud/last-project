@@ -147,7 +147,13 @@ async function run() {
     if (expectedApiResponses.get(requestPath) === response.status()) return;
     apiFailures.push({ path: requestPath, status: response.status() });
   });
-  page.on('dialog', dialog => dialog.accept());
+  page.on('dialog', dialog => {
+    void dialog.accept().catch(error => {
+      // Chrome can close the dialog before a duplicate event is handled.
+      // The deletion check still verifies the resulting database change.
+      if (!error.message.includes('No dialog is showing')) pageErrors.push(error.message);
+    });
+  });
   await check('Home and login pages render', async () => { await goto('/'); await screenshot('home'); await goto('/login'); assert(await page.$('input[type="email"]')); });
   let companyToken;
   let invalidLegacyAssessment;

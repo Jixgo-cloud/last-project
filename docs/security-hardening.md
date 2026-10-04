@@ -24,11 +24,13 @@
 
 ## Deployment requirements and follow-up
 
-- Replace the production placeholder JWT_SECRET before deploying this revision. Rotation invalidates existing sessions and requires users to sign in again.
+- The user rotated the production JWT_SECRET in the live soothing-love service; its 64-character length and rejection-marker absence were verified without recording the value. Rotation invalidates existing sessions and requires users to sign in again.
 - The production Railway service uses Railpack with `npm run start --workspace=@smartcareer/api`; the new prestart script supplies the missing schema synchronization.
-- Railway configuration has been prepared to wait for GitHub checks and watch API, Prisma, shared-package and root dependency changes. Confirm the applied settings after deployment.
+- Railway configuration now waits for GitHub checks and watches API, Prisma, shared-package, package.json and package-lock.json changes; applied settings were verified.
 - Production dependency audit: 0 high, 0 critical, 3 moderate findings. These are the Nest SSE advisory and dependent package notices. Repository search found no SSE route, EventSource or SseStream usage. This is a reachability assessment, not a claim that the dependencies have no vulnerabilities. Upgrade Nest in a separate migration and continue dependency scanning. [Maintainer advisory](https://github.com/nestjs/nest/security/advisories/GHSA-36xv-jgw5-4q75).
 - Development tooling still has audit findings; these remain a separate maintenance item. Do not use `npm audit fix --force` without checking the framework migrations.
 - Rotate the previously embedded external-provider key with its provider if that credential remains active; removing it from current source does not remove Git history.
 - Configure provider capacity, auth monitoring and expired rate-limit-row retention for larger production traffic. Railway currently displays a trial balance; no plan purchase was made.
 - Full live Google/GitHub sign-in and a new live application/assessment submission still require post-deployment verification with suitable test accounts. Local test accounts are disposable and are never seeded into production.
+
+- Additional computer-use pointer verification created a company job successfully in a disposable local database. GitHub browser integration checks use text input and DOM button activation; pointer behavior is verified separately. The test harness tolerates a dialog-already-closed event only while retaining the actual deletion assertion.
