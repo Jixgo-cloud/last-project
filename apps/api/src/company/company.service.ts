@@ -309,6 +309,9 @@ export class CompanyService {
     if (!application || application.job.companyId !== company.id) {
       throw new ForbiddenException('Cannot update application for another company');
     }
+    if (application.status === ApplicationStatus.CANCELLED) {
+      throw new BadRequestException('ใบสมัครรอบนี้ถูกผู้สมัครยกเลิกแล้ว ไม่สามารถเปลี่ยนสถานะหรือมอบหมายข้อสอบได้');
+    }
 
     let assignedAssessmentId = application.assignedAssessmentId;
     let assignedAssessmentObj: any = application.assignedAssessment;

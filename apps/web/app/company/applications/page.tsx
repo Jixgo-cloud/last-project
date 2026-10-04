@@ -466,6 +466,7 @@ function CompanyApplicationsContent() {
                   className="rounded-[24px] border border-slate-200/90 bg-white/95 p-6 shadow-[0_12px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm hover:shadow-[0_16px_40px_rgba(79,70,229,0.08)] hover:border-indigo-200/80 transition-all flex flex-col justify-between"
                 >
                   <div>
+                    <p className="mb-2 text-xs font-semibold text-slate-500">รอบที่ {app.roundNumber || 1}</p>
                     {/* Top Header with Clickable Profile Link */}
                     <div className="flex items-start justify-between gap-3 mb-4">
                       <div className="flex items-start gap-3">
@@ -583,6 +584,7 @@ function CompanyApplicationsContent() {
                                   </div>
                                   <button
                                     type="button"
+                                    disabled={app.status === ApplicationStatus.CANCELLED}
                                     onClick={() => handleOpenAssignAssessment(app)}
                                     className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
                                   >
@@ -621,9 +623,11 @@ function CompanyApplicationsContent() {
                       <div className="relative">
                         <select
                           value={app.status}
+                          disabled={app.status === ApplicationStatus.CANCELLED}
                           onChange={(e) => handleStatusChange(app.id, e.target.value as ApplicationStatus)}
                           className="w-full appearance-none text-xs font-bold rounded-xl border border-slate-200/90 py-2.5 pl-3.5 pr-8 bg-slate-50/70 hover:bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition cursor-pointer"
                         >
+                          {app.status === ApplicationStatus.CANCELLED && <option value={ApplicationStatus.CANCELLED}>Cancelled — ผู้สมัครยกเลิกแล้ว</option>}
                           {STATUS_OPTIONS.map((opt) => (
                             <option key={opt.value} value={opt.value}>
                               {opt.label} — {opt.labelTh}
@@ -648,6 +652,7 @@ function CompanyApplicationsContent() {
                     <button
                       type="button"
                       onClick={() => handleOpenAssignAssessment(app)}
+                      disabled={app.status === ApplicationStatus.CANCELLED}
                       className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-full text-xs font-bold border border-indigo-200/90 bg-indigo-50/50 hover:bg-indigo-100/80 hover:border-indigo-300 text-indigo-700 transition shadow-2xs cursor-pointer group"
                       title="มอบหมายหรือเปลี่ยนแบบทดสอบเฉพาะบุคคล"
                     >

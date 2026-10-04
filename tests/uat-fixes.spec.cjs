@@ -112,6 +112,15 @@ test('Inactive or incomplete assignments never change the application status', a
   assert.equal(writes,0);
 });
 
+test('A withdrawn round cannot be reopened or assigned a test by its company', async () => {
+  let writes=0;
+  const service=new CompanyService({jobApplication:{findUnique:async()=>({status:'CANCELLED',job:{companyId:'company'}}),update:async()=>{writes++;}}},{},{});
+  service.getCompanyByUserId=async()=>({id:'company'});
+  await assert.rejects(service.updateApplicationStatus('user','withdrawn','REVIEWING'), /ยกเลิก/);
+  await assert.rejects(service.assignAssessmentToApplication('user','withdrawn','assessment'), /ยกเลิก/);
+  assert.equal(writes,0);
+});
+
 test('Public catalog omits incomplete tests and never sends choices or answer keys', async () => {
   const good = {id:'good',title:'QA',type:'THEORY',timeLimitMinutes:5,passingScore:70,questions:[{title:'Sum',prompt:'What is 1+1?',points:50,choices:[{text:'Two',isCorrect:true},{text:'Three',isCorrect:false}]}]};
   const service = new AssessmentsService({assessment:{findMany:async()=>[good,{...good,id:'broken',questions:[]}]}},{},{});
