@@ -170,7 +170,10 @@ async function run() {
     await fill('input[placeholder="เช่น Senior Full Stack Developer (Next.js & NestJS)"]', 'Regression Backend Engineer');
     await fill('textarea[placeholder="ระบุหน้าที่หลักในแต่ละวัน ความท้าทาย และโครงสร้างทีม..."]', 'Regression description for the main job posting flow.');
     await fill('textarea[placeholder="เช่น ประสบการณ์ 3 ปีขึ้นไป, ความเข้าใจในสถาปัตยกรรม Microservices..."]', 'JavaScript regression requirements.');
-    await Promise.all([page.waitForFunction(() => location.pathname === '/company/dashboard'), page.click('button[type="submit"]')]);
+    report.jobFormBeforeSubmit = await page.$$eval('form input, form textarea', fields => fields.map(el => ({ type: el.type, required: el.required, length: el.value.length, valid: el.checkValidity() })));
+    assert(await page.$eval('form', form => form.checkValidity()), 'The filled job form is invalid before submission');
+    await page.evaluate(() => { window.__regressionClicks = []; document.addEventListener('click', e => window.__regressionClicks.push({ tag: e.target.tagName, text: e.target.textContent?.slice(0,80), x: e.clientX, y: e.clientY }), true); });
+    await Promise.all([page.waitForFunction(() => location.pathname === '/company/dashboard'), page.locator('button[type="submit"]').click()]);
     job = await db.job.findFirst({ where: { title: 'Regression Backend Engineer', companyId: company.id }, include: { skills: true } });
     assert(job && job.isActive && job.skills.length === 1, 'UI job was not persisted correctly');
     await screenshot('job-created');
@@ -317,6 +320,7 @@ async function run() {
   try { await run(); report.verdict = 'PASS'; }
   catch (error) {
     report.verdict = 'FAIL'; report.failure = error.message; console.error('FAIL: ' + error.message);
+    if (page) report.clickEvidence = await page.evaluate(() => window.__regressionClicks || []).catch(() => []);
     if (page) { await screenshot('failure').catch(() => {}); fs.writeFileSync(path.join(evidenceDir, 'failure-page.txt'), await page.$eval('body', el => el.innerText).catch(() => 'Unavailable')); }
     process.exitCode = 1;
   } finally {
