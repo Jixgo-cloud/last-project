@@ -523,6 +523,21 @@ async function run() {
     const notifications = await request('/notifications', 'GET', undefined, candidateToken); assert(notifications.some(n => n.message.includes('Regression Backend Engineer')));
     await goto('/applications'); assert((await page.$eval('body', e => e.innerText)).includes('พิจารณา')); await screenshot('candidate-status-updated');
   });
+  await check('Candidate withdrawal requires explicit in-app confirmation and preserves history', async () => {
+    await clickText('ยกเลิกใบสมัคร');
+    await page.waitForSelector('dialog[open]');
+    await clickText('ยกเลิก');
+    assert.equal((await db.jobApplication.findUnique({ where: { id: application.id } })).status, 'REVIEWING');
+    await clickText('ยกเลิกใบสมัคร');
+    await page.waitForSelector('dialog[open]');
+    const [withdrawal] = await Promise.all([
+      page.waitForResponse(res => res.url().endsWith('/applications/' + application.id) && res.request().method() === 'DELETE'),
+      clickText('ยืนยันการยกเลิกใบสมัคร'),
+    ]);
+    assert(withdrawal.ok(), 'Confirmed withdrawal must finish successfully');
+    assert.equal((await db.jobApplication.findUnique({ where: { id: application.id } })).status, 'CANCELLED');
+    await screenshot('candidate-withdrawal-confirmed');
+  });
   await check('Admin login and dashboard data', async () => { const token = await login('admin@smartcareer.dev', 'admin123', '/admin/dashboard'); const stats = await request('/admin/dashboard', 'GET', undefined, token); assert(stats && Object.keys(stats).length > 0); await screenshot('admin-dashboard'); });
   await check('Delete test job through UI', async () => {
     await login('hr@techcorp.co.th', 'password123', '/company/dashboard');

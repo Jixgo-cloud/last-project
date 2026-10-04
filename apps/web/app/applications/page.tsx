@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { getAttemptPercentage, formatAttemptScore } from '@smartcareer/shared';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import DeleteConfirmation from '@/components/DeleteConfirmation';
 import { useAuth } from '@/lib/auth-context';
 import { apiRequest } from '@/lib/api';
 import {
@@ -24,6 +25,7 @@ export default function ApplicationsPage() {
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<{ id: string; title: string } | null>(null);
 
   const fetchApplications = () => {
     apiRequest('/candidate/applications')
@@ -37,17 +39,12 @@ export default function ApplicationsPage() {
   }, []);
 
   const handleCancelApplication = async (appId: string) => {
-    if (!window.confirm('คุณต้องการยกเลิกใบสมัครงานนี้ใช่หรือไม่? (คุณจะสามารถสมัครงานนี้ใหม่ในรอบถัดไปได้)')) {
-      return;
-    }
     setCancellingId(appId);
     try {
       await apiRequest(`/applications/${appId}`, { method: 'DELETE' });
       setApplications((prev) =>
         prev.map((app) => (app.id === appId ? { ...app, status: 'CANCELLED' } : app))
       );
-    } catch (err: any) {
-      alert(err.message || 'ไม่สามารถยกเลิกใบสมัครได้');
     } finally {
       setCancellingId(null);
     }
@@ -179,7 +176,7 @@ export default function ApplicationsPage() {
                     {(app.status === 'APPLIED' || app.status === 'REVIEWING') && (
                       <button
                         id={`btn-cancel-app-${app.id}`}
-                        onClick={() => handleCancelApplication(app.id)}
+                        onClick={() => setCancelTarget({ id: app.id, title: app.job.title })}
                         disabled={cancellingId === app.id}
                         className="px-3 py-1 text-xs font-semibold rounded-lg border border-rose-200 text-rose-600 bg-rose-50/50 hover:bg-rose-100 transition cursor-pointer"
                         title="ยกเลิกใบสมัคร"
@@ -440,6 +437,14 @@ export default function ApplicationsPage() {
           </div>
         )}
       </main>
+
+      {cancelTarget && <DeleteConfirmation
+        title={cancelTarget.title}
+        confirmLabel="ยืนยันการยกเลิกใบสมัคร"
+        description="ใบสมัครนี้จะเปลี่ยนเป็นยกเลิก โดยยังเก็บประวัติไว้ คุณสามารถสมัครงานเดิมใหม่ในรอบถัดไปได้"
+        onCancel={() => setCancelTarget(null)}
+        onConfirm={() => handleCancelApplication(cancelTarget.id)}
+      />}
 
       <Footer />
     </div>
