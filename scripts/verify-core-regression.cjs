@@ -70,7 +70,7 @@ async function requestResult(endpoint, method = 'GET', body, token) {
 async function clickText(text) {
   await page.waitForFunction(text => Array.from(document.querySelectorAll('button')).some(b => !b.disabled && b.innerText.includes(text)), { timeout: 15000 }, text);
   for (const handle of await page.$$('button')) {
-    if (await handle.evaluate((el, text) => !el.disabled && el.innerText.includes(text), text)) { await handle.focus(); await handle.press('Enter'); return; }
+    if (await handle.evaluate((el, text) => !el.disabled && el.innerText.includes(text), text)) { await handle.evaluate(el => el.click()); return; }
   }
   throw new Error('Button missing: ' + text);
 }
@@ -78,8 +78,7 @@ async function goto(route) { await page.goto('http://localhost:3000' + route, { 
 async function activate(selector) {
   const handle = await page.waitForSelector(selector, { visible: true });
   assert(!(await handle.evaluate(el => el.disabled)), 'Cannot activate a disabled button');
-  await handle.focus();
-  await handle.press('Enter');
+  await handle.evaluate(el => el.click());
 }
 async function fill(selector, value) {
   await page.bringToFront();
@@ -116,7 +115,7 @@ async function run() {
   await freePort(3000); await freePort(4000); await freePort(2359);
   judgeFixture = require('./fixtures/judge0.cjs').createJudgeFixture();
   await new Promise(resolve => judgeFixture.listen(2359, '127.0.0.1', resolve));
-  report.interactionMode = 'Native browser keyboard input and button activation';
+  report.interactionMode = 'Browser text input and DOM button activation; manual pointer checks are separate';
   report.judgeProvider = 'Deterministic fixture; no applicant code is executed locally';
   const sourceCounts = { users: await admin.user.count(), jobs: await admin.job.count(), attempts: await admin.assessmentAttempt.count() };
   await admin.$executeRawUnsafe(`CREATE DATABASE "${databaseName}"`); created = true;
