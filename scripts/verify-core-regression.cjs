@@ -131,7 +131,7 @@ async function run() {
   const webChild = launch('web', [path.join(root, 'node_modules/next/dist/bin/next'), 'start', '-p', '3000'], path.join(root, 'apps/web'), { NODE_ENV: 'production' });
   await waitReady('http://localhost:3000/login', webChild);
   const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || (process.platform === 'win32' ? 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe' : '/usr/bin/google-chrome');
-  browser = await puppeteer.launch({ executablePath, headless: true, args: process.env.CI ? ['--no-sandbox'] : [], defaultViewport: { width: 1366, height: 900 } });
+  browser = await puppeteer.launch({ executablePath, headless: process.env.PUPPETEER_HEADLESS !== 'false', args: process.env.CI ? ['--no-sandbox'] : [], defaultViewport: { width: 1366, height: 900 } });
   page = await browser.newPage();
   const pageErrors = []; report.browserErrors = pageErrors;
   page.on('pageerror', error => pageErrors.push(error.message));
