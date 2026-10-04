@@ -4,7 +4,10 @@ const nextConfig = {
   transpilePackages: ['@smartcareer/shared'],
   images: {
     remotePatterns: [
-      { protocol: 'https', hostname: '**' },
+      { protocol: 'https', hostname: 'avatars.githubusercontent.com' },
+      { protocol: 'https', hostname: 'github.com' },
+      { protocol: 'https', hostname: 'lh3.googleusercontent.com' },
+      { protocol: 'https', hostname: 'api.dicebear.com' },
     ],
   },
 };

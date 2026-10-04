@@ -1,15 +1,17 @@
-import { Controller, Get, Post, Param, Query, UseGuards, Request, Headers } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { JobsService } from './jobs.service';
 import { Public, Roles } from '../auth/roles.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { JobType, JobSource, UserRole } from '@smartcareer/shared';
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 
 @Controller('jobs')
 export class JobsController {
   constructor(private jobsService: JobsService) {}
 
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get()
   async getAll(
     @Query('keyword') keyword?: string,
@@ -21,24 +23,9 @@ export class JobsController {
     @Query('sortBy') sortBy?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
-    @Headers('authorization') authHeader?: string,
+    @Request() req?: any,
   ) {
-    let candidateUserId: string | undefined;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      try {
-        const token = authHeader.substring(7);
-        const base64Payload = token.split('.')[1];
-        if (base64Payload) {
-          const decodedJson = Buffer.from(base64Payload, 'base64').toString('utf-8');
-          const payload = JSON.parse(decodedJson);
-          if (!payload.exp || payload.exp * 1000 > Date.now()) {
-            candidateUserId = payload.sub;
-          }
-        }
-      } catch {
-        // ignore invalid/expired tokens for public search
-      }
-    }
+    const candidateUserId = req?.user?.role === UserRole.CANDIDATE ? req.user.id : undefined;
 
     return this.jobsService.findAll({
       keyword,
@@ -48,8 +35,8 @@ export class JobsController {
       source,
       career,
       sortBy,
-      page: page ? parseInt(page) : 1,
-      limit: limit ? parseInt(limit) : 20,
+      page: Math.max(1, Math.min(10000, Math.floor(Number(page)) || 1)),
+      limit: Math.max(1, Math.min(100, Math.floor(Number(limit)) || 20)),
       candidateUserId,
     });
   }

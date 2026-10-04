@@ -18,6 +18,8 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole, ApplicationStatus } from '@smartcareer/shared';
+import { CreateJobDto, UpdateJobDto } from './dto/job.dto';
+import { CompanyAssessmentDto } from './dto/assessment.dto';
 import {
   UpdateCompanyProfileDto,
   SubmitCompanyVerificationDto,
@@ -48,12 +50,12 @@ export class CompanyController {
   }
 
   @Post('jobs')
-  async createJob(@Request() req: any, @Body() body: any) {
+  async createJob(@Request() req: any, @Body() body: CreateJobDto) {
     return this.companyService.createJob(req.user.id, body);
   }
 
   @Put('jobs/:id')
-  async updateJob(@Request() req: any, @Param('id') id: string, @Body() body: any) {
+  async updateJob(@Request() req: any, @Param('id') id: string, @Body() body: UpdateJobDto) {
     return this.companyService.updateJob(req.user.id, id, body);
   }
 
@@ -128,7 +130,7 @@ export class CompanyController {
   }
 
   @Post('assessments')
-  async createCompanyAssessment(@Request() req: any, @Body() body: any) {
+  async createCompanyAssessment(@Request() req: any, @Body() body: CompanyAssessmentDto) {
     return this.companyService.createCompanyAssessment(req.user.id, body);
   }
 
@@ -136,7 +138,7 @@ export class CompanyController {
   async updateCompanyAssessment(
     @Request() req: any,
     @Param('id') id: string,
-    @Body() body: any,
+    @Body() body: CompanyAssessmentDto,
   ) {
     return this.companyService.updateCompanyAssessment(req.user.id, id, body);
   }

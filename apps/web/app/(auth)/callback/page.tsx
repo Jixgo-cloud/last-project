@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useEffect, useState, Suspense } from 'react';
+import React, { useEffect, useState, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useAuth } from '@/lib/auth-context';
+import { useAuth, SessionUser } from '@/lib/auth-context';
 import { apiRequest } from '@/lib/api';
-import { AuthUserResponse, UserRole } from '@smartcareer/shared';
+import { UserRole } from '@smartcareer/shared';
 import { Loader2, AlertCircle } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import { OAUTH_VERIFIER_KEY } from '@/lib/oauth';
 import { getSafeInternalRedirect } from '@/lib/navigation';
 
 const POST_LOGIN_REDIRECT_KEY = 'smartcareer_post_login_redirect';
@@ -24,47 +25,29 @@ function CallbackContent() {
   const { setUser } = useAuth();
   const [error, setError] = useState<string | null>(null);
 
+  const started = useRef(false);
   useEffect(() => {
-    const token = searchParams.get('token');
-    const role = searchParams.get('role');
+    if (started.current) return;
+    started.current = true;
+    const code = searchParams.get('code');
     const err = searchParams.get('error');
-
-    if (err) {
-      setError(decodeURIComponent(err));
-      return;
-    }
-
-    if (!token) {
-      setError('ไม่พบ Authentication Token กรุณาลองเข้าสู่ระบบใหม่อีกครั้ง');
-      return;
-    }
-
-    // Save token to localStorage
-    localStorage.setItem('smartcareer_token', token);
-
-    // Fetch user details and populate auth state
-    apiRequest<AuthUserResponse>('/auth/me', {}, token)
-      .then((userData) => {
-        setUser({ ...userData, token });
-        const redirectPath = consumePostLoginRedirect();
-        if (userData.role === UserRole.COMPANY) {
-          router.replace('/company/dashboard');
-        } else if (userData.role === UserRole.ADMIN) {
-          router.replace('/admin/dashboard');
-        } else {
-          router.replace(redirectPath || '/profile');
-        }
-      })
-      .catch((apiErr) => {
-        console.error('Failed to fetch profile with OAuth token:', apiErr);
-        const redirectPath = consumePostLoginRedirect();
-        // Fallback using role param if me endpoint had temporary delay
-        if (role === UserRole.COMPANY) {
-          router.replace('/company/dashboard');
-        } else {
-          router.replace(redirectPath || '/profile');
-        }
-      });
+    const mock = searchParams.get('mock') === '1';
+    window.history.replaceState(null, '', '/callback');
+    if (err) { setError(err); return; }
+    if (!code && !mock) { setError('กรุณาเริ่มเข้าสู่ระบบใหม่อีกครั้ง'); return; }
+    const verifier = sessionStorage.getItem(OAUTH_VERIFIER_KEY);
+    sessionStorage.removeItem(OAUTH_VERIFIER_KEY);
+    (async () => {
+      if (code) {
+        if (!verifier) throw new Error('การเข้าสู่ระบบหมดอายุ กรุณาลองอีกครั้ง');
+        await apiRequest('/auth/oauth/exchange', { method: 'POST', body: JSON.stringify({ code, verifier }) });
+      }
+      const userData = await apiRequest<SessionUser>('/auth/me');
+      setUser(userData);
+      const redirectPath = consumePostLoginRedirect();
+      router.replace(userData.role === UserRole.COMPANY ? '/company/dashboard'
+        : userData.role === UserRole.ADMIN ? '/admin/dashboard' : redirectPath || '/profile');
+    })().catch(() => setError('ไม่สามารถยืนยันบัญชีได้ กรุณาเข้าสู่ระบบใหม่อีกครั้ง'));
   }, [searchParams, router, setUser]);
 
   if (error) {

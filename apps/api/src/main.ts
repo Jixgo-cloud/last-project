@@ -10,6 +10,8 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { json, urlencoded } from 'express';
+import { ConfigService } from '@nestjs/config';
+import { allowedFrontendOrigins } from './auth/auth-security.service';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -21,31 +23,16 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api');
 
-  // Fail-Closed CORS Configuration
-  const isDevelopment = process.env.NODE_ENV === 'development';
-  const frontendUrl = process.env.FRONTEND_URL;
-  const extraOrigins = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
-    : [];
-
-  const allowedOrigins = [
-    frontendUrl,
-    ...extraOrigins,
-    ...(isDevelopment ? ['http://localhost:3000', 'http://127.0.0.1:3000'] : []),
-  ].filter(Boolean) as string[];
-
-  if (allowedOrigins.includes('*')) {
-    throw new Error('Wildcard CORS origin (*) is strictly forbidden when credentials=true.');
-  }
+  const allowedOrigins = allowedFrontendOrigins(app.get(ConfigService));
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
 
   app.enableCors({
     origin: (origin, callback) => {
       // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
-      // or explicitly configured origins or any Vercel deployment (*.vercel.app)
+      // or explicitly configured origins.
       if (
         !origin ||
-        allowedOrigins.includes(origin) ||
-        /^https:\/\/.*\.vercel\.app$/.test(origin)
+        allowedOrigins.includes(origin)
       ) {
         callback(null, true);
       } else {

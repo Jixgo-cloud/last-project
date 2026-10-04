@@ -60,7 +60,14 @@ export class CandidateService {
     }
 
     // Do not allow updating githubUsername once it has been set
-    const updateData = { ...data };
+    // Pick editable fields even when this service is called outside the validated controller.
+    const updateData = Object.fromEntries(
+      ['fullName', 'headline', 'bio', 'targetCareer', 'education', 'experience', 'githubUsername', 'avatarUrl']
+        .filter(key => data[key] !== undefined).map(key => [key, data[key]]),
+    );
+    if (JSON.stringify([data.education, data.experience]).length > 200000) {
+      throw new BadRequestException('Education and experience data is too large.');
+    }
     if (existing?.githubUsername) {
       delete updateData.githubUsername;
     }

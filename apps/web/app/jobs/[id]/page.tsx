@@ -279,7 +279,7 @@ export default function JobDetailPage() {
                         height={64}
                         unoptimized
                         className="h-full w-full object-contain p-2"
-                        onError={(e) => {
+                        onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
                           e.currentTarget.style.display = 'none';
                           const parent = e.currentTarget.parentElement;
                           if (parent) {

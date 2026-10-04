@@ -7,6 +7,7 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from './roles.guard';
+import { AuthSecurityService, requireJwtSecret } from './auth-security.service';
 
 @Module({
   imports: [
@@ -15,13 +16,13 @@ import { RolesGuard } from './roles.guard';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_SECRET') || 'smartcareer_super_secret_jwt_key_2026_change_in_prod',
+        secret: requireJwtSecret(config.get<string>('JWT_SECRET')),
         signOptions: { expiresIn: config.get<string>('JWT_EXPIRES_IN')?.trim() || '7d' },
       }),
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, JwtAuthGuard, RolesGuard],
-  exports: [AuthService, JwtAuthGuard, RolesGuard],
+  providers: [AuthService, AuthSecurityService, JwtStrategy, JwtAuthGuard, RolesGuard],
+  exports: [AuthService, AuthSecurityService, JwtAuthGuard, RolesGuard],
 })
 export class AuthModule {}

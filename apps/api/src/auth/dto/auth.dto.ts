@@ -1,4 +1,4 @@
-import { IsEmail, IsNotEmpty, IsString, IsOptional, IsEnum, MinLength } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsString, IsOptional, IsIn, MinLength, MaxLength, Matches } from 'class-validator';
 import { UserRole } from '@smartcareer/shared';
 
 export class RegisterDto {
@@ -8,22 +8,26 @@ export class RegisterDto {
 
   @IsString()
   @IsNotEmpty({ message: 'Password is required' })
-  @MinLength(6, { message: 'Password must be at least 6 characters' })
+  @MinLength(12, { message: 'Password must be at least 12 characters' })
+  @MaxLength(72)
   password!: string;
 
-  @IsEnum(UserRole, { message: 'Role must be CANDIDATE, COMPANY, or ADMIN' })
+  @IsIn([UserRole.CANDIDATE, UserRole.COMPANY])
   role!: UserRole;
 
   @IsOptional()
   @IsString()
+  @MaxLength(200)
   fullName?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(200)
   companyName?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(200)
   targetCareer?: string;
 }
 
@@ -34,15 +38,17 @@ export class LoginDto {
 
   @IsString()
   @IsNotEmpty({ message: 'Password is required' })
+  @MaxLength(72)
   password!: string;
 }
 
 export class DevOAuthCallbackDto {
   @IsString()
   @IsNotEmpty()
+  @IsIn(['google', 'github'])
   provider!: 'google' | 'github';
 
-  @IsEnum(UserRole)
+  @IsIn([UserRole.CANDIDATE, UserRole.COMPANY])
   role!: UserRole;
 
   @IsEmail()
@@ -59,4 +65,14 @@ export class DevOAuthCallbackDto {
   @IsOptional()
   @IsString()
   avatarUrl?: string;
+}
+
+export class OAuthExchangeDto {
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{43}$/)
+  code!: string;
+
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{43,128}$/)
+  verifier!: string;
 }

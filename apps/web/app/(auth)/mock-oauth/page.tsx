@@ -2,6 +2,7 @@
 
 import React, { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { apiRequest } from '@/lib/api';
 import { UserRole } from '@smartcareer/shared';
 import { ShieldCheck, ArrowRight, AlertCircle, RefreshCw } from 'lucide-react';
 import Navbar from '@/components/Navbar';
@@ -81,29 +82,12 @@ function MockOAuthContent() {
     setError(null);
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
-      const res = await fetch(`${apiUrl}/auth/dev-callback`, {
+      await apiRequest('/auth/dev-callback', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          provider,
-          role,
-          email,
-          fullName,
-          githubUsername: provider === 'github' ? githubUsername : undefined,
-        }),
+        body: JSON.stringify({ provider, role, email, fullName,
+          githubUsername: provider === 'github' ? githubUsername : undefined }),
       });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.message || 'OAuth Simulation Failed');
-      }
-
-      // Redirect to OAuth callback handler
-      router.push(`/callback?token=${data.token}&role=${data.role}`);
+      router.push('/callback?mock=1');
     } catch (err: any) {
       setError(err.message || 'Authentication error');
     } finally {

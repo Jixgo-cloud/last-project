@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { User, Building2, ArrowRight, AlertCircle, Info, RefreshCw } from 'lucide-react';
 import { UserRole } from '@smartcareer/shared';
+import { beginOAuth } from '@/lib/oauth';
 
 function GoogleIcon() {
   return (
@@ -65,11 +66,13 @@ function RegisterForm() {
     }
   }, [searchParams]);
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 
-  const handleOAuthLogin = (provider: 'google' | 'github') => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    window.location.href = `${apiUrl}/auth/${provider}?role=${role}&mode=register&origin=${encodeURIComponent(origin)}`;
+  const handleOAuthLogin = async (provider: 'google' | 'github') => {
+    try {
+      await beginOAuth(provider, role, 'register');
+    } catch {
+      setError('ไม่สามารถเริ่มการเข้าสู่ระบบได้ กรุณาลองอีกครั้ง');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -264,10 +267,12 @@ function RegisterForm() {
               <label className="block text-xs font-bold text-slate-700 mb-1.5">รหัสผ่าน (Password)</label>
               <input
                 type="password"
+                  minLength={12}
+                  maxLength={72}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="อย่างน้อย 6 ตัวอักษร"
+                placeholder="อย่างน้อย 12 ตัวอักษร"
                 className="w-full rounded-xl border border-slate-200 bg-[#fbfcfd] px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#6366f1]/20 focus:border-[#6366f1] transition"
               />
             </div>

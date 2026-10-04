@@ -4,6 +4,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole } from '@smartcareer/shared';
+import { UpdateCandidateProfileDto } from './dto/candidate-profile.dto';
 
 @Controller('candidate')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -18,7 +19,7 @@ export class CandidateController {
 
   @Put('profile')
   @Roles(UserRole.CANDIDATE)
-  async updateProfile(@Request() req: any, @Body() body: any) {
+  async updateProfile(@Request() req: any, @Body() body: UpdateCandidateProfileDto) {
     return this.candidateService.updateProfile(req.user.id, body);
   }
 

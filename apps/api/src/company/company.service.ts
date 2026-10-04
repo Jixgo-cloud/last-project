@@ -95,8 +95,23 @@ export class CompanyService {
     return verification;
   }
 
+  private async validateJob(companyId: string, data: any, existing?: any) {
+    const minimum = data.salaryMin !== undefined ? data.salaryMin : existing?.salaryMin;
+    const maximum = data.salaryMax !== undefined ? data.salaryMax : existing?.salaryMax;
+    if (minimum != null && maximum != null && Number(minimum) > Number(maximum)) {
+      throw new BadRequestException('Minimum salary must not exceed maximum salary.');
+    }
+    if (data.customAssessmentId) {
+      const assessment = await this.prisma.assessment.findFirst({
+        where: { id: data.customAssessmentId, companyId, isActive: true },
+      });
+      if (!assessment) throw new BadRequestException('Choose an active assessment belonging to your company.');
+    }
+  }
+
   async createJob(userId: string, jobDto: any) {
     const company = await this.getCompanyByUserId(userId);
+    await this.validateJob(company.id, jobDto);
 
     const slug =
       jobDto.title.toLowerCase().replace(/[^a-z0-9]+/g, '-') +
@@ -116,17 +131,17 @@ export class CompanyService {
         location: jobDto.location || 'Bangkok, Thailand',
         isRemote: jobDto.isRemote || false,
         employmentType: jobDto.employmentType || 'FULL_TIME',
-        salaryMin: jobDto.salaryMin ? parseInt(jobDto.salaryMin) : null,
-        salaryMax: jobDto.salaryMax ? parseInt(jobDto.salaryMax) : null,
+        salaryMin: jobDto.salaryMin != null ? Number(jobDto.salaryMin) : null,
+        salaryMax: jobDto.salaryMax != null ? Number(jobDto.salaryMax) : null,
         salaryCurrency: jobDto.salaryCurrency || 'THB',
-        acceptedQuota: jobDto.acceptedQuota ? parseInt(jobDto.acceptedQuota) : null,
+        acceptedQuota: jobDto.acceptedQuota != null ? Number(jobDto.acceptedQuota) : null,
         source: 'INTERNAL',
         customAssessmentId: jobDto.customAssessmentId || null,
         skills: {
           create: (jobDto.skills || []).map((s: { skillId: string; isRequired?: boolean; minimumScore?: number }) => ({
             skillId: s.skillId,
             isRequired: s.isRequired !== false,
-            minimumScore: s.minimumScore || 50,
+            minimumScore: s.minimumScore ?? 50,
           })),
         },
       },
@@ -145,6 +160,7 @@ export class CompanyService {
     });
     if (!job) throw new NotFoundException('Job not found or unauthorized');
 
+    await this.validateJob(company.id, jobDto, job);
     const updateData: any = {};
     if (jobDto.title !== undefined) updateData.title = jobDto.title;
     if (jobDto.description !== undefined) updateData.description = jobDto.description;
@@ -153,30 +169,28 @@ export class CompanyService {
     if (jobDto.location !== undefined) updateData.location = jobDto.location;
     if (jobDto.isRemote !== undefined) updateData.isRemote = jobDto.isRemote;
     if (jobDto.employmentType !== undefined) updateData.employmentType = jobDto.employmentType;
-    if (jobDto.salaryMin !== undefined) updateData.salaryMin = jobDto.salaryMin ? parseInt(jobDto.salaryMin) : null;
-    if (jobDto.salaryMax !== undefined) updateData.salaryMax = jobDto.salaryMax ? parseInt(jobDto.salaryMax) : null;
+    if (jobDto.salaryMin !== undefined) updateData.salaryMin = jobDto.salaryMin != null ? Number(jobDto.salaryMin) : null;
+    if (jobDto.salaryMax !== undefined) updateData.salaryMax = jobDto.salaryMax != null ? Number(jobDto.salaryMax) : null;
     if (jobDto.salaryCurrency !== undefined) updateData.salaryCurrency = jobDto.salaryCurrency;
-    if (jobDto.acceptedQuota !== undefined) updateData.acceptedQuota = jobDto.acceptedQuota ? parseInt(jobDto.acceptedQuota) : null;
+    if (jobDto.acceptedQuota !== undefined) updateData.acceptedQuota = jobDto.acceptedQuota != null ? Number(jobDto.acceptedQuota) : null;
     if (jobDto.customAssessmentId !== undefined) updateData.customAssessmentId = jobDto.customAssessmentId || null;
 
     if (jobDto.skills && Array.isArray(jobDto.skills)) {
-      await this.prisma.jobSkill.deleteMany({ where: { jobId } });
       updateData.skills = {
         create: jobDto.skills.map((s: { skillId: string; isRequired?: boolean; minimumScore?: number }) => ({
           skillId: s.skillId,
           isRequired: s.isRequired !== false,
-          minimumScore: s.minimumScore || 50,
+          minimumScore: s.minimumScore ?? 50,
         })),
       };
     }
 
-    return this.prisma.job.update({
-      where: { id: jobId },
-      data: updateData,
-      include: {
-        skills: { include: { skill: true } },
-        customAssessment: true,
-      },
+    return this.prisma.$transaction(async tx => {
+      if (jobDto.skills) await tx.jobSkill.deleteMany({ where: { jobId } });
+      return tx.job.update({
+        where: { id: jobId }, data: updateData,
+        include: { skills: { include: { skill: true } }, customAssessment: true },
+      });
     });
   }
 
@@ -574,7 +588,7 @@ export class CompanyService {
         type: data.type || 'PRACTICAL_CODING',
         skillId: data.skillId || null,
         timeLimitMinutes: data.timeLimitMinutes ? parseInt(data.timeLimitMinutes) : 30,
-        passingScore: data.passingScore ? parseFloat(data.passingScore) : 70,
+        passingScore: data.passingScore != null ? Number(data.passingScore) : 70,
         feedbackVisibility: data.feedbackVisibility || 'IMMEDIATE',
         isActive: data.isActive !== false,
         version: 1,
@@ -618,16 +632,14 @@ export class CompanyService {
       throw new ForbiddenException('You are not authorized to edit this assessment');
     }
 
-    if (Array.isArray(data.questions)) {
-      const validationError = getAssessmentValidationError({
-        title: data.title ?? assessment.title,
-        type: data.type ?? assessment.type,
-        timeLimitMinutes: data.timeLimitMinutes ?? assessment.timeLimitMinutes,
-        passingScore: data.passingScore ?? assessment.passingScore,
-        questions: data.questions,
-      });
-      if (validationError) throw new BadRequestException(validationError);
-    }
+    const validationError = getAssessmentValidationError({
+      title: data.title ?? assessment.title,
+      type: data.type ?? assessment.type,
+      timeLimitMinutes: data.timeLimitMinutes ?? assessment.timeLimitMinutes,
+      passingScore: data.passingScore ?? assessment.passingScore,
+      questions: data.questions ?? assessment.questions,
+    });
+    if (validationError) throw new BadRequestException(validationError);
 
     const metadataUpdate = {
       title: data.title ?? assessment.title,

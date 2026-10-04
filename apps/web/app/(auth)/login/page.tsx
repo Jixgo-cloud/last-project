@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Lock, Mail, ArrowRight, AlertCircle, Sparkles, RefreshCw } from 'lucide-react';
 import { UserRole } from '@smartcareer/shared';
+import { beginOAuth } from '@/lib/oauth';
 import { getSafeInternalRedirect } from '@/lib/navigation';
 
 const POST_LOGIN_REDIRECT_KEY = 'smartcareer_post_login_redirect';
@@ -64,9 +65,8 @@ function LoginForm() {
     }
   }, [searchParams]);
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
 
-  const handleOAuthLogin = (provider: 'google' | 'github') => {
+  const handleOAuthLogin = async (provider: 'google' | 'github') => {
     const role = provider === 'github' ? 'CANDIDATE' : 'COMPANY';
     const redirectPath = role === 'CANDIDATE'
       ? getSafeInternalRedirect(searchParams.get('redirect'))
@@ -76,8 +76,11 @@ function LoginForm() {
     } else {
       sessionStorage.removeItem(POST_LOGIN_REDIRECT_KEY);
     }
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    window.location.href = `${apiUrl}/auth/${provider}?role=${role}&mode=login&origin=${encodeURIComponent(origin)}`;
+    try {
+      await beginOAuth(provider, role, 'login');
+    } catch {
+      setError('ไม่สามารถเริ่มการเข้าสู่ระบบได้ กรุณาลองอีกครั้ง');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

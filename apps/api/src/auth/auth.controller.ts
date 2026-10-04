@@ -6,24 +6,30 @@ import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { Public } from './roles.decorator';
 import { UserRole } from '@smartcareer/shared';
-import { RegisterDto, LoginDto, DevOAuthCallbackDto } from './dto/auth.dto';
+import { RegisterDto, LoginDto, DevOAuthCallbackDto, OAuthExchangeDto } from './dto/auth.dto';
+
+import { AuthSecurityService, publicRole } from './auth-security.service';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private authService: AuthService,
     private configService: ConfigService,
+    private security: AuthSecurityService,
   ) {}
 
   @Public()
   @Post('register')
-  async register(@Body() body: RegisterDto) {
+  async register(@Body() body: RegisterDto, @Req() req: any) {
+    await this.security.rateLimit('register:ip:' + req.ip, 30, 60 * 60_000);
     return this.authService.register(body);
   }
 
   @Public()
   @Post('login')
-  async login(@Body() body: LoginDto) {
+  async login(@Body() body: LoginDto, @Req() req: any) {
+    await this.security.rateLimit('login:ip:' + req.ip, 100, 10 * 60_000);
+    await this.security.rateLimit('login:email:' + body.email.toLowerCase().trim(), 10, 10 * 60_000);
     return this.authService.login(body);
   }
 
@@ -34,14 +40,28 @@ export class AuthController {
   }
 
   private getFrontendUrl(origin?: string): string {
-    if (origin && (origin.includes('vercel.app') || origin.includes('localhost'))) {
-      return origin.replace(/\/$/, '');
-    }
-    const envUrl = (this.configService.get<string>('FRONTEND_URL') || '').trim().replace(/\/$/, '');
-    if (envUrl.includes('smartcareer.vercel.app') && !envUrl.includes('smartcareerplatform')) {
-      return 'https://smartcareerplatform.vercel.app';
-    }
-    return envUrl || 'https://smartcareerplatform.vercel.app';
+    return this.security.frontend(origin);
+  }
+
+  private cookieOptions(provider: 'google' | 'github') {
+    return {
+      httpOnly: true, secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax' as const, path: '/api/auth/' + provider, maxAge: 10 * 60_000,
+    };
+  }
+
+  private browserCookie(req: any, provider: 'google' | 'github'): string {
+    const entry = (req.headers.cookie || '').split(';').map((v: string) => v.trim())
+      .find((v: string) => v.startsWith('smartcareer_oauth_' + provider + '='));
+    return entry ? entry.slice(entry.indexOf('=') + 1) : '';
+  }
+
+  @Public()
+  @Post('oauth/exchange')
+  async exchange(@Body() body: OAuthExchangeDto, @Req() req: any) {
+    await this.security.rateLimit('exchange:ip:' + req.ip, 100, 10 * 60_000);
+    const userId = await this.security.exchange(body.code, body.verifier, req.headers.origin || '');
+    return this.authService.getMe(userId);
   }
 
   private getCallbackUrl(provider: 'google' | 'github'): string {
@@ -70,10 +90,14 @@ export class AuthController {
     @Query('role') role: UserRole = UserRole.COMPANY,
     @Query('mode') mode: string = 'login',
     @Query('origin') origin: string,
+    @Query('challenge') challenge: string,
     @Req() req: any,
     @Res() res: Response,
   ) {
-    const frontendUrl = this.getFrontendUrl(origin || req.headers?.referer);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    const frontendUrl = this.getFrontendUrl(origin);
+    publicRole(role);
 
     // Strict Rule: CANDIDATE is NOT allowed to sign up or sign in with Google!
     if (role === UserRole.CANDIDATE) {
@@ -99,7 +123,10 @@ export class AuthController {
       return res.redirect(`${frontendUrl}/mock-oauth?provider=google&role=${role}&mode=${mode}`);
     }
 
-    const state = Buffer.from(JSON.stringify({ role, mode, frontendUrl })).toString('base64');
+    await this.security.rateLimit('oauth:ip:' + req.ip, 100, 10 * 60_000);
+    const request = await this.security.start('google', role, frontendUrl, challenge);
+    const state = request.state;
+    res.cookie('smartcareer_oauth_google', request.browser, this.cookieOptions('google'));
     const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(
       callbackUrl,
     )}&response_type=code&scope=${encodeURIComponent('openid profile email')}&state=${state}&prompt=select_account`;
@@ -113,17 +140,14 @@ export class AuthController {
     @Query('code') code: string,
     @Query('state') stateStr: string,
     @Query('error') error: string,
+    @Req() req: any,
     @Res() res: Response,
   ) {
-    let state = { role: UserRole.COMPANY, mode: 'login', frontendUrl: this.getFrontendUrl() };
-    if (stateStr) {
-      try {
-        state = { ...state, ...JSON.parse(Buffer.from(stateStr, 'base64').toString('utf-8')) };
-      } catch {
-        // keep default
-      }
-    }
-    const frontendUrl = this.getFrontendUrl(state.frontendUrl);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    const state = await this.security.consumeState(stateStr, this.browserCookie(req, 'google'), 'google');
+    res.clearCookie('smartcareer_oauth_google', { ...this.cookieOptions('google'), maxAge: undefined });
+    const frontendUrl = state.frontendUrl;
 
     if (error) {
       return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(error)}`);
@@ -162,6 +186,9 @@ export class AuthController {
       });
 
       const profile = userRes.data;
+      if (profile.email_verified !== true || typeof profile.email !== 'string') {
+        throw new BadRequestException('A verified email is required for Google sign-in.');
+      }
       const result = await this.authService.handleOAuthUser({
         provider: 'GOOGLE',
         providerId: profile.sub,
@@ -171,9 +198,10 @@ export class AuthController {
         requestedRole: state.role,
       });
 
-      return res.redirect(`${frontendUrl}/callback?token=${result.token}&role=${result.role}`);
+      const exchangeCode = await this.security.grant(result.id, frontendUrl, state.challenge);
+      return res.redirect(frontendUrl + '/callback?code=' + exchangeCode);
     } catch (err: any) {
-      const msg = err.response?.data?.message || err.message || 'Google authentication failed';
+      const msg = 'Unable to sign in. Please start again or use email sign-in.';
       return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(msg)}`);
     }
   }
@@ -185,10 +213,14 @@ export class AuthController {
     @Query('role') role: UserRole = UserRole.CANDIDATE,
     @Query('mode') mode: string = 'login',
     @Query('origin') origin: string,
+    @Query('challenge') challenge: string,
     @Req() req: any,
     @Res() res: Response,
   ) {
-    const frontendUrl = this.getFrontendUrl(origin || req.headers?.referer);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    const frontendUrl = this.getFrontendUrl(origin);
+    publicRole(role);
 
     // Strict Rule: COMPANY is NOT allowed to sign up or sign in with GitHub!
     if (role === UserRole.COMPANY) {
@@ -214,7 +246,10 @@ export class AuthController {
       return res.redirect(`${frontendUrl}/mock-oauth?provider=github&role=${role}&mode=${mode}`);
     }
 
-    const state = Buffer.from(JSON.stringify({ role, mode, frontendUrl })).toString('base64');
+    await this.security.rateLimit('oauth:ip:' + req.ip, 100, 10 * 60_000);
+    const request = await this.security.start('github', role, frontendUrl, challenge);
+    const state = request.state;
+    res.cookie('smartcareer_oauth_github', request.browser, this.cookieOptions('github'));
     const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(
       callbackUrl,
     )}&scope=${encodeURIComponent('read:user user:email')}&state=${state}`;
@@ -228,17 +263,14 @@ export class AuthController {
     @Query('code') code: string,
     @Query('state') stateStr: string,
     @Query('error') error: string,
+    @Req() req: any,
     @Res() res: Response,
   ) {
-    let state = { role: UserRole.CANDIDATE, mode: 'login', frontendUrl: this.getFrontendUrl() };
-    if (stateStr) {
-      try {
-        state = { ...state, ...JSON.parse(Buffer.from(stateStr, 'base64').toString('utf-8')) };
-      } catch {
-        // keep default
-      }
-    }
-    const frontendUrl = this.getFrontendUrl(state.frontendUrl);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    const state = await this.security.consumeState(stateStr, this.browserCookie(req, 'github'), 'github');
+    res.clearCookie('smartcareer_oauth_github', { ...this.cookieOptions('github'), maxAge: undefined });
+    const frontendUrl = state.frontendUrl;
 
     if (error) {
       return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(error)}`);
@@ -286,26 +318,14 @@ export class AuthController {
       });
       const ghUser = userRes.data;
 
-      // Fetch primary email if not public in profile
-      let userEmail = ghUser.email;
-      if (!userEmail) {
-        try {
-          const emailsRes = await axios.get('https://api.github.com/user/emails', {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'User-Agent': 'SmartCareer-App',
-            },
-          });
-          const primaryEmailObj = emailsRes.data.find((e: any) => e.primary && e.verified);
-          userEmail = primaryEmailObj ? primaryEmailObj.email : emailsRes.data[0]?.email;
-        } catch {
-          // ignore
-        }
-      }
-
-      if (!userEmail) {
-        userEmail = `${ghUser.login}@users.noreply.github.com`;
-      }
+      // Link accounts only by a provider-verified email, including private GitHub emails.
+      const emailsRes = await axios.get('https://api.github.com/user/emails', {
+        headers: { Authorization: 'Bearer ' + accessToken, 'User-Agent': 'SmartCareer-App' },
+      });
+      const verifiedEmail = emailsRes.data.find((e: any) => e.primary && e.verified)
+        || emailsRes.data.find((e: any) => e.verified);
+      if (!verifiedEmail?.email) throw new BadRequestException('A verified GitHub email is required.');
+      const userEmail = verifiedEmail.email;
 
       const result = await this.authService.handleOAuthUser({
         provider: 'GITHUB',
@@ -317,9 +337,10 @@ export class AuthController {
         requestedRole: state.role,
       });
 
-      return res.redirect(`${frontendUrl}/callback?token=${result.token}&role=${result.role}`);
+      const exchangeCode = await this.security.grant(result.id, frontendUrl, state.challenge);
+      return res.redirect(frontendUrl + '/callback?code=' + exchangeCode);
     } catch (err: any) {
-      const msg = err.response?.data?.message || err.message || 'GitHub authentication failed';
+      const msg = 'Unable to sign in. Please start again or use email sign-in.';
       return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(msg)}`);
     }
   }

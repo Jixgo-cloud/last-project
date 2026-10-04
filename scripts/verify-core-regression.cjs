@@ -11,7 +11,7 @@ const dotenv = require('dotenv');
 
 const root = path.resolve(__dirname, '..');
 const keepManualUi = process.argv.includes('--manual-ui');
-const configured = dotenv.parse(fs.readFileSync(path.join(root, '.env')));
+const configured = { ...(fs.existsSync(path.join(root, '.env')) ? dotenv.parse(fs.readFileSync(path.join(root, '.env'))) : {}), ...process.env };
 const sourceUrl = new URL(configured.DATABASE_URL);
 assert(['localhost', '127.0.0.1', '[::1]'].includes(sourceUrl.hostname), 'Regression requires a local PostgreSQL server');
 const databaseName = `smartcareer_regression_${Date.now()}`;
@@ -19,7 +19,7 @@ const testUrl = new URL(sourceUrl);
 testUrl.pathname = '/' + databaseName;
 const evidenceDir = path.join(root, 'output', 'core-regression', databaseName);
 fs.mkdirSync(evidenceDir, { recursive: true });
-const env = { ...process.env, ...configured, DATABASE_URL: testUrl.href, NODE_ENV: 'development', PORT: '4000', FRONTEND_URL: 'http://localhost:3000', NEXT_PUBLIC_API_URL: 'http://localhost:4000/api', NEXT_TELEMETRY_DISABLED: '1', JWT_EXPIRES_IN: '5m', INGESTION_CONFIG_DIR: path.join(evidenceDir, 'ingestion-config') };
+const env = { ...process.env, ...configured, DATABASE_URL: testUrl.href, NODE_ENV: 'development', PORT: '4000', FRONTEND_URL: 'http://localhost:3000', NEXT_PUBLIC_API_URL: 'http://localhost:4000/api', NEXT_TELEMETRY_DISABLED: '1', JWT_EXPIRES_IN: '5m', INGESTION_CONFIG_DIR: path.join(evidenceDir, 'ingestion-config'), API_URL: 'http://localhost:4000/api', JUDGE0_BASE_URL: 'http://127.0.0.1:2359', JUDGE0_API_KEY: '', RAPIDAPI_KEY: '' };
 const admin = new PrismaClient({ datasources: { db: { url: sourceUrl.href } } });
 const db = new PrismaClient({ datasources: { db: { url: testUrl.href } } });
 const results = [];
@@ -27,6 +27,7 @@ const children = [];
 const logs = [];
 const apiFailures = [];
 const expectedApiResponses = new Map();
+let judgeFixture;
 let browser;
 let page;
 let created = false;
@@ -82,8 +83,11 @@ async function login(email, password, landing) {
   await fill('input[type="email"]', email);
   await fill('input[type="password"]', password);
   await Promise.all([page.waitForFunction(route => location.pathname === route, { timeout: 20000 }, landing), page.click('button[type="submit"]')]);
-  const token = await page.evaluate(() => localStorage.getItem('smartcareer_token'));
-  assert(token, 'UI login did not persist a session');
+  assert.equal(await page.evaluate(() => localStorage.getItem('smartcareer_token')), null, 'Bearer token must not be stored in localStorage');
+  const cookie = (await browser.cookies()).find(c => c.name === 'smartcareer_session');
+  assert(cookie && cookie.httpOnly, 'UI login must persist an HttpOnly session');
+  assert(!(await page.evaluate(() => document.cookie)).includes('smartcareer_session'), 'JavaScript must not read the session');
+  const token = (await request('/auth/login', 'POST', { email, password })).token;
   const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
   assert.equal(claims.exp - claims.iat, 300, 'JWT_EXPIRES_IN did not control the session lifetime');
   return token;
@@ -91,7 +95,10 @@ async function login(email, password, landing) {
 async function screenshot(name) { await page.screenshot({ path: path.join(evidenceDir, name + '.png'), fullPage: false }); }
 
 async function run() {
-  await freePort(3000); await freePort(4000);
+  await freePort(3000); await freePort(4000); await freePort(2359);
+  judgeFixture = require('./fixtures/judge0.cjs').createJudgeFixture();
+  await new Promise(resolve => judgeFixture.listen(2359, '127.0.0.1', resolve));
+  report.judgeProvider = 'Deterministic fixture; no applicant code is executed locally';
   const sourceCounts = { users: await admin.user.count(), jobs: await admin.job.count(), attempts: await admin.assessmentAttempt.count() };
   await admin.$executeRawUnsafe(`CREATE DATABASE "${databaseName}"`); created = true;
   const schema = spawnSync(process.execPath, [path.join(root, 'node_modules/prisma/build/index.js'), 'db', 'push', '--schema', path.join(root, 'prisma/schema.prisma'), '--skip-generate'], { cwd: root, env, windowsHide: true, encoding: 'utf8' });
@@ -110,14 +117,15 @@ async function run() {
   await waitReady('http://localhost:4000/api/health', apiChild);
   const webChild = launch('web', [path.join(root, 'node_modules/next/dist/bin/next'), 'start', '-p', '3000'], path.join(root, 'apps/web'), { NODE_ENV: 'production' });
   await waitReady('http://localhost:3000/login', webChild);
-  const executablePath = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-  browser = await puppeteer.launch({ executablePath, headless: true, defaultViewport: { width: 1366, height: 900 } });
+  const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || (process.platform === 'win32' ? 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe' : '/usr/bin/google-chrome');
+  browser = await puppeteer.launch({ executablePath, headless: true, args: process.env.CI ? ['--no-sandbox'] : [], defaultViewport: { width: 1366, height: 900 } });
   page = await browser.newPage();
   const pageErrors = [];
   page.on('pageerror', error => pageErrors.push(error.message));
   page.on('response', response => {
-    if (!response.url().startsWith('http://localhost:4000/api') || response.status() < 400) return;
+    if (!/^http:\/\/localhost:(3000|4000)\/api/.test(response.url()) || response.status() < 400) return;
     const requestPath = new URL(response.url()).pathname;
+    if (requestPath === '/api/auth/me' && response.status() === 401) return;
     if (expectedApiResponses.get(requestPath) === response.status()) return;
     apiFailures.push({ path: requestPath, status: response.status() });
   });
@@ -126,6 +134,12 @@ async function run() {
   let companyToken;
   let invalidLegacyAssessment;
   await check('Company login through UI', async () => { companyToken = await login('hr@techcorp.co.th', 'password123', '/company/dashboard'); await screenshot('company-login'); assert.equal((await request('/auth/me', 'GET', undefined, companyToken)).role, 'COMPANY'); });
+  await check('Browser session is private and cross-site writes are refused', async () => {
+    const me = await fetch('http://localhost:3000/api/auth/me', { headers: { Cookie: 'smartcareer_session=' + companyToken } });
+    assert(me.ok); assert.equal((await me.json()).token, undefined);
+    const blocked = await fetch('http://localhost:3000/api/auth/logout', { method: 'POST', headers: { Origin: 'https://unrelated.example' } });
+    assert.equal(blocked.status, 403);
+  });
   await check('Company API rejects placeholder theory choices', async () => {
     const result = await requestResult('/company/assessments', 'POST', {
       title: 'Invalid regression assessment', type: 'THEORY', timeLimitMinutes: 30, passingScore: 70,
@@ -297,9 +311,13 @@ async function run() {
       console.log('Manual UI session is ready at http://localhost:3000');
       console.log('Local test accounts: hr@techcorp.co.th / password123 and candidate@smartcareer.dev / password123');
       console.log('Press Ctrl+C when the manual UI checks are complete; this will stop both servers and remove the isolated database.');
-      await new Promise(resolve => process.once('SIGINT', resolve));
+      await new Promise(resolve => {
+        const timer = setInterval(() => { if (fs.existsSync(path.join(evidenceDir, 'stop-manual-ui'))) { clearInterval(timer); resolve(); } }, 500);
+        process.once('SIGINT', () => { clearInterval(timer); resolve(); });
+      });
     }
     for (const child of children.reverse()) { if (child.exitCode === null) { child.kill(); await Promise.race([new Promise(resolve => child.once('exit', resolve)), pause(3000)]); } }
+    if (judgeFixture) await new Promise(resolve => judgeFixture.close(resolve));
     for (const fd of logs) fs.closeSync(fd);
     await db.$disconnect();
     if (created) {

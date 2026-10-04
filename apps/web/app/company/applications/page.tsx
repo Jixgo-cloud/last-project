@@ -212,13 +212,7 @@ export default function CompanyApplicationsPage() {
   const handleExportCsv = async () => {
     try {
       setExportingCsv(true);
-      const token = typeof window !== 'undefined' ? localStorage.getItem('smartcareer_token') : null;
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
-      const res = await fetch(`${apiUrl}/company/applications/export`, {
-        headers: {
-          Authorization: `Bearer ${token || ''}`,
-        },
-      });
+      const res = await fetch('/api/company/applications/export', { credentials: 'same-origin', cache: 'no-store' });
 
       if (!res.ok) {
         throw new Error(`Export failed with HTTP ${res.status}`);

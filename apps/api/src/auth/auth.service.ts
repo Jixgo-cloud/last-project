@@ -1,8 +1,10 @@
+import { randomUUID } from 'crypto';
 import { Injectable, BadRequestException, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
 import { UserRole, VerificationStatus, AuthUserResponse } from '@smartcareer/shared';
+import { publicRole } from './auth-security.service';
 
 @Injectable()
 export class AuthService {
@@ -19,6 +21,7 @@ export class AuthService {
     companyName?: string;
     targetCareer?: string;
   }): Promise<AuthUserResponse> {
+    publicRole(dto.role);
     const existing = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase().trim() },
     });
@@ -29,53 +32,30 @@ export class AuthService {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(dto.password, salt);
 
+    // Account and its profile/organization must be saved as one operation.
     const user = await this.prisma.user.create({
       data: {
-        email: dto.email.toLowerCase().trim(),
-        passwordHash,
-        role: dto.role,
+        email: dto.email.toLowerCase().trim(), passwordHash, role: dto.role,
+        ...(dto.role === UserRole.CANDIDATE ? {
+          candidateProfile: { create: {
+            fullName: dto.fullName || dto.email.split('@')[0],
+            targetCareer: dto.targetCareer || 'Full Stack Developer',
+          } },
+        } : {
+          companyMembers: { create: { role: 'OWNER', company: { create: {
+            name: dto.companyName || `${dto.email.split('@')[0]} Tech`,
+            slug: 'company-' + randomUUID(), verificationStatus: VerificationStatus.PENDING,
+          } } } },
+        }),
       },
+      include: { candidateProfile: true, companyMembers: { include: { company: true } } },
     });
-
-    let candidateProfileData = null;
-    let companyData = null;
-
-    if (dto.role === UserRole.CANDIDATE) {
-      const profile = await this.prisma.candidateProfile.create({
-        data: {
-          userId: user.id,
-          fullName: dto.fullName || dto.email.split('@')[0],
-          targetCareer: dto.targetCareer || 'Full Stack Developer',
-        },
-      });
-      candidateProfileData = {
-        id: profile.id,
-        fullName: profile.fullName,
-        targetCareer: profile.targetCareer,
-        githubUsername: profile.githubUsername,
-      };
-    } else if (dto.role === UserRole.COMPANY) {
-      const companyName = dto.companyName || `${dto.email.split('@')[0]} Tech`;
-      const slug = companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Math.floor(Math.random() * 1000);
-      const company = await this.prisma.company.create({
-        data: {
-          name: companyName,
-          slug,
-          verificationStatus: VerificationStatus.PENDING,
-          members: {
-            create: {
-              userId: user.id,
-              role: 'OWNER',
-            },
-          },
-        },
-      });
-      companyData = {
-        id: company.id,
-        name: company.name,
-        verificationStatus: company.verificationStatus as VerificationStatus,
-      };
-    }
+    const candidateProfileData = user.candidateProfile ? {
+      id: user.candidateProfile.id, fullName: user.candidateProfile.fullName,
+      targetCareer: user.candidateProfile.targetCareer, githubUsername: user.candidateProfile.githubUsername,
+    } : null;
+    const company = user.companyMembers[0]?.company;
+    const companyData = company ? { id: company.id, name: company.name, verificationStatus: company.verificationStatus as VerificationStatus } : null;
 
     const token = this.generateToken(user.id, user.email, user.role);
 
@@ -159,6 +139,7 @@ export class AuthService {
     targetCareer?: string;
     requestedRole?: UserRole;
   }): Promise<AuthUserResponse> {
+    if (dto.requestedRole !== undefined) publicRole(dto.requestedRole);
     const normalizedEmail = dto.email.toLowerCase().trim();
 
     // Strict constraint check: Candidate cannot use Google!
@@ -184,6 +165,12 @@ export class AuthService {
     });
 
     if (user) {
+      if (!user.isActive || user.role === UserRole.ADMIN) {
+        throw new UnauthorizedException('This account cannot use social sign-in.');
+      }
+      if (user.authProvider === dto.provider && user.providerId && user.providerId !== dto.providerId) {
+        throw new UnauthorizedException('Social account identity does not match.');
+      }
       if (user.role === UserRole.COMPANY && dto.provider === 'GITHUB') {
         throw new BadRequestException('Company accounts cannot sign in with GitHub. Please use Google or Email.');
       }
@@ -191,24 +178,6 @@ export class AuthService {
       if (user.role === UserRole.CANDIDATE && dto.provider === 'GOOGLE') {
         throw new BadRequestException('Candidate accounts cannot sign in with Google. Please use GitHub.');
       }
-
-      // Update provider information and avatar if newly available
-      user = await this.prisma.user.update({
-        where: { id: user.id },
-        data: {
-          authProvider: dto.provider as any,
-          providerId: dto.providerId,
-          avatarUrl: user.avatarUrl || dto.avatarUrl,
-        },
-        include: {
-          candidateProfile: true,
-          companyMembers: {
-            include: {
-              company: true,
-            },
-          },
-        },
-      });
 
       if (user.role === UserRole.CANDIDATE && user.candidateProfile) {
         // If githubUsername is already bound, verify it matches
@@ -247,6 +216,25 @@ export class AuthService {
           user.candidateProfile = updatedProfile;
         }
       }
+      // Update provider information and avatar if newly available
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          authProvider: dto.provider as any,
+          providerId: dto.providerId,
+          avatarUrl: user.avatarUrl || dto.avatarUrl,
+        },
+        include: {
+          candidateProfile: true,
+          companyMembers: {
+            include: {
+              company: true,
+            },
+          },
+        },
+      });
+
+
     } else {
       // New user registration
       const role = dto.requestedRole || (dto.provider === 'GITHUB' ? UserRole.CANDIDATE : UserRole.COMPANY);
@@ -271,53 +259,23 @@ export class AuthService {
 
       user = await this.prisma.user.create({
         data: {
-          email: normalizedEmail,
-          passwordHash: null,
-          role,
-          authProvider: dto.provider as any,
-          providerId: dto.providerId,
-          avatarUrl: dto.avatarUrl,
+          email: normalizedEmail, passwordHash: null, role,
+          authProvider: dto.provider as any, providerId: dto.providerId, avatarUrl: dto.avatarUrl,
+          ...(role === UserRole.CANDIDATE ? {
+            candidateProfile: { create: {
+              fullName: dto.fullName || normalizedEmail.split('@')[0],
+              targetCareer: dto.targetCareer || 'Full Stack Developer',
+              githubUsername: dto.githubUsername || null, avatarUrl: dto.avatarUrl || null,
+            } },
+          } : {
+            companyMembers: { create: { role: 'OWNER', company: { create: {
+              name: `${dto.fullName || normalizedEmail.split('@')[0]}'s Organization`,
+              slug: 'company-' + randomUUID(), verificationStatus: VerificationStatus.PENDING,
+            } } } },
+          }),
         },
-        include: {
-          candidateProfile: true,
-          companyMembers: {
-            include: {
-              company: true,
-            },
-          },
-        },
+        include: { candidateProfile: true, companyMembers: { include: { company: true } } },
       });
-
-      if (role === UserRole.CANDIDATE) {
-        const profile = await this.prisma.candidateProfile.create({
-          data: {
-            userId: user.id,
-            fullName: dto.fullName || normalizedEmail.split('@')[0],
-            targetCareer: dto.targetCareer || 'Full Stack Developer',
-            githubUsername: dto.githubUsername || null,
-            avatarUrl: dto.avatarUrl || null,
-          },
-        });
-        (user as any).candidateProfile = profile;
-      } else if (role === UserRole.COMPANY) {
-        const personName = dto.fullName || normalizedEmail.split('@')[0];
-        const companyName = `${personName}'s Organization`;
-        const slug = companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Math.floor(Math.random() * 1000);
-        const company = await this.prisma.company.create({
-          data: {
-            name: companyName,
-            slug,
-            verificationStatus: VerificationStatus.PENDING,
-            members: {
-              create: {
-                userId: user.id,
-                role: 'OWNER',
-              },
-            },
-          },
-        });
-        (user as any).companyMembers = [{ company }];
-      }
     }
 
     const candidateProfile = user.candidateProfile
@@ -364,8 +322,8 @@ export class AuthService {
       },
     });
 
-    if (!user) {
-      throw new UnauthorizedException('User not found');
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('User not found or inactive');
     }
 
     const candidateProfile = user.candidateProfile

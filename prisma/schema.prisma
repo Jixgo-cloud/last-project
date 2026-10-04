@@ -7,6 +7,26 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// Short-lived OAuth requests and one-use codes are shared by all API replicas.
+model AuthChallenge {
+  id        String   @id
+  purpose   String
+  payload   Json
+  expiresAt DateTime
+
+  @@index([expiresAt])
+  @@map("auth_challenges")
+}
+
+model AuthRateLimit {
+  key       String   @id
+  count     Int
+  expiresAt DateTime
+
+  @@index([expiresAt])
+  @@map("auth_rate_limits")
+}
+
 enum UserRole {
   CANDIDATE
   COMPANY

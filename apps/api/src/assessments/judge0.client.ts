@@ -58,7 +58,7 @@ export class Judge0Client {
     const raw =
       process.env.JUDGE0_BASE_URL ||
       process.env.JUDGE0_API_URL ||
-      'https://judge0-ce.p.rapidapi.com';
+      (process.env.JUDGE0_API_KEY || process.env.RAPIDAPI_KEY ? 'https://judge0-ce.p.rapidapi.com' : 'https://ce.judge0.com');
     return raw.trim().replace(/^["']|["']$/g, '').replace(/\/$/, '');
   }
 
@@ -70,7 +70,7 @@ export class Judge0Client {
     const rawApiKey = (
       process.env.JUDGE0_API_KEY ||
       process.env.RAPIDAPI_KEY ||
-      '345738b198msh90f0833c8cbf4ecp1b6cfbjsn20a067bcdbe2'
+      ''
     )
       .trim()
       .replace(/^["']|["']$/g, '');
@@ -164,7 +164,7 @@ export class Judge0Client {
 
         const stdout = (data.stdout || '').trim();
         const expected = String(tc.expectedOutput || '').trim();
-        const isMatch = status === 'ACCEPTED' || this.isOutputEquivalent(stdout, expected);
+        const isMatch = status === 'ACCEPTED' || (status === 'WRONG_ANSWER' && this.isOutputEquivalent(stdout, expected));
 
         if (isMatch) {
           passedCount++;
@@ -191,31 +191,9 @@ export class Judge0Client {
         });
       } catch (err: any) {
         this.logger.error(`Judge0 worker communication error on test ${i + 1}: ${err.message}`);
-        const fallbackRes = this.runLocalFallback(harness, tc.expectedOutput);
-        if (fallbackRes) {
-          this.logger.log(`[Judge0 Fallback Sandbox] Evaluated test ${i + 1} locally`);
-          if (fallbackRes.passed) passedCount++;
-          else if (worstStatus === 'ACCEPTED') worstStatus = fallbackRes.status;
-          const isHidden = !!tc.isHidden;
-          const maskDetails = options.maskHiddenDetails && isHidden;
-          details.push({
-            input: maskDetails ? `[Test Case ${i + 1} (Hidden)]` : tc.input,
-            expected: maskDetails ? '[Hidden]' : tc.expectedOutput,
-            actual: maskDetails ? (fallbackRes.passed ? '[Passed]' : '[Failed]') : fallbackRes.stdout,
-            status: fallbackRes.status,
-            passed: fallbackRes.passed,
-            isHidden,
-            timeMs: fallbackRes.timeMs,
-            memoryKb: fallbackRes.memoryKb,
-            error: fallbackRes.error,
-          });
-          continue;
-        }
-
         throw new ServiceUnavailableException({
           code: 'JUDGE_UNAVAILABLE',
           message: 'Code evaluation server is currently unavailable. Please retry in a few moments.',
-          details: err.message,
         });
       }
     }
@@ -296,15 +274,9 @@ export class Judge0Client {
       };
     } catch (err: any) {
       this.logger.error(`Judge0 raw execution failed: ${err.message}`);
-      const fallbackReport = this.runLocalRawFallback(sourceCode, timeoutSeconds);
-      if (fallbackReport) {
-        this.logger.log(`[Judge0 Fallback Sandbox] Raw code evaluated locally`);
-        return fallbackReport;
-      }
       throw new ServiceUnavailableException({
         code: 'JUDGE_UNAVAILABLE',
         message: 'Code evaluation server is currently unavailable. Please retry in a few moments.',
-        details: err.message,
       });
     }
   }
@@ -477,151 +449,4 @@ if (typeof solution !== 'function') {
 `;
   }
 
-  private runLocalFallback(harness: string, expectedOutput: string) {
-    try {
-      const logs: string[] = [];
-      const sandbox = {
-        console: {
-          log: (...args: any[]) =>
-            logs.push(
-              args
-                .map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a)))
-                .join(' '),
-            ),
-          warn: (...args: any[]) =>
-            logs.push(
-              args
-                .map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a)))
-                .join(' '),
-            ),
-          error: (...args: any[]) =>
-            logs.push(
-              args
-                .map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a)))
-                .join(' '),
-            ),
-        },
-        Math,
-        Date,
-        parseInt,
-        parseFloat,
-        isNaN,
-        isFinite,
-        String,
-        Number,
-        Boolean,
-        Array,
-        Object,
-        Map,
-        Set,
-        JSON,
-      };
-
-      const t0 = Date.now();
-      const vm = require('vm');
-      const script = new vm.Script(harness);
-      const context = vm.createContext(sandbox);
-      script.runInContext(context, { timeout: 3000 });
-      const timeMs = Date.now() - t0;
-
-      const stdout = logs.join('\n').trim();
-      const expected = String(expectedOutput || '').trim();
-      const isMatch = stdout.toLowerCase() === expected.toLowerCase();
-
-      return {
-        passed: isMatch,
-        status: isMatch
-          ? ('ACCEPTED' as JudgeResultStatus)
-          : ('WRONG_ANSWER' as JudgeResultStatus),
-        stdout,
-        timeMs,
-        memoryKb: 4096,
-        error: isMatch ? null : 'Wrong Answer',
-      };
-    } catch (err: any) {
-      return {
-        passed: false,
-        status: err.message?.includes('timed out')
-          ? ('TIME_LIMIT' as JudgeResultStatus)
-          : ('RUNTIME_ERROR' as JudgeResultStatus),
-        stdout: '',
-        timeMs: 3000,
-        memoryKb: 4096,
-        error: err.message,
-      };
-    }
-  }
-
-  private runLocalRawFallback(
-    sourceCode: string,
-    timeoutSeconds: number = 3,
-  ): Judge0RawReport {
-    try {
-      const logs: string[] = [];
-      const errLogs: string[] = [];
-      const sandbox = {
-        console: {
-          log: (...args: any[]) =>
-            logs.push(
-              args
-                .map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a)))
-                .join(' '),
-            ),
-          warn: (...args: any[]) =>
-            logs.push(
-              args
-                .map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a)))
-                .join(' '),
-            ),
-          error: (...args: any[]) =>
-            errLogs.push(
-              args
-                .map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a)))
-                .join(' '),
-            ),
-        },
-        Math,
-        Date,
-        parseInt,
-        parseFloat,
-        isNaN,
-        isFinite,
-        String,
-        Number,
-        Boolean,
-        Array,
-        Object,
-        Map,
-        Set,
-        JSON,
-      };
-
-      const t0 = Date.now();
-      const vm = require('vm');
-      const script = new vm.Script(sourceCode);
-      const context = vm.createContext(sandbox);
-      script.runInContext(context, { timeout: timeoutSeconds * 1000 });
-      const timeMs = Date.now() - t0;
-
-      return {
-        status: 'ACCEPTED',
-        stdout: logs.join('\n'),
-        stderr: errLogs.length > 0 ? errLogs.join('\n') : null,
-        compileOutput: null,
-        timeMs,
-        memoryKb: 4096,
-        engine: 'SmartCareer-Isolated-VM-Fallback',
-      };
-    } catch (err: any) {
-      return {
-        status: err.message?.includes('timed out') ? 'TIME_LIMIT' : 'RUNTIME_ERROR',
-        stdout: '',
-        stderr: err.message,
-        compileOutput: null,
-        timeMs: timeoutSeconds * 1000,
-        memoryKb: 4096,
-        engine: 'SmartCareer-Isolated-VM-Fallback',
-      };
-    }
-  }
 }

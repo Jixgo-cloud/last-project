@@ -1,67 +1,62 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { AuthUserResponse } from '@smartcareer/shared';
 import { apiRequest } from './api';
 import { useRouter } from 'next/navigation';
 
+export type SessionUser = Omit<AuthUserResponse, 'token'>;
+
 interface AuthContextType {
-  user: AuthUserResponse | null;
+  user: SessionUser | null;
   loading: boolean;
-  login: (email: string, pass: string) => Promise<AuthUserResponse>;
-  register: (data: any) => Promise<AuthUserResponse>;
+  login: (email: string, pass: string) => Promise<SessionUser>;
+  register: (data: any) => Promise<SessionUser>;
   logout: () => void;
-  setUser: React.Dispatch<React.SetStateAction<AuthUserResponse | null>>;
+  setUser: React.Dispatch<React.SetStateAction<SessionUser | null>>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<AuthUserResponse | null>(null);
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const sessionVersion = useRef(0);
 
   useEffect(() => {
-    const token = localStorage.getItem('smartcareer_token');
-    if (token) {
-      apiRequest<AuthUserResponse>('/auth/me', {}, token)
-        .then((data) => {
-          setUser({ ...data, token });
-        })
-        .catch(() => {
-          localStorage.removeItem('smartcareer_token');
-          setUser(null);
-        })
-        .finally(() => {
-          setLoading(false);
-        });
-    } else {
-      setLoading(false);
-    }
+    let cancelled = false;
+    const version = sessionVersion.current;
+    apiRequest<SessionUser>('/auth/me')
+      .then(data => { if (!cancelled && version === sessionVersion.current) setUser(data); })
+      .catch(() => { if (!cancelled && version === sessionVersion.current) setUser(null); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
   const login = async (email: string, pass: string) => {
-    const data = await apiRequest<AuthUserResponse>('/auth/login', {
+    sessionVersion.current++;
+    const data = await apiRequest<SessionUser>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password: pass }),
     });
-    localStorage.setItem('smartcareer_token', data.token);
     setUser(data);
     return data;
   };
 
   const register = async (formData: any) => {
-    const data = await apiRequest<AuthUserResponse>('/auth/register', {
+    sessionVersion.current++;
+    const data = await apiRequest<SessionUser>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(formData),
     });
-    localStorage.setItem('smartcareer_token', data.token);
     setUser(data);
     return data;
   };
 
-  const logout = () => {
-    localStorage.removeItem('smartcareer_token');
+  const logout = async () => {
+    sessionVersion.current++;
+    await apiRequest('/auth/logout', { method: 'POST', body: '{}' });
     setUser(null);
     router.push('/login');
   };
