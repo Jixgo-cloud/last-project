@@ -163,12 +163,38 @@ export class RecommendationsService {
       });
     }
 
-    return this.prisma.course.findMany({
+    const courses = await this.prisma.course.findMany({
       where,
       include: {
         skills: { include: { skill: true } },
       },
       orderBy: { createdAt: 'desc' },
+    });
+
+    const seenUrls = new Set<string>();
+    return courses.filter((course) => {
+      let normalizedUrl: string;
+      try {
+        const parsedUrl = new URL(course.url);
+        parsedUrl.hash = '';
+        parsedUrl.hostname = parsedUrl.hostname.replace(/^www\./i, '');
+        parsedUrl.pathname = parsedUrl.pathname.replace(/\/+$/, '') || '/';
+
+        for (const key of Array.from(parsedUrl.searchParams.keys())) {
+          if (/^(utm_.+|ref|referrer|couponcode|fbclid|gclid|feature|si)$/i.test(key)) {
+            parsedUrl.searchParams.delete(key);
+          }
+        }
+
+        parsedUrl.searchParams.sort();
+        normalizedUrl = parsedUrl.toString().replace(/\/$/, '');
+      } catch {
+        normalizedUrl = course.url.trim().replace(/\/+$/, '').toLowerCase();
+      }
+
+      if (seenUrls.has(normalizedUrl)) return false;
+      seenUrls.add(normalizedUrl);
+      return true;
     });
   }
 }

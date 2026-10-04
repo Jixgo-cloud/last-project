@@ -8,6 +8,15 @@ import { AuthUserResponse, UserRole } from '@smartcareer/shared';
 import { Loader2, AlertCircle } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import { getSafeInternalRedirect } from '@/lib/navigation';
+
+const POST_LOGIN_REDIRECT_KEY = 'smartcareer_post_login_redirect';
+
+function consumePostLoginRedirect() {
+  const redirectPath = getSafeInternalRedirect(sessionStorage.getItem(POST_LOGIN_REDIRECT_KEY));
+  sessionStorage.removeItem(POST_LOGIN_REDIRECT_KEY);
+  return redirectPath;
+}
 
 function CallbackContent() {
   const router = useRouter();
@@ -37,21 +46,23 @@ function CallbackContent() {
     apiRequest<AuthUserResponse>('/auth/me', {}, token)
       .then((userData) => {
         setUser({ ...userData, token });
+        const redirectPath = consumePostLoginRedirect();
         if (userData.role === UserRole.COMPANY) {
           router.replace('/company/dashboard');
         } else if (userData.role === UserRole.ADMIN) {
           router.replace('/admin/dashboard');
         } else {
-          router.replace('/profile');
+          router.replace(redirectPath || '/profile');
         }
       })
       .catch((apiErr) => {
         console.error('Failed to fetch profile with OAuth token:', apiErr);
+        const redirectPath = consumePostLoginRedirect();
         // Fallback using role param if me endpoint had temporary delay
         if (role === UserRole.COMPANY) {
           router.replace('/company/dashboard');
         } else {
-          router.replace('/profile');
+          router.replace(redirectPath || '/profile');
         }
       });
   }, [searchParams, router, setUser]);

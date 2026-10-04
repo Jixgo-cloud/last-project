@@ -8,6 +8,9 @@ import { useAuth } from '@/lib/auth-context';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Lock, Mail, ArrowRight, AlertCircle, Sparkles, RefreshCw } from 'lucide-react';
 import { UserRole } from '@smartcareer/shared';
+import { getSafeInternalRedirect } from '@/lib/navigation';
+
+const POST_LOGIN_REDIRECT_KEY = 'smartcareer_post_login_redirect';
 
 function GoogleIcon() {
   return (
@@ -65,6 +68,14 @@ function LoginForm() {
 
   const handleOAuthLogin = (provider: 'google' | 'github') => {
     const role = provider === 'github' ? 'CANDIDATE' : 'COMPANY';
+    const redirectPath = role === 'CANDIDATE'
+      ? getSafeInternalRedirect(searchParams.get('redirect'))
+      : null;
+    if (redirectPath) {
+      sessionStorage.setItem(POST_LOGIN_REDIRECT_KEY, redirectPath);
+    } else {
+      sessionStorage.removeItem(POST_LOGIN_REDIRECT_KEY);
+    }
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
     window.location.href = `${apiUrl}/auth/${provider}?role=${role}&mode=login&origin=${encodeURIComponent(origin)}`;
   };
@@ -75,12 +86,13 @@ function LoginForm() {
     setError(null);
     try {
       const res = await login(email, password);
+      sessionStorage.removeItem(POST_LOGIN_REDIRECT_KEY);
       if (res.role === UserRole.ADMIN) {
         router.push('/admin/dashboard');
       } else if (res.role === UserRole.COMPANY) {
         router.push('/company/dashboard');
       } else {
-        router.push('/profile');
+        router.push(getSafeInternalRedirect(searchParams.get('redirect')) || '/profile');
       }
     } catch (err: any) {
       setError(err.message || 'Login failed');

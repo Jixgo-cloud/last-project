@@ -204,6 +204,16 @@ export default function JobDetailPage() {
     }
   };
 
+  const handleOpenApplyModal = () => {
+    if (!user) {
+      const returnToJob = `/jobs/${encodeURIComponent(String(id))}`;
+      router.push(`/login?redirect=${encodeURIComponent(returnToJob)}`);
+      return;
+    }
+
+    setShowApplyModal(true);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#f9fbfe] via-[#f3f6fb] to-[#eef2f8]">
@@ -582,7 +592,7 @@ export default function JobDetailPage() {
                     </div>
                     <button
                       id="btn-reapply-job"
-                      onClick={() => setShowApplyModal(true)}
+                      onClick={handleOpenApplyModal}
                       className="w-full flex items-center justify-center gap-2 rounded-full bg-[#6366f1] hover:bg-[#4f46e5] py-3.5 text-xs sm:text-sm font-bold text-white shadow-xs shadow-indigo-500/20 transition cursor-pointer"
                     >
                       <Send className="h-4 w-4" />
@@ -592,11 +602,11 @@ export default function JobDetailPage() {
                 ) : (
                   <button
                     id="btn-apply-job"
-                    onClick={() => setShowApplyModal(true)}
+                    onClick={handleOpenApplyModal}
                     className="w-full flex items-center justify-center gap-2 rounded-full bg-[#6366f1] hover:bg-[#4f46e5] py-3.5 text-xs sm:text-sm font-bold text-white shadow-xs shadow-indigo-500/20 transition cursor-pointer"
                   >
                     <Send className="h-4 w-4" />
-                    ยื่นใบสมัครผ่าน SmartCareer
+                    {user ? 'ยื่นใบสมัครผ่าน SmartCareer' : 'เข้าสู่ระบบเพื่อสมัคร'}
                   </button>
                 )}
               </div>
