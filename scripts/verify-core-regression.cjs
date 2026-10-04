@@ -209,6 +209,7 @@ async function run() {
     const adminToken = (await request('/auth/login', 'POST', { email: 'admin@smartcareer.dev', password: 'admin123' })).token;
     const reviews = await Promise.all(Array.from({ length: 2 }, () => requestResult('/admin/verifications/' + pending.id + '/review', 'PUT', { action: 'REJECT' }, adminToken)));
     assert.deepEqual(reviews.map(result => result.status).sort(), [200, 409]);
+    assert.equal(reviews.find(result => result.status === 200).data.documents, undefined);
     const resubmitted = await request('/company/verify', 'POST', body, token);
     assert.equal((await requestResult('/admin/verifications/' + pending.id + '/review', 'PUT', { action: 'APPROVE' }, adminToken)).status, 409);
     assert.equal((await db.company.findUnique({ where: { id: parallelCompany.id } })).verificationStatus, 'PENDING');
@@ -303,8 +304,8 @@ async function run() {
     assert.equal(downloaded.headers.get('cache-control'), 'no-store');
     assert.equal(downloaded.headers.get('x-content-type-options'), 'nosniff');
     assert(Buffer.from(await downloaded.arrayBuffer()).equals(documentBytes));
-    assert.equal((await requestResult(endpoint.replace('/0', '/99'), 'GET', undefined, verificationAdminToken)).status, 404);
-    assert.equal((await requestResult(endpoint.replace('/0', '/-1'), 'GET', undefined, verificationAdminToken)).status, 400);
+    assert.equal((await requestResult(endpoint.replace(/\/0$/, '/99'), 'GET', undefined, verificationAdminToken)).status, 404);
+    assert.equal((await requestResult(endpoint.replace(/\/0$/, '/-1'), 'GET', undefined, verificationAdminToken)).status, 400);
     assert.equal((await requestResult('/admin/verifications/missing/documents/0', 'GET', undefined, verificationAdminToken)).status, 404);
   });
   await check('Admin verification UI pages and filters the full queue without loading every file', async () => {
@@ -322,6 +323,24 @@ async function run() {
     await clickText('รอการตรวจสอบ (0)');
     await page.waitForFunction(() => document.body.innerText.includes('ไม่พบคำขอรับรองในหมวดหมู่นี้'));
     await login('hr@techcorp.co.th', 'password123', '/company/dashboard');
+  });
+  await check('Legacy large-document review returns only the outcome and preserves attachments', async () => {
+    const legacyCompany = await db.company.create({ data: { name: 'Legacy review fixture', slug: databaseName + '-legacy-review' } });
+    const bytes = Buffer.alloc(4 * 1024 * 1024, 32);
+    Buffer.from('%PDF-1.7\nLegacy test fixture\n').copy(bytes);
+    const legacy = await db.companyVerification.create({ data: { companyId: legacyCompany.id, businessRegNo: '1234567890123', documents: { files: [{ name: 'legacy.pdf', type: 'application/pdf', size: bytes.length, dataUrl: 'data:application/pdf;base64,' + bytes.toString('base64') }] } } });
+    const response = await fetch('http://localhost:3000/api/admin/verifications/' + legacy.id + '/review', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', Origin: 'http://localhost:3000', Cookie: 'smartcareer_session=' + verificationAdminToken }, body: JSON.stringify({ action: 'REJECT', reason: 'Disposable legacy fixture' }),
+    });
+    assert.equal(response.status, 200);
+    const text = await response.text();
+    assert(Buffer.byteLength(text) < 1000);
+    const outcome = JSON.parse(text);
+    assert.equal(outcome.status, 'REJECTED');
+    assert.equal(outcome.documents, undefined);
+    const preserved = await db.companyVerification.findUnique({ where: { id: legacy.id } });
+    assert.equal(preserved.documents.files[0].dataUrl, legacy.documents.files[0].dataUrl);
+    assert.equal((await db.company.findUnique({ where: { id: legacyCompany.id } })).verificationStatus, 'REJECTED');
   });
   await check('Company API rejects placeholder theory choices', async () => {
     const result = await requestResult('/company/assessments', 'POST', {

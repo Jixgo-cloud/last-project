@@ -117,7 +117,7 @@ export class AdminService {
     if (action !== 'APPROVE' && action !== 'REJECT') throw new BadRequestException('Invalid verification review action');
     const verification = await this.prisma.companyVerification.findUnique({
       where: { id: verificationId },
-      include: { company: true },
+      select: { id: true, companyId: true },
     });
 
     if (!verification) {
@@ -128,13 +128,14 @@ export class AdminService {
 
     return this.prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT id FROM companies WHERE id = ${verification.companyId} FOR UPDATE`;
-      const current = await tx.companyVerification.findUniqueOrThrow({ where: { id: verificationId } });
-      const latest = await tx.companyVerification.findFirst({ where: { companyId: verification.companyId }, orderBy: { createdAt: 'desc' } });
+      const current = await tx.companyVerification.findUniqueOrThrow({ where: { id: verificationId }, select: { status: true } });
+      const latest = await tx.companyVerification.findFirst({ where: { companyId: verification.companyId }, orderBy: { createdAt: 'desc' }, select: { id: true } });
       if (current.status !== VerificationStatus.PENDING || latest?.id !== verificationId) {
         throw new ConflictException('คำขอนี้ถูกพิจารณาแล้วหรือมีคำขอใหม่ กรุณาโหลดรายการอีกครั้ง');
       }
       const updated = await tx.companyVerification.update({
         where: { id: verificationId },
+        select: { id: true, companyId: true, status: true, reviewedBy: true, reviewedAt: true, rejectionReason: true },
         data: {
           status: newStatus,
           reviewedBy: adminUserId,
