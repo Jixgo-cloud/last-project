@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Navbar from '@/components/Navbar';
+import DeleteConfirmation from '@/components/DeleteConfirmation';
 import Footer from '@/components/Footer';
 import { apiRequest } from '@/lib/api';
 import Link from 'next/link';
@@ -19,6 +20,7 @@ import {
 export default function CompanyJobsManagePage() {
   const [company, setCompany] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const fetchCompany = () => {
@@ -45,21 +47,7 @@ export default function CompanyJobsManagePage() {
     }
   };
 
-  const handleDeleteJob = async (jobId: string, title: string) => {
-    if (!confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบตำแหน่งงาน "${title}" ออกจากระบบถาวร?`)) {
-      return;
-    }
-    try {
-      setActionLoading(jobId);
-      await apiRequest(`/company/jobs/${jobId}`, { method: 'DELETE' });
-      fetchCompany();
-    } catch (err: any) {
-      alert(`ไม่สามารถลบงานได้: ${err.message}`);
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
+  const handleDeleteJob = (id: string, title: string) => setDeleteTarget({ id, title });
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#f9fbfe] via-[#f3f6fb] to-[#eef2f8] text-[#111827] antialiased">
       <Navbar />
@@ -207,6 +195,11 @@ export default function CompanyJobsManagePage() {
         )}
       </main>
 
+      {deleteTarget && <DeleteConfirmation title={deleteTarget.title} description="งานนี้และข้อมูลใบสมัครที่เกี่ยวข้องจะถูกลบถาวร ไม่สามารถกู้คืนผ่านหน้าเว็บได้"
+        onCancel={() => setDeleteTarget(null)} onConfirm={async () => {
+          await apiRequest(`/company/jobs/${deleteTarget.id}`, { method: 'DELETE' });
+          fetchCompany();
+        }} />}
       <Footer />
     </div>
   );

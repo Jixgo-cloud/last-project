@@ -1,3 +1,4 @@
+export * from './assessment-score';
 // User & Role Types
 export enum UserRole {
   CANDIDATE = 'CANDIDATE',

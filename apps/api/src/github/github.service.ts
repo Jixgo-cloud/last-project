@@ -1,4 +1,4 @@
-import { Injectable, Logger, ForbiddenException, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException, ConflictException, NotFoundException, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import axios from 'axios';
 import { SkillCategory } from '@smartcareer/shared';
@@ -12,6 +12,7 @@ interface RepoAnalysisResult {
   stars: number;
   forks: number;
   topics: string[];
+  languages: Record<string, number>;
   detectedSkills: Array<{
     skillName: string;
     category: SkillCategory;
@@ -126,6 +127,7 @@ export class GithubService {
         throw new BadRequestException('GitHub username is required for initial sync.');
       }
       const cleanUsername = username.trim().replace(/^@/, '');
+      if (!/^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(cleanUsername) || cleanUsername.includes('--')) throw new BadRequestException('ชื่อบัญชี GitHub ไม่ถูกต้อง');
 
       // Check uniqueness: 1 Account per 1 GitHub!
       const existingUser = await this.prisma.candidateProfile.findUnique({
@@ -137,13 +139,6 @@ export class GithubService {
         );
       }
 
-      await this.prisma.candidateProfile.update({
-        where: { id: profile.id },
-        data: {
-          githubUsername: cleanUsername,
-          githubConnectedAt: new Date(),
-        },
-      });
       targetUsername = cleanUsername;
     }
 
@@ -152,9 +147,20 @@ export class GithubService {
     // 1. Fetch repositories
     const repos = await this.fetchUserRepositories(targetUsername);
 
+    // Commit only after the complete remote snapshot has been fetched successfully.
+    await this.prisma.$transaction(async (tx) => {
+      if (!profile.githubUsername) {
+        await tx.candidateProfile.update({ where: { id: profile.id }, data: {
+          githubUsername: targetUsername, githubConnectedAt: new Date(),
+        } });
+      }
+      await tx.gitHubEvidence.deleteMany({ where: { candidateSkill: { candidateId: profile.id } } });
+      await tx.gitHubRepository.deleteMany({ where: {
+        candidateId: profile.id, fullName: { notIn: repos.map((repo) => repo.fullName) },
+      } });
     // 2. Process and save repositories & evidences
     for (const repo of repos) {
-      const dbRepo = await this.prisma.gitHubRepository.upsert({
+      const dbRepo = await tx.gitHubRepository.upsert({
         where: {
           candidateId_fullName: {
             candidateId: profile.id,
@@ -169,7 +175,7 @@ export class GithubService {
           stargazersCount: repo.stars,
           forksCount: repo.forks,
           topics: repo.topics,
-          languagesBreakdown: { [repo.language || 'Unknown']: 100 },
+          languagesBreakdown: repo.languages,
         },
         create: {
           candidateId: profile.id,
@@ -181,14 +187,14 @@ export class GithubService {
           stargazersCount: repo.stars,
           forksCount: repo.forks,
           topics: repo.topics,
-          languagesBreakdown: { [repo.language || 'Unknown']: 100 },
+          languagesBreakdown: repo.languages,
         },
       });
 
       // Map detected skills
       for (const detected of repo.detectedSkills) {
         // Ensure skill exists in master table
-        const skill = await this.prisma.skill.upsert({
+        const skill = await tx.skill.upsert({
           where: { name: detected.skillName },
           update: {},
           create: {
@@ -199,7 +205,7 @@ export class GithubService {
         });
 
         // Upsert candidate skill with practical score calculation
-        const candidateSkill = await this.prisma.candidateSkill.upsert({
+        const candidateSkill = await tx.candidateSkill.upsert({
           where: {
             candidateId_skillId: {
               candidateId: profile.id,
@@ -223,7 +229,7 @@ export class GithubService {
             candidateSkill.codingScore * 0.3,
         );
 
-        await this.prisma.candidateSkill.update({
+        await tx.candidateSkill.update({
           where: { id: candidateSkill.id },
           data: {
             verifiedScore,
@@ -232,7 +238,7 @@ export class GithubService {
         });
 
         // Avoid duplicate evidence accumulation on re-sync
-        await this.prisma.gitHubEvidence.deleteMany({
+        await tx.gitHubEvidence.deleteMany({
           where: {
             candidateSkillId: candidateSkill.id,
             repositoryId: dbRepo.id,
@@ -240,18 +246,28 @@ export class GithubService {
         });
 
         // Create Evidence
-        await this.prisma.gitHubEvidence.create({
+        await tx.gitHubEvidence.create({
           data: {
             candidateSkillId: candidateSkill.id,
             repositoryId: dbRepo.id,
             dependencyMatches: [detected.dependency],
-            commitCount: Math.floor(10 + Math.random() * 40),
-            linesOfCode: Math.floor(500 + Math.random() * 3000),
+            commitCount: 0,
+            linesOfCode: 0,
             scoreContribution: detected.scoreWeight,
           },
         });
       }
     }
+
+      // Remove stale practical contributions while preserving quiz/code history.
+      const skills = await tx.candidateSkill.findMany({ where: { candidateId: profile.id }, include: { evidences: true } });
+      for (const skill of skills) {
+        if (skill.evidences.length === 0) {
+          const verifiedScore = Math.round(skill.theoryScore * 0.2 + skill.codingScore * 0.3);
+          await tx.candidateSkill.update({ where: { id: skill.id }, data: { practicalScore: 0, verifiedScore, isVerified: verifiedScore >= 60 } });
+        }
+      }
+    }, { timeout: 60000 });
 
     return this.prisma.candidateProfile.findUnique({
       where: { id: profile.id },
@@ -263,39 +279,33 @@ export class GithubService {
   }
 
   private async fetchUserRepositories(username: string): Promise<RepoAnalysisResult[]> {
+    const headers: Record<string, string> = { 'User-Agent': 'SmartCareer-App' };
+    if (process.env.GITHUB_TOKEN) headers.Authorization = `token ${process.env.GITHUB_TOKEN}`;
     try {
-      const token = process.env.GITHUB_TOKEN;
-      const headers: Record<string, string> = {
-        'User-Agent': 'SmartCareer-App',
-      };
-      if (token) {
-        headers['Authorization'] = `token ${token}`;
+      const repositories: any[] = [];
+      for (let page = 1; ; page++) {
+        const response = await axios.get(`https://api.github.com/users/${encodeURIComponent(username)}/repos`, {
+          headers, timeout: 10000, params: { sort: 'updated', per_page: 100, page },
+        });
+        if (!Array.isArray(response.data)) throw new Error('Invalid GitHub response');
+        repositories.push(...response.data);
+        if (response.data.length < 100) break;
       }
-
-      this.logger.log(`Connecting to Real GitHub REST API for user: ${username}`);
-      const response = await axios.get(
-        `https://api.github.com/users/${username}/repos?sort=updated&per_page=6`,
-        { headers, timeout: 6000 },
-      );
-
-      if (Array.isArray(response.data) && response.data.length > 0) {
-        this.logger.log(`Found ${response.data.length} real public repositories for ${username} from GitHub API!`);
-        const analyzed = await Promise.all(
-          response.data.map((r: any) => this.analyzeRepoData(r, headers)),
-        );
-        return analyzed;
+      const analyzed: RepoAnalysisResult[] = [];
+      // Bound concurrency so a large account does not exhaust the provider rate limit.
+      for (let index = 0; index < repositories.length; index += 4) {
+        analyzed.push(...await Promise.all(repositories.slice(index, index + 4).map(repo => this.analyzeRepoData(repo, headers))));
       }
-    } catch (err: any) {
-      this.logger.warn(`GitHub API live fetch for ${username} fell back to demo scenario: ${err.message}`);
+      return analyzed;
+    } catch (error: any) {
+      if (error.response?.status === 404) throw new NotFoundException('ไม่พบบัญชี GitHub นี้');
+      throw new ServiceUnavailableException('ดึงข้อมูล GitHub ไม่สำเร็จ กรุณาลองใหม่ ข้อมูลเดิมยังคงอยู่');
     }
-
-    // High quality mock repositories for instant demonstration and offline mode
-    return this.getMockRepositories(username);
   }
 
   private async analyzeRepoData(repo: any, headers: Record<string, string>): Promise<RepoAnalysisResult> {
     const detectedSkills: RepoAnalysisResult['detectedSkills'] = [];
-    const language = repo.language || 'JavaScript';
+    const language = repo.language ?? '';
 
     // 1. Fetch real language breakdown from GitHub API
     let realLanguages: Record<string, number> = {};
@@ -332,12 +342,12 @@ export class GithubService {
           });
         }
       }
-    } catch {
-      // ignore
+    } catch (error: any) {
+      throw error; // A partial snapshot must not replace existing evidence.
     }
 
     // Every GitHub repo intrinsically proves Git version control competence
-    if (!detectedSkills.some((ds) => ds.skillName === 'Git')) {
+    if (repo.size > 0 && !detectedSkills.some((ds) => ds.skillName === 'Git')) {
       detectedSkills.push({
         skillName: 'Git',
         category: SkillCategory.DEVOPS,
@@ -369,8 +379,8 @@ export class GithubService {
           }
         }
       }
-    } catch {
-      // If raw package.json doesn't exist, scan topics and keywords
+    } catch (error: any) {
+      if (error.response?.status !== 404) throw error;
     }
 
     // 3. Inspect topics or repo name for frameworks
@@ -404,82 +414,15 @@ export class GithubService {
     return {
       repoName: repo.name,
       fullName: repo.full_name || `${repo.owner?.login || 'user'}/${repo.name}`,
-      description: repo.description || 'Full-stack application repository',
+      description: repo.description ?? '',
       url: repo.html_url || `https://github.com/${repo.full_name}`,
       language,
-      stars: repo.stargazers_count || 1,
+      stars: repo.stargazers_count ?? 0,
       forks: repo.forks_count || 0,
-      topics: repo.topics || ['web-development'],
+      topics: repo.topics ?? [],
+      languages: realLanguages,
       detectedSkills,
     };
-  }
-
-  private getMockRepositories(username: string): RepoAnalysisResult[] {
-    return [
-      {
-        repoName: 'smart-ecommerce-platform',
-        fullName: `${username}/smart-ecommerce-platform`,
-        description: 'Next.js 14 eCommerce platform with Prisma ORM, Tailwind CSS, REST APIs & Stripe payment flow',
-        url: `https://github.com/${username}/smart-ecommerce-platform`,
-        language: 'TypeScript',
-        stars: 12,
-        forks: 3,
-        topics: ['nextjs', 'react', 'prisma', 'postgresql', 'tailwind', 'rest-api'],
-        detectedSkills: [
-          { skillName: 'Next.js', category: SkillCategory.FRONTEND, dependency: 'next@14.2', scoreWeight: 25 },
-          { skillName: 'React', category: SkillCategory.FRONTEND, dependency: 'react@18', scoreWeight: 20 },
-          { skillName: 'TypeScript', category: SkillCategory.FRONTEND, dependency: 'typescript', scoreWeight: 20 },
-          { skillName: 'JavaScript', category: SkillCategory.FRONTEND, dependency: 'javascript', scoreWeight: 20 },
-          { skillName: 'HTML5', category: SkillCategory.FRONTEND, dependency: 'html5', scoreWeight: 20 },
-          { skillName: 'CSS3', category: SkillCategory.FRONTEND, dependency: 'css3', scoreWeight: 20 },
-          { skillName: 'Tailwind CSS', category: SkillCategory.FRONTEND, dependency: 'tailwindcss', scoreWeight: 20 },
-          { skillName: 'REST APIs', category: SkillCategory.BACKEND, dependency: 'axios', scoreWeight: 20 },
-          { skillName: 'Prisma', category: SkillCategory.DATABASE, dependency: '@prisma/client', scoreWeight: 22 },
-          { skillName: 'PostgreSQL', category: SkillCategory.DATABASE, dependency: 'pg', scoreWeight: 18 },
-          { skillName: 'Git', category: SkillCategory.DEVOPS, dependency: 'git', scoreWeight: 20 },
-        ],
-      },
-      {
-        repoName: 'microservices-backend-api',
-        fullName: `${username}/microservices-backend-api`,
-        description: 'Modular NestJS backend REST & GraphQL API with Docker containerization, Redis caching and CI/CD',
-        url: `https://github.com/${username}/microservices-backend-api`,
-        language: 'TypeScript',
-        stars: 8,
-        forks: 2,
-        topics: ['nestjs', 'docker', 'redis', 'nodejs', 'jest', 'ci-cd'],
-        detectedSkills: [
-          { skillName: 'NestJS', category: SkillCategory.BACKEND, dependency: '@nestjs/core', scoreWeight: 25 },
-          { skillName: 'Node.js', category: SkillCategory.BACKEND, dependency: 'node', scoreWeight: 20 },
-          { skillName: 'REST APIs', category: SkillCategory.BACKEND, dependency: 'axios', scoreWeight: 20 },
-          { skillName: 'GraphQL', category: SkillCategory.BACKEND, dependency: 'graphql', scoreWeight: 20 },
-          { skillName: 'Docker', category: SkillCategory.DEVOPS, dependency: 'Dockerfile', scoreWeight: 20 },
-          { skillName: 'CI/CD', category: SkillCategory.DEVOPS, dependency: 'github-actions', scoreWeight: 20 },
-          { skillName: 'Linux', category: SkillCategory.DEVOPS, dependency: 'bash', scoreWeight: 20 },
-          { skillName: 'Redis', category: SkillCategory.DATABASE, dependency: 'ioredis', scoreWeight: 18 },
-          { skillName: 'Jest', category: SkillCategory.TESTING, dependency: 'jest', scoreWeight: 18 },
-          { skillName: 'Automated Testing', category: SkillCategory.TESTING, dependency: 'jest-runner', scoreWeight: 18 },
-          { skillName: 'Git', category: SkillCategory.DEVOPS, dependency: 'git', scoreWeight: 20 },
-        ],
-      },
-      {
-        repoName: 'python-data-pipeline',
-        fullName: `${username}/python-data-pipeline`,
-        description: 'FastAPI service analyzing telemetry data with Pandas, Docker and PostgreSQL deployment',
-        url: `https://github.com/${username}/python-data-pipeline`,
-        language: 'Python',
-        stars: 5,
-        forks: 1,
-        topics: ['fastapi', 'python', 'docker', 'sql'],
-        detectedSkills: [
-          { skillName: 'FastAPI', category: SkillCategory.BACKEND, dependency: 'fastapi', scoreWeight: 22 },
-          { skillName: 'Python', category: SkillCategory.BACKEND, dependency: 'python3', scoreWeight: 25 },
-          { skillName: 'SQL', category: SkillCategory.DATABASE, dependency: 'sqlalchemy', scoreWeight: 20 },
-          { skillName: 'Docker', category: SkillCategory.DEVOPS, dependency: 'docker-compose', scoreWeight: 15 },
-          { skillName: 'Git', category: SkillCategory.DEVOPS, dependency: 'git', scoreWeight: 20 },
-        ],
-      },
-    ];
   }
 
   async publicAnalyze(username: string) {
@@ -525,7 +468,8 @@ export class GithubService {
         };
       }
     } catch (err: any) {
-      this.logger.warn(`Could not fetch live GitHub user data for ${cleanUsername}: ${err.message}`);
+      if (err.response?.status === 404) throw new NotFoundException('ไม่พบบัญชี GitHub นี้');
+      throw new ServiceUnavailableException('ดึงข้อมูล GitHub ไม่สำเร็จ กรุณาลองใหม่');
     }
 
     // Fetch user repos (analyzed with detectedSkills)
@@ -543,24 +487,6 @@ export class GithubService {
         existing.count += 1;
         existing.totalWeight += ds.scoreWeight;
         skillCountMap.set(ds.skillName, existing);
-      }
-    }
-
-    // Default base skills if very few detected
-    if (skillCountMap.size < 4) {
-      const defaults = [
-        { name: 'TypeScript', category: SkillCategory.FRONTEND, weight: 85 },
-        { name: 'Next.js', category: SkillCategory.FRONTEND, weight: 80 },
-        { name: 'React', category: SkillCategory.FRONTEND, weight: 80 },
-        { name: 'Tailwind CSS', category: SkillCategory.FRONTEND, weight: 80 },
-        { name: 'Node.js', category: SkillCategory.BACKEND, weight: 75 },
-        { name: 'Prisma', category: SkillCategory.DATABASE, weight: 70 },
-        { name: 'JavaScript', category: SkillCategory.FRONTEND, weight: 85 },
-      ];
-      for (const def of defaults) {
-        if (!skillCountMap.has(def.name)) {
-          skillCountMap.set(def.name, { count: 2, category: def.category, totalWeight: def.weight });
-        }
       }
     }
 
@@ -582,7 +508,7 @@ export class GithubService {
         return {
           category: cat,
           subject: cat,
-          score: 35,
+          score: 0,
           fullMark: 100,
         };
       }

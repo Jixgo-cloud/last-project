@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
+import DeleteConfirmation from '@/components/DeleteConfirmation';
 import Footer from '@/components/Footer';
 import { apiRequest } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
@@ -29,6 +30,8 @@ import {
   Sliders,
 } from 'lucide-react';
 import {
+  getAttemptPercentage,
+  formatAttemptScore,
   AssessmentType,
   QuestionDifficulty,
   QuestionEvaluationMethod,
@@ -41,6 +44,7 @@ export default function CompanyAssessmentsPage() {
   const [assessments, setAssessments] = useState<any[]>([]);
   const [skills, setSkills] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
   const [search, setSearch] = useState('');
 
   // Modal State: Create Assessment
@@ -114,16 +118,7 @@ export default function CompanyAssessmentsPage() {
     }
   };
 
-  const handleDelete = async (id: string, title: string) => {
-    if (!confirm(`คุณต้องการลบแบบทดสอบ "${title}" ใช่หรือไม่?`)) return;
-    try {
-      await apiRequest(`/company/assessments/${id}`, { method: 'DELETE' });
-      loadData();
-    } catch (e: any) {
-      alert(`Delete error: ${e.message}`);
-    }
-  };
-
+  const handleDelete = (id: string, title: string) => setDeleteTarget({ id, title });
   const handleOpenCreateModal = () => {
     setEditingId(null);
     setFormTitle('');
@@ -631,6 +626,7 @@ export default function CompanyAssessmentsPage() {
                   <h3 className="text-base font-extrabold text-slate-900 mb-1.5 line-clamp-1">
                     {a.title}
                   </h3>
+                  {a.readinessError && <p role="status" className="text-xs text-amber-700">ยังไม่พร้อมเปิดสอบ: {a.readinessError}</p>}
                   <p className="text-xs text-slate-500 line-clamp-2 mb-4 leading-relaxed">
                     {a.description || 'ไม่มีคำอธิบาย'}
                   </p>
@@ -1555,15 +1551,15 @@ export default function CompanyAssessmentsPage() {
                               {att.aiScore !== null && att.aiScore !== undefined ? `${att.aiScore}%` : '-'}
                             </td>
                             <td className="py-3 px-3 text-center">
-                              {att.finalScore !== null && att.finalScore !== undefined ? (
+                              {getAttemptPercentage(att) !== null ? (
                                 <span
                                   className={`font-bold ${
-                                    att.finalScore >= (selectedAssessmentForAttempts?.passingScore || 70)
+                                    (getAttemptPercentage(att) ?? -1) >= (selectedAssessmentForAttempts?.passingScore || 70)
                                       ? 'text-emerald-600'
                                       : 'text-rose-600'
                                   }`}
                                 >
-                                  {att.finalScore}%
+                                  {formatAttemptScore(att)}
                                 </span>
                               ) : (
                                 <span className="text-slate-400 italic text-[11px]">รอยืนยัน</span>
@@ -1653,7 +1649,7 @@ export default function CompanyAssessmentsPage() {
                   <div>
                     <span className="text-slate-400 block text-[10px]">คะแนนขั้นสุดท้าย (Final)</span>
                     <strong className="text-base text-indigo-700">
-                      {selectedAttemptForReview.finalScore !== null ? `${selectedAttemptForReview.finalScore}%` : 'Pending'}
+                      {formatAttemptScore(selectedAttemptForReview)}
                     </strong>
                   </div>
                 </div>
@@ -1846,6 +1842,11 @@ export default function CompanyAssessmentsPage() {
         )}
       </main>
 
+      {deleteTarget && <DeleteConfirmation title={deleteTarget.title} description="ชุดที่ยังไม่มีผู้สอบจะถูกลบถาวร หากมีประวัติสอบ ระบบจะปิดใช้งานและเก็บประวัติไว้"
+        onCancel={() => setDeleteTarget(null)} onConfirm={async () => {
+          await apiRequest(`/company/assessments/${deleteTarget.id}`, { method: 'DELETE' });
+          loadData();
+        }} />}
       <Footer />
     </div>
   );

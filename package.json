@@ -23,7 +23,8 @@
     "prisma:seed:prod": "npx ts-node prisma/seed-production.ts",
     "prisma:studio": "npx prisma studio",
     "admin:create": "npx ts-node scripts/create-superadmin.ts",
-    "test": "npm run test:security",
+    "test": "npm run test:security && npm run test:uat",
+    "test:uat": "node --test tests/uat-fixes.spec.cjs",
     "test:security": "node --test tests/security.spec.cjs",
     "test:regression": "node scripts/verify-core-regression.cjs"
   },

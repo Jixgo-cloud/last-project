@@ -40,7 +40,8 @@ export class AssessmentsController {
   @Roles(UserRole.CANDIDATE)
   @Post(':id/start')
   async startAttempt(@Param('id') id: string, @Request() req: any) {
-    return this.assessmentsService.startAttempt(id, req.user.id);
+    const result = await this.assessmentsService.startAttempt(id, req.user.id);
+    return this.assessmentsService.discloseCandidateResponse(result, result.id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -73,7 +74,8 @@ export class AssessmentsController {
       };
     },
   ) {
-    return this.assessmentsService.saveDraftCode(body.attemptId, req.user.id, body.draftCode);
+    const result = await this.assessmentsService.saveDraftCode(body.attemptId, req.user.id, body.draftCode);
+    return this.assessmentsService.discloseCandidateResponse(result, body.attemptId);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -83,7 +85,8 @@ export class AssessmentsController {
     @Request() req: any,
     @Body() body: { attemptId: string; event: { type: string; timestamp?: string; details?: any } },
   ) {
-    return this.assessmentsService.logIntegrityEvent(body.attemptId, req.user.id, body.event);
+    const result = await this.assessmentsService.logIntegrityEvent(body.attemptId, req.user.id, body.event);
+    return this.assessmentsService.discloseCandidateResponse(result, body.attemptId);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -97,11 +100,12 @@ export class AssessmentsController {
       answers: Array<{ questionId: string; selectedChoiceId: string }>;
     },
   ) {
-    return this.assessmentsService.submitTheoryAttempt(
+    const result = await this.assessmentsService.submitTheoryAttempt(
       body.attemptId,
       req.user.id,
       body.answers,
     );
+    return this.assessmentsService.discloseCandidateResponse(result, body.attemptId);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -111,12 +115,13 @@ export class AssessmentsController {
     @Request() req: any,
     @Body() body: { attemptId: string; questionId: string; sourceCode: string },
   ) {
-    return this.assessmentsService.submitCodingSolution(
+    const result = await this.assessmentsService.submitCodingSolution(
       body.attemptId,
       body.questionId,
       req.user.id,
       body.sourceCode,
     );
+    return this.assessmentsService.discloseCandidateResponse(result, body.attemptId);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -126,7 +131,8 @@ export class AssessmentsController {
     @Request() req: any,
     @Body() body: { attemptId: string },
   ) {
-    return this.assessmentsService.finalizeAttempt(body.attemptId, req.user.id);
+    const result = await this.assessmentsService.finalizeAttempt(body.attemptId, req.user.id);
+    return this.assessmentsService.discloseCandidateResponse(result, body.attemptId);
   }
 
   @UseGuards(JwtAuthGuard)

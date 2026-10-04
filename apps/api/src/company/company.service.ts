@@ -106,8 +106,11 @@ export class CompanyService {
     if (data.customAssessmentId) {
       const assessment = await this.prisma.assessment.findFirst({
         where: { id: data.customAssessmentId, companyId, isActive: true },
+        include: { questions: { include: { choices: true } } },
       });
-      if (!assessment) throw new BadRequestException('Choose an active assessment belonging to your company.');
+      if (!assessment) throw new BadRequestException('กรุณาเลือกข้อสอบของบริษัทที่เปิดใช้งาน');
+      const error = getAssessmentValidationError(assessment);
+      if (error) throw new BadRequestException(`ข้อสอบยังไม่พร้อม: ${error}`);
     }
   }
 
@@ -223,6 +226,9 @@ export class CompanyService {
 
   async getApplications(userId: string, jobId?: string) {
     const company = await this.getCompanyByUserId(userId);
+    if (jobId && !await this.prisma.job.findFirst({ where: { id: jobId, companyId: company.id } })) {
+      throw new NotFoundException("Job not found or unauthorized");
+    }
 
     return this.prisma.jobApplication.findMany({
       where: {
@@ -313,7 +319,11 @@ export class CompanyService {
           isActive: true,
           OR: [{ companyId: company.id }, { companyId: null }],
         },
+        include: { questions: { include: { choices: true } } },
       });
+      if (!assess) throw new BadRequestException("ข้อสอบที่เลือกปิดใช้งานหรือไม่มีสิทธิ์มอบหมาย");
+      const readinessError = getAssessmentValidationError(assess);
+      if (readinessError) throw new BadRequestException(`ข้อสอบยังไม่พร้อม: ${readinessError}`);
       if (assess) {
         assignedAssessmentId = assess.id;
         assignedAssessmentObj = assess;
@@ -526,13 +536,18 @@ export class CompanyService {
   async listCompanyAssessments(userId: string) {
     const company = await this.getCompanyByUserId(userId);
 
-    return this.prisma.assessment.findMany({
+    const assessments = await this.prisma.assessment.findMany({
       where: { companyId: company.id },
       include: {
         skill: true,
+        questions: { include: { choices: true } },
         _count: { select: { questions: true, attempts: true, jobs: true } },
       },
       orderBy: { createdAt: 'desc' },
+    });
+    return assessments.map(({ questions, ...assessment }) => {
+      const readinessError = getAssessmentValidationError({ ...assessment, questions });
+      return { ...assessment, isReady: !readinessError, readinessError };
     });
   }
 
@@ -810,11 +825,15 @@ export class CompanyService {
 
   async toggleCompanyAssessment(userId: string, id: string) {
     const company = await this.getCompanyByUserId(userId);
-    const assessment = await this.prisma.assessment.findUnique({ where: { id } });
+    const assessment = await this.prisma.assessment.findUnique({ where: { id }, include: { questions: { include: { choices: true } } } });
     if (!assessment || assessment.companyId !== company.id) {
       throw new ForbiddenException('You are not authorized to toggle this assessment');
     }
 
+    if (!assessment.isActive) {
+      const error = getAssessmentValidationError(assessment);
+      if (error) throw new BadRequestException(`ข้อสอบยังไม่พร้อม: ${error}`);
+    }
     return this.prisma.assessment.update({
       where: { id },
       data: { isActive: !assessment.isActive },

@@ -630,9 +630,9 @@ export default function AssessmentRunnerPage() {
                 <p className="text-sm text-[#667085] mt-2">
                   คุณได้คะแนนรอบล่าสุด{' '}
                   <span className="font-extrabold text-[#4f46e5] text-xl">
-                    {theoryResult.percentage}%
+                    {theoryResult.feedbackHidden ? 'บริษัทเป็นผู้แจ้งผลสอบ' : `${theoryResult.percentage}%`}
                   </span>{' '}
-                  ({theoryResult.score} / {theoryResult.maxScore} คะแนน)
+                  {!theoryResult.feedbackHidden && `(${theoryResult.score} / ${theoryResult.maxScore} คะแนน)`}
                 </p>
                 <div className="mt-4 flex items-center justify-center gap-4 text-xs text-[#667085]">
                   <span>ใช้เวลา: {Math.round(theoryResult.timeSpentSeconds || 0)} วินาที</span>
@@ -784,8 +784,8 @@ export default function AssessmentRunnerPage() {
                       </Link>
                     </div>
                   </div>
-                ) : codingFinalResult.reviewStatus === 'PENDING_HUMAN_REVIEW' &&
-                  assessment.feedbackVisibility === 'AFTER_REVIEW' ? (
+                ) : codingFinalResult.feedbackHidden || (codingFinalResult.reviewStatus === 'PENDING_HUMAN_REVIEW' &&
+                  assessment.feedbackVisibility === 'AFTER_REVIEW') ? (
                   /* 2. Company Assessment Pending Human Review (AFTER_REVIEW mode) */
                   <div>
                     <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl mb-4 bg-amber-50 text-amber-600 border border-amber-200">
@@ -798,7 +798,7 @@ export default function AssessmentRunnerPage() {
                       สถานะ: อยู่ระหว่างรอ Tech Lead ตรวจประเมินขั้นสุดท้าย (Pending Review)
                     </p>
                     <p className="text-xs text-slate-600 mt-3 max-w-lg mx-auto leading-relaxed">
-                      แบบทดสอบนี้กำหนดให้ทีมวิศวกรของบริษัทตรวจประเมินผลโค้ดและยืนยันคะแนนขั้นสุดท้าย ผลการประเมินจะแสดงให้ทราบหลังจากที่ทีมงานทำการตรวจเสร็จสิ้น
+                      แบบทดสอบนี้กำหนดให้ทีมวิศวกรของบริษัทตรวจประเมินผลโค้ดและยืนยันคะแนนขั้นสุดท้าย {assessment.feedbackVisibility === 'PRIVATE_TO_COMPANY' ? 'บริษัทเป็นผู้แจ้งผลการประเมินให้คุณทราบ' : 'ผลการประเมินจะแสดงให้ทราบหลังจากที่ทีมงานทำการตรวจเสร็จสิ้น'}
                     </p>
                     <div className="mt-8 flex justify-center">
                       <Link

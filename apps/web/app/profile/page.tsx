@@ -585,7 +585,7 @@ function ProfileHubContent() {
                           <h2 className="text-base font-bold text-slate-900 tracking-tight">
                             หลักฐานผลงาน GitHub (Repository Evidence)
                           </h2>
-                          <span className="text-[11px] text-[#667085]">ประมวลผลโค้ดและการ Commit จริง</span>
+                          <span className="text-[11px] text-[#667085]">วิเคราะห์ภาษาและไลบรารีจากข้อมูล GitHub</span>
                         </div>
                       </div>
                       <span className="text-[11px] font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full">

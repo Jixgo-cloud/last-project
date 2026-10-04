@@ -1,3 +1,4 @@
+import { candidateFeedback } from '../assessments/candidate-feedback';
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RadarChartDataPoint, SkillCategory } from '@smartcareer/shared';
@@ -152,7 +153,7 @@ export class CandidateService {
         return {
           category: cat,
           subject: cat,
-          score: 35, // realistic baseline for unexercised category
+          score: 0, // No evidence in this category
           fullMark: 100,
         };
       }
@@ -180,7 +181,7 @@ export class CandidateService {
     });
     if (!profile) return [];
 
-    return this.prisma.jobApplication.findMany({
+    const applications = await this.prisma.jobApplication.findMany({
       where: { candidateId: profile.id },
       include: {
         job: {
@@ -218,7 +219,13 @@ export class CandidateService {
               select: {
                 id: true,
                 assessmentId: true,
+                assessment: { select: { companyId: true, feedbackVisibility: true } },
                 score: true,
+                maxScore: true,
+                percentage: true,
+                finalScore: true,
+                humanScore: true,
+                reviewStatus: true,
                 passed: true,
                 status: true,
                 startedAt: true,
@@ -234,15 +241,16 @@ export class CandidateService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    return applications.map(application => ({ ...application, candidate: { ...application.candidate, assessmentAttempts: application.candidate.assessmentAttempts.map(attempt => candidateFeedback(attempt)) } }));
   }
 
   private getDefaultRadar(): RadarChartDataPoint[] {
     return [
-      { category: SkillCategory.FRONTEND, subject: 'FRONTEND', score: 30, fullMark: 100 },
-      { category: SkillCategory.BACKEND, subject: 'BACKEND', score: 30, fullMark: 100 },
-      { category: SkillCategory.DATABASE, subject: 'DATABASE', score: 30, fullMark: 100 },
-      { category: SkillCategory.DEVOPS, subject: 'DEVOPS', score: 20, fullMark: 100 },
-      { category: SkillCategory.TESTING, subject: 'TESTING', score: 25, fullMark: 100 },
+      { category: SkillCategory.FRONTEND, subject: 'FRONTEND', score: 0, fullMark: 100 },
+      { category: SkillCategory.BACKEND, subject: 'BACKEND', score: 0, fullMark: 100 },
+      { category: SkillCategory.DATABASE, subject: 'DATABASE', score: 0, fullMark: 100 },
+      { category: SkillCategory.DEVOPS, subject: 'DEVOPS', score: 0, fullMark: 100 },
+      { category: SkillCategory.TESTING, subject: 'TESTING', score: 0, fullMark: 100 },
     ];
   }
 }

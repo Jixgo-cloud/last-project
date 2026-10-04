@@ -14,6 +14,7 @@ export default function NewJobPage() {
   const [companyAssessments, setCompanyAssessments] = useState<any[]>([]);
   const [customAssessmentId, setCustomAssessmentId] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   const [title, setTitle] = useState('');
   const [location, setLocation] = useState('กรุงเทพมหานคร, ประเทศไทย');
@@ -41,7 +42,7 @@ export default function NewJobPage() {
     });
 
     apiRequest('/company/assessments')
-      .then((data) => setCompanyAssessments(data || []))
+      .then((data) => setCompanyAssessments((data || []).filter((assessment: any) => assessment.isActive && assessment.isReady)))
       .catch(() => []);
   }, []);
 
@@ -65,6 +66,8 @@ export default function NewJobPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
+    setSubmitError('');
     setSubmitting(true);
     try {
       await apiRequest('/company/jobs', {
@@ -86,7 +89,7 @@ export default function NewJobPage() {
       });
       router.push('/company/dashboard');
     } catch (err: any) {
-      alert(`Job creation failed: ${err.message}`);
+      setSubmitError(`บันทึกงานไม่สำเร็จ: ${err.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -96,6 +99,7 @@ export default function NewJobPage() {
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#f9fbfe] via-[#f3f6fb] to-[#eef2f8] text-[#111827] antialiased">
       <Navbar />
 
+      {submitError && <p role="alert" className="mx-auto mt-4 max-w-4xl px-4 text-red-700">{submitError}</p>}
       <main className="flex-1 py-8 sm:py-12 px-4 sm:px-8 max-w-4xl mx-auto w-full">
         <Link
           href="/company/dashboard"

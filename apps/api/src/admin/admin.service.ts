@@ -221,13 +221,18 @@ export class AdminService {
 
   // --- Admin Assessment Management ---
   async listAssessments() {
-    return this.prisma.assessment.findMany({
+    const assessments = await this.prisma.assessment.findMany({
       include: {
         skill: true,
+        questions: { include: { choices: true } },
         company: { select: { id: true, name: true, logoUrl: true } },
         _count: { select: { questions: true, attempts: true } },
       },
       orderBy: { createdAt: 'desc' },
+    });
+    return assessments.map(({ questions, ...assessment }) => {
+      const readinessError = getAssessmentValidationError({ ...assessment, questions });
+      return { ...assessment, isReady: !readinessError, readinessError };
     });
   }
 
@@ -500,9 +505,13 @@ export class AdminService {
   }
 
   async toggleAssessment(id: string) {
-    const assessment = await this.prisma.assessment.findUnique({ where: { id } });
+    const assessment = await this.prisma.assessment.findUnique({ where: { id }, include: { questions: { include: { choices: true } } } });
     if (!assessment) throw new NotFoundException('Assessment not found');
 
+    if (!assessment.isActive) {
+      const error = getAssessmentValidationError(assessment);
+      if (error) throw new BadRequestException(`ข้อสอบยังไม่พร้อม: ${error}`);
+    }
     return this.prisma.assessment.update({
       where: { id },
       data: { isActive: !assessment.isActive },

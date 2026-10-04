@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { getAttemptPercentage, formatAttemptScore } from '@smartcareer/shared';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useAuth } from '@/lib/auth-context';
@@ -266,7 +267,7 @@ export default function ApplicationsPage() {
                   const customAttempt = (app.candidate?.assessmentAttempts || []).find(
                     (att: any) => att.assessmentId === effectiveAssessment?.id
                   );
-                  const isPassed = customAttempt && customAttempt.score >= (effectiveAssessment?.passingScore || 70);
+                  const isPassed = customAttempt && (getAttemptPercentage(customAttempt) ?? -1) >= (effectiveAssessment?.passingScore || 70);
 
                   return (
                     <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/70 via-white to-purple-50/40 p-5 shadow-xs">
@@ -297,7 +298,7 @@ export default function ApplicationsPage() {
                             <div className="flex items-center gap-2">
                               <div className="text-right">
                                 <span className="text-[10px] text-slate-500 block">คะแนนล่าสุด</span>
-                                <span className="text-sm font-black text-indigo-700">{customAttempt.score}%</span>
+                                <span className="text-sm font-black text-indigo-700">{formatAttemptScore(customAttempt)}</span>
                               </div>
                               <span
                                 className={`text-xs font-bold px-3 py-1 rounded-full border ${
@@ -306,7 +307,7 @@ export default function ApplicationsPage() {
                                     : 'bg-rose-50 text-rose-700 border-rose-200'
                                 }`}
                               >
-                                {isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ยังไม่ผ่าน (Failed)'}
+                                {getAttemptPercentage(customAttempt) === null ? 'รอตรวจ' : isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ยังไม่ผ่าน (Failed)'}
                               </span>
                             </div>
                           ) : (

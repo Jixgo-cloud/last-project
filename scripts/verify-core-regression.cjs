@@ -527,11 +527,14 @@ async function run() {
   await check('Delete test job through UI', async () => {
     await login('hr@techcorp.co.th', 'password123', '/company/dashboard');
     await goto('/company/jobs');
-    // DOM activation lacks a native user gesture in CI, so Chrome can suppress
-    // confirm(). Simulate consent only in this disposable browser fixture.
-    await page.evaluate(() => { window.confirm = () => true; });
-    report.deleteConfirmationMode = 'Fixture simulates accepting confirmation; native dialog is not verified';
     await clickText('ลบ');
+    await page.waitForSelector('dialog[open]');
+    await clickText('ยกเลิก');
+    assert.equal(await db.job.count({ where: { id: job.id } }), 1);
+    await clickText('ลบ');
+    await page.waitForSelector('dialog[open]');
+    await clickText('ยืนยันการลบ');
+    report.deleteConfirmationMode = 'In-app dialog cancellation preserves job; explicit confirmation deletes disposable fixture';
     await page.waitForFunction(() => !document.body.innerText.includes('Regression Backend Engineer'));
     assert.equal(await db.job.count({ where: { id: job.id } }), 0);
   });

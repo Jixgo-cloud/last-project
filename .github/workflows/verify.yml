@@ -47,6 +47,7 @@ jobs:
           NODE_ENV: production
       - run: npm run lint
       - run: npm run test:security
+      - run: npm run test:uat
       - name: Initialize empty local source database
         run: npx prisma db push --skip-generate
       - name: Install virtual display and Thai fonts

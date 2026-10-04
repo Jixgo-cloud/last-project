@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { Suspense, useState, useEffect, useMemo, useCallback } from 'react';
 import Image from 'next/image';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { apiRequest } from '@/lib/api';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   Users,
   CheckCircle2,
@@ -39,7 +40,7 @@ import {
   PolarRadiusAxis,
   ResponsiveContainer,
 } from 'recharts';
-import { ApplicationStatus } from '@smartcareer/shared';
+import { ApplicationStatus, getAttemptPercentage, formatAttemptScore } from '@smartcareer/shared';
 
 const STATUS_OPTIONS: { value: ApplicationStatus; label: string; labelTh: string; color: string }[] = [
   { value: ApplicationStatus.APPLIED, label: 'Applied', labelTh: 'สมัครเข้ามาใหม่', color: 'bg-blue-50 text-blue-700 border-blue-200' },
@@ -51,7 +52,11 @@ const STATUS_OPTIONS: { value: ApplicationStatus; label: string; labelTh: string
   { value: ApplicationStatus.REJECTED, label: 'Rejected', labelTh: 'ปฏิเสธ', color: 'bg-rose-50 text-rose-700 border-rose-200' },
 ];
 
-export default function CompanyApplicationsPage() {
+function CompanyApplicationsContent() {
+  const searchParams = useSearchParams();
+  const jobId = searchParams.get('jobId');
+  const jobQuery = jobId ? `?jobId=${encodeURIComponent(jobId)}` : '';
+  const [loadError, setLoadError] = useState('');
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAppForEval, setSelectedAppForEval] = useState<any | null>(null);
@@ -84,21 +89,23 @@ export default function CompanyApplicationsPage() {
   const [assignSubmitting, setAssignSubmitting] = useState(false);
   const [assignToast, setAssignToast] = useState<string | null>(null);
 
-  const fetchApps = async () => {
+  const fetchApps = useCallback(async () => {
     try {
       setLoading(true);
       const [appsData, assessData] = await Promise.all([
-        apiRequest('/company/applications'),
+        apiRequest(`/company/applications${jobQuery}`),
         apiRequest('/company/assessments').catch(() => []),
       ]);
       setApplications(appsData || []);
-      setCompanyAssessments(assessData || []);
-    } catch (e) {
-      console.error(e);
+      setCompanyAssessments((assessData || []).filter((assessment: any) => assessment.isActive && assessment.isReady));
+      setLoadError('');
+    } catch (e: any) {
+      setApplications([]);
+      setLoadError(e.message || 'โหลดรายการไม่สำเร็จ กรุณาลองใหม่');
     } finally {
       setLoading(false);
     }
-  };
+  }, [jobQuery]);
 
   const handleOpenAssignAssessment = (app: any) => {
     setSelectedAppForAssign(app);
@@ -133,7 +140,7 @@ export default function CompanyApplicationsPage() {
     }
   };
 
-  const handleOpenProfile = async (candidateId: string) => {
+  const handleOpenProfile = useCallback(async (candidateId: string) => {
     if (!candidateId) return;
     setSelectedCandidateId(candidateId);
     setLoadingProfile(true);
@@ -147,7 +154,7 @@ export default function CompanyApplicationsPage() {
     } finally {
       setLoadingProfile(false);
     }
-  };
+  }, []);
 
   const handleCloseProfile = () => {
     setSelectedCandidateId(null);
@@ -185,7 +192,7 @@ export default function CompanyApplicationsPage() {
         handleOpenProfile(candidateIdParam);
       }
     }
-  }, []);
+  }, [fetchApps, handleOpenProfile]);
 
   const handleStatusChange = async (appId: string, newStatus: ApplicationStatus) => {
     const targetApp = applications.find((a) => a.id === appId);
@@ -210,9 +217,10 @@ export default function CompanyApplicationsPage() {
   };
 
   const handleExportCsv = async () => {
+    if (exportingCsv) return;
     try {
       setExportingCsv(true);
-      const res = await fetch('/api/company/applications/export', { credentials: 'same-origin', cache: 'no-store' });
+      const res = await fetch(`/api/company/applications/export${jobQuery}`, { credentials: 'same-origin', cache: 'no-store' });
 
       if (!res.ok) {
         throw new Error(`Export failed with HTTP ${res.status}`);
@@ -226,7 +234,7 @@ export default function CompanyApplicationsPage() {
       document.body.appendChild(a);
       a.click();
       a.remove();
-      window.URL.revokeObjectURL(url);
+      setTimeout(() => window.URL.revokeObjectURL(url), 30000);
     } catch (err: any) {
       alert(`Export CSV ล้มเหลว: ${err.message}`);
     } finally {
@@ -304,6 +312,8 @@ export default function CompanyApplicationsPage() {
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#f9fbfe] via-[#f3f6fb] to-[#eef2f8] text-[#111827] antialiased">
       <Navbar />
 
+      {loadError && <p role="alert" className="mx-auto mt-4 text-red-700">{loadError}</p>}
+      {jobId && <div className="mx-auto mt-4 px-4"><span>กำลังแสดงผู้สมัครเฉพาะงานที่เลือก</span> · <Link href="/company/applications" className="text-indigo-700 underline">ดูผู้สมัครทุกงาน</Link></div>}
       <main className="flex-1 py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
         {/* Toast Alert */}
         {assignToast && (
@@ -581,11 +591,11 @@ export default function CompanyApplicationsPage() {
                                 </div>
                               );
                             }
-                            const isPassed = customAttempt.score >= (effectiveAssessment.passingScore || 70);
+                            const isPassed = (getAttemptPercentage(customAttempt) ?? -1) >= (effectiveAssessment.passingScore || 70);
                             return (
                               <div className="flex items-center justify-between text-xs pt-0.5">
                                 <span className="font-semibold text-slate-800">
-                                  คะแนนล่าสุด: <span className="font-extrabold text-[#4f46e5] text-sm">{customAttempt.score}%</span>
+                                  คะแนนล่าสุด: <span className="font-extrabold text-[#4f46e5] text-sm">{formatAttemptScore(customAttempt)}</span>
                                 </span>
                                 <span
                                   className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
@@ -594,7 +604,7 @@ export default function CompanyApplicationsPage() {
                                       : 'bg-rose-50 text-rose-700 border-rose-200'
                                   }`}
                                 >
-                                  {isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ยังไม่ผ่าน (Failed)'}
+                                  {getAttemptPercentage(customAttempt) === null ? 'รอตรวจ' : isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ยังไม่ผ่าน (Failed)'}
                                 </span>
                               </div>
                             );
@@ -830,10 +840,10 @@ export default function CompanyApplicationsPage() {
                           <span className="text-slate-500">ผู้สมัครยังไม่ได้ทำแบบทดสอบทักษะเฉพาะตำแหน่งนี้</span>
                         );
                       }
-                      const isPassed = customAttempt.score >= (selectedAppForEval.job.customAssessment.passingScore || 70);
+                      const isPassed = (getAttemptPercentage(customAttempt) ?? -1) >= (selectedAppForEval.job.customAssessment.passingScore || 70);
                       return (
                         <div className="flex items-center justify-between mt-1 text-slate-700">
-                          <span>คะแนนสอบข้อสอบปฏิบัติล่าสุด: <strong className="text-indigo-700 text-sm">{customAttempt.score}%</strong> (เกณฑ์ {selectedAppForEval.job.customAssessment.passingScore}%)</span>
+                          <span>คะแนนสอบข้อสอบปฏิบัติล่าสุด: <strong className="text-indigo-700 text-sm">{formatAttemptScore(customAttempt)}</strong> (เกณฑ์ {selectedAppForEval.job.customAssessment.passingScore}%)</span>
                           <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${isPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
                             {isPassed ? 'ผ่านเกณฑ์' : 'ไม่ผ่านเกณฑ์'}
                           </span>
@@ -1408,7 +1418,7 @@ export default function CompanyApplicationsPage() {
                           <div className="space-y-4">
                             {candidateProfile.assessmentAttempts.map((att: any) => {
                               const isPassed =
-                                att.score >= (att.assessment?.passingScore || 70) || att.passed === true;
+                                (getAttemptPercentage(att) ?? -1) >= (att.assessment?.passingScore || 70) || att.passed === true;
                               const integrity = att.integritySummary;
                               const tabSwitches = integrity?.tabSwitchCount || 0;
                               const requiresReview = tabSwitches > 0;
@@ -1437,7 +1447,7 @@ export default function CompanyApplicationsPage() {
                                     <div className="flex items-center gap-3">
                                       <div className="text-right">
                                         <span className="text-xl font-black text-[#4f46e5]">
-                                          {att.score !== null ? `${att.score}%` : 'รอตรวจ'}
+                                          {formatAttemptScore(att)}
                                         </span>
                                         <span className="text-[10px] text-slate-400 block font-semibold">คะแนนที่ได้</span>
                                       </div>
@@ -1448,7 +1458,7 @@ export default function CompanyApplicationsPage() {
                                             : 'bg-rose-50 text-rose-700 border-rose-200'
                                         }`}
                                       >
-                                        {isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ไม่ผ่านเกณฑ์ (Failed)'}
+                                        {getAttemptPercentage(att) === null ? 'รอตรวจ' : isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ไม่ผ่านเกณฑ์ (Failed)'}
                                       </span>
                                     </div>
                                   </div>
@@ -1607,3 +1617,7 @@ export default function CompanyApplicationsPage() {
   );
 }
 
+
+export default function CompanyApplicationsPage() {
+  return <Suspense fallback={<p>กำลังโหลดรายชื่อผู้สมัคร...</p>}><CompanyApplicationsContent /></Suspense>;
+}

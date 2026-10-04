@@ -1,3 +1,4 @@
+import { candidateFeedback } from './candidate-feedback';
 import {
   Injectable,
   NotFoundException,
@@ -18,6 +19,7 @@ import {
   QuestionEvaluationMethod,
   AssessmentReviewStatus,
   CandidateEarnedBadge,
+  getAttemptPercentage,
 } from '@smartcareer/shared';
 
 @Injectable()
@@ -33,17 +35,19 @@ export class AssessmentsService {
   ) {}
 
   async findAll() {
-    return this.prisma.assessment.findMany({
+    const assessments = await this.prisma.assessment.findMany({
       where: {
         isActive: true,
         companyId: null, // Public platform assessments
       },
       include: {
         skill: true,
+        questions: { include: { choices: true } },
         _count: { select: { questions: true } },
       },
       orderBy: { createdAt: 'asc' },
     });
+    return assessments.filter(assessment => !getAssessmentValidationError(assessment)).map(({ questions, ...assessment }) => assessment);
   }
 
   async findOne(id: string, candidateUserId: string) {
@@ -109,12 +113,14 @@ export class AssessmentsService {
     });
     if (!candidate) return [];
 
-    return this.prisma.assessmentAttempt.findMany({
+    const attempts = await this.prisma.assessmentAttempt.findMany({
       where: { candidateId: candidate.id },
       include: {
         assessment: {
           select: {
             id: true,
+            companyId: true,
+            feedbackVisibility: true,
             title: true,
             slug: true,
             type: true,
@@ -127,6 +133,7 @@ export class AssessmentsService {
       },
       orderBy: { startedAt: 'desc' },
     });
+    return attempts.map(attempt => candidateFeedback(attempt));
   }
 
   /**
@@ -1081,10 +1088,18 @@ export class AssessmentsService {
       throw new ForbiddenException('Access denied');
     }
 
+    if (isOwnerCandidate && !isAdmin && !isCompanyMember) return candidateFeedback(attempt);
+
     return {
       ...attempt,
       integritySummary: this.getIntegritySummary(attempt.integrityEvents),
     };
+  }
+
+  async discloseCandidateResponse(result: any, attemptId: string) {
+    const attempt = await this.prisma.assessmentAttempt.findUnique({ where: { id: attemptId }, include: { assessment: true } });
+    if (!attempt) throw new NotFoundException('Attempt not found');
+    return candidateFeedback({ ...result, reviewStatus: attempt.reviewStatus }, attempt.assessment);
   }
 
   getIntegritySummary(integrityEvents: any): {
@@ -1228,6 +1243,7 @@ export class AssessmentsService {
     const badgeMap = new Map<string, CandidateEarnedBadge>();
 
     for (const att of attempts) {
+      if (candidateFeedback(att).feedbackHidden || getAttemptPercentage(att) === null) continue;
       if (!badgeMap.has(att.assessmentId)) {
         const isCoding = (att.assessment.type as string) === 'PRACTICAL_CODING';
         const typeTitle = isCoding ? 'Code Challenge' : 'Theory Quiz';
@@ -1240,7 +1256,7 @@ export class AssessmentsService {
           type: att.assessment.type as any,
           skillName: att.assessment.skill?.name || null,
           skillCategory: (att.assessment.skill?.category as any) || null,
-          score: Math.round(att.finalScore ?? att.percentage ?? att.score ?? 0),
+          score: getAttemptPercentage(att)!,
           passedAt: att.completedAt || att.startedAt || new Date(),
           timeSpentSeconds: att.timeSpentSeconds,
         });
