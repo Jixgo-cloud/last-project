@@ -20,7 +20,7 @@ export function validateVerificationDocuments(documents: VerificationDocumentsDt
         : bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]));
     if (!validHeader) throw new BadRequestException('เนื้อหาไฟล์ไม่ตรงกับชนิด PDF, JPG หรือ PNG');
     total += bytes.length;
-    if (total > VERIFICATION_MAX_BYTES) throw new BadRequestException('เอกสารทั้งหมดรวมกันต้องไม่เกิน 6MB');
+    if (total > VERIFICATION_MAX_BYTES) throw new BadRequestException('เอกสารทั้งหมดรวมกันต้องไม่เกิน 3MB');
   }
   return { files: documents.files.map(file => ({ name: file.name, type: file.type, size: file.size, dataUrl: file.dataUrl })) };
 }

@@ -130,7 +130,7 @@ export default function CompanyProfilePage() {
       return;
     }
     if ([...documents, ...files].reduce((total, file) => total + file.size, 0) > VERIFICATION_MAX_BYTES) {
-      setVerificationError('เอกสารทั้งหมดรวมกันต้องไม่เกิน 6MB');
+      setVerificationError('เอกสารทั้งหมดรวมกันต้องไม่เกิน 3MB');
       return;
     }
     documentReadInProgress.current = true;
@@ -543,7 +543,7 @@ export default function CompanyProfilePage() {
                   <label className="block text-xs font-bold text-slate-700">
                     เอกสารแนบประกอบการพิจารณา (Verification Documents)
                   </label>
-                  <span className="text-[11px] text-slate-400">PDF, JPG, PNG สูงสุด 5 ไฟล์ รวมไม่เกิน 6MB</span>
+                  <span className="text-[11px] text-slate-400">PDF, JPG, PNG สูงสุด 5 ไฟล์ รวมไม่เกิน 3MB</span>
                 </div>
 
                 <input

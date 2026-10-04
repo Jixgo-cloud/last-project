@@ -32,7 +32,12 @@ test('Verification rejects corrupted, mislabeled and oversized attachment conten
     { ...file, dataUrl: file.dataUrl + '=' },
     { ...file, dataUrl: 'data:application/pdf;base64,' + Buffer.from('not a PDF').toString('base64'), size: 9 },
   ]) assert.throws(() => validateVerificationDocuments({ files: [invalid] }));
-  const large = Buffer.alloc(4 * 1024 * 1024); pdf.copy(large);
+  const limit = require('@smartcareer/shared').VERIFICATION_MAX_BYTES;
+  const boundary = Buffer.alloc(limit); pdf.copy(boundary);
+  const maximum = { ...file, size: boundary.length, dataUrl: 'data:application/pdf;base64,' + boundary.toString('base64') };
+  assert.equal(validateVerificationDocuments({ files: [maximum] }).files[0].size, limit);
+  assert(Buffer.byteLength(JSON.stringify({ businessRegNo: '1234567890123', documents: { files: [maximum] } })) < 4.5 * 1000 * 1000);
+  const large = Buffer.alloc(2 * 1024 * 1024); pdf.copy(large);
   const attachment = { ...file, size: large.length, dataUrl: 'data:application/pdf;base64,' + large.toString('base64') };
   assert.throws(() => validateVerificationDocuments({ files: [attachment, attachment] }));
 });
