@@ -153,6 +153,7 @@ async function run() {
   let job;
   await check('Create job through UI and verify database', async () => {
     await goto('/company/jobs/new');
+    await page.waitForFunction(() => Array.from(document.querySelectorAll('select option')).some(option => option.textContent === 'JavaScript (BACKEND)'));
     await fill('input[placeholder="เช่น Senior Full Stack Developer (Next.js & NestJS)"]', 'Regression Backend Engineer');
     await fill('textarea[placeholder="ระบุหน้าที่หลักในแต่ละวัน ความท้าทาย และโครงสร้างทีม..."]', 'Regression description for the main job posting flow.');
     await fill('textarea[placeholder="เช่น ประสบการณ์ 3 ปีขึ้นไป, ความเข้าใจในสถาปัตยกรรม Microservices..."]', 'JavaScript regression requirements.');
