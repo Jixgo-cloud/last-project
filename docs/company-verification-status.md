@@ -33,3 +33,17 @@ Administrator review reads only request identifiers/status and returns the recor
 Validation: build and lint passed, with 10 security tests and 31 isolated regression checks. Regression includes 24 large document requests, metadata size limits, stable paging, complete filtered counts, invalid query rejection, authenticated binary download byte equality through the frontend proxy, denied company/candidate access, missing-file cases and UI next-page/filter checks. Reviewing a legacy 4 MiB document returns an outcome below 1 KB and preserves the original attachment. Computer use confirmed page 2 of 3 and filtering two approved requests out of 28. A 3 MiB document was downloaded through the supported browser download control, saved locally and verified against the original fixture by SHA-256. All fixture accounts and documents were in a disposable local database, which was removed after testing.
 
 Next improvement: require a useful rejection reason in the administrator form and display it to the company, with a notification and a clear resubmission path. Private object storage can subsequently reduce database size as the document volume grows.
+
+## Review feedback and company notification — 5 October 2026
+
+Administrator rejection requires a trimmed reason of 10–2,000 characters. The API validates the action, reason and unknown fields before any update; approval requires no reason. The administrator uses an inline labelled form with cancel and explicit confirmation, and can see recorded reasons on rejected requests.
+
+The existing per-company transaction records the outcome and creates one in-app SYSTEM_ANNOUNCEMENT per active company member, linking to `/company/profile#verification`. Concurrent or stale reviews do not create duplicate notifications. Approval also notifies the company. No email provider or external messages are introduced.
+
+The company profile displays the latest rejection reason, explains how to replace documents, and labels the resubmission button clearly. Dashboard and notification links open the verification form directly. Legacy rejected requests without a reason show guidance to contact the administrator; their historical outcome is preserved.
+
+Validation and deployment evidence are recorded in `output/security-review/deployment-result.md`.
+
+The verification workflow can stop expanding after this phase. Genuine identity-document review remains a human operational task. Further storage changes should follow measured document volume, rather than being required for this feedback feature.
+
+The verification anchor waits for the company form to finish loading before scrolling, with spacing below the fixed navigation bar. Regression verifies that the linked form is visible after loading, in addition to reason validation, concurrent review notification deduplication, active-member recipients and resubmission/approval.

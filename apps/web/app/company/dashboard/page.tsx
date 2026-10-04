@@ -105,8 +105,8 @@ export default function CompanyDashboardPage() {
                       : 'ยังไม่ได้ส่งคำขอยืนยันบริษัท กรุณากรอกข้อมูลและแนบเอกสาร'}
                   </span>
                 </div>
-                <Link href="/company/profile" className="font-bold underline hover:text-amber-900 ml-2">
-                  {verificationState === 'NOT_SUBMITTED' ? 'เตรียมเอกสาร' : 'ตรวจดูเอกสาร'}
+                <Link href="/company/profile#verification" className="font-bold underline hover:text-amber-900 ml-2">
+                  {verificationState === 'NOT_SUBMITTED' ? 'เตรียมเอกสาร' : verificationState === VerificationStatus.REJECTED ? 'ดูเหตุผลและแก้ไข' : 'ตรวจดูเอกสาร'}
                 </Link>
               </div>
             )}

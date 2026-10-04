@@ -24,6 +24,7 @@ interface VerificationItem {
   status: VerificationStatus;
   createdAt: string;
   reviewedAt: string | null;
+  rejectionReason: string | null;
   company: { id: string; name: string; logoUrl?: string | null };
   documents: { files: { name: string; downloadUrl?: string | null; dataUrl?: string | null }[] };
 }
@@ -47,6 +48,8 @@ export default function AdminVerificationsPage() {
   const [listError, setListError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
   const requestSequence = useRef(0);
 
   const fetchVerifications = useCallback(async (signal?: AbortSignal) => {
@@ -93,13 +96,20 @@ export default function AdminVerificationsPage() {
 
   const handleReview = async (id: string, action: 'APPROVE' | 'REJECT') => {
     if (reviewingId) return;
+    const reason = rejectionReason.trim();
+    if (action === 'REJECT' && (reason.length < 10 || reason.length > 2000)) {
+      setActionError('กรุณาระบุเหตุผลที่บริษัทนำไปแก้ไขได้ ตั้งแต่ 10 ถึง 2,000 ตัวอักษร');
+      return;
+    }
     setReviewingId(id);
     setActionError(null);
     try {
       await apiRequest(`/admin/verifications/${id}/review`, {
         method: 'PUT',
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, ...(action === 'REJECT' ? { reason } : {}) }),
       });
+      setRejectingId(null);
+      setRejectionReason('');
       setActionMsg(
         `ดำเนินการ ${action === 'APPROVE' ? 'อนุมัติการรับรอง' : 'ปฏิเสธคำขอ'} ขององค์กรเรียบร้อยแล้ว`
       );
@@ -294,6 +304,10 @@ export default function AdminVerificationsPage() {
                         )}
 
                         {/* Metadata */}
+                        {isRejected && <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+                          <p className="font-bold">เหตุผลที่ต้องแก้ไข</p>
+                          <p className="mt-1 whitespace-pre-wrap break-words">{v.rejectionReason || 'คำขอเดิมไม่มีเหตุผลบันทึกไว้'}</p>
+                        </div>}
                         <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1.5">
                           <Clock className="h-3 w-3" />
                           <span>ยื่นเมื่อ: {new Date(v.createdAt).toLocaleString('th-TH')}</span>
@@ -303,7 +317,15 @@ export default function AdminVerificationsPage() {
 
                     {/* Actions */}
                     {isPending ? (
-                      <div className="flex items-center gap-2.5 self-start sm:self-center shrink-0">
+                      rejectingId === v.id ? <form className="w-full sm:max-w-sm space-y-2" onSubmit={event => { event.preventDefault(); void handleReview(v.id, 'REJECT'); }}>
+                        <label htmlFor={`reason-${v.id}`} className="block text-xs font-bold text-slate-800">เหตุผลที่บริษัทต้องแก้ไข</label>
+                        <textarea id={`reason-${v.id}`} autoFocus required minLength={10} maxLength={2000} rows={3} value={rejectionReason} disabled={!!reviewingId} onChange={event => setRejectionReason(event.target.value)} placeholder="เช่น เอกสารไม่ชัดเจน กรุณาแนบไฟล์ที่อ่านเลขทะเบียนได้ครบ" className="w-full rounded-xl border border-slate-300 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        <p className="text-xs text-slate-500">ระบุสิ่งที่ต้องแก้ไข 10–2,000 ตัวอักษร บริษัทจะได้รับแจ้งเตือน</p>
+                        <div className="flex gap-2">
+                          <button type="submit" disabled={!!reviewingId} className="rounded-full bg-rose-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{reviewingId ? 'กำลังบันทึก...' : 'ยืนยันการปฏิเสธ'}</button>
+                          <button type="button" disabled={!!reviewingId} onClick={() => { setRejectingId(null); setRejectionReason(''); setActionError(null); }} className="rounded-full border border-slate-200 px-4 py-2 text-xs font-bold">ยกเลิก</button>
+                        </div>
+                      </form> : <div className="flex items-center gap-2.5 self-start sm:self-center shrink-0">
                         <button
                           onClick={() => handleReview(v.id, 'APPROVE')}
                           disabled={!!reviewingId}
@@ -313,7 +335,7 @@ export default function AdminVerificationsPage() {
                           <span>อนุมัติ (Approve)</span>
                         </button>
                         <button
-                          onClick={() => handleReview(v.id, 'REJECT')}
+                          onClick={() => { setRejectingId(v.id); setRejectionReason(''); setActionError(null); }}
                           disabled={!!reviewingId}
                           className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition"
                         >

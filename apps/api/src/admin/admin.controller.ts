@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, UseGuards, Request, ParseIntPipe, Header } from '@nestjs/common';
 import { VerificationQueryDto } from './dto/verification-query.dto';
+import { VerificationReviewDto } from './dto/verification-review.dto';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -34,7 +35,7 @@ export class AdminController {
   async reviewVerification(
     @Request() req: any,
     @Param('id') id: string,
-    @Body() body: { action: 'APPROVE' | 'REJECT'; reason?: string },
+    @Body() body: VerificationReviewDto,
   ) {
     return this.adminService.reviewVerification(id, req.user.id, body.action, body.reason);
   }

@@ -14,6 +14,17 @@ const axios = require('axios').default;
 const { SubmitCompanyVerificationDto } = require('../apps/api/dist/company/dto/company-profile.dto');
 const { validateVerificationDocuments } = require('../apps/api/dist/company/verification-documents');
 const { VerificationQueryDto } = require('../apps/api/dist/admin/dto/verification-query.dto');
+const { VerificationReviewDto } = require('../apps/api/dist/admin/dto/verification-review.dto');
+
+test('Verification review requires a bounded reason for rejection and rejects unknown fields', async () => {
+  for (const input of [{ action: 'REJECT' }, { action: 'REJECT', reason: '   ' }, { action: 'REJECT', reason: 42 }, { action: 'REJECT', reason: 'x'.repeat(2001) }, { action: 'INVALID' }, { action: 'APPROVE', companyId: 'other' }]) {
+    assert((await validate(plainToInstance(VerificationReviewDto, input), { whitelist: true, forbidNonWhitelisted: true })).length);
+  }
+  const input = plainToInstance(VerificationReviewDto, { action: 'REJECT', reason: '  กรุณาแนบเอกสารที่อ่านได้ชัดเจน  ' });
+  assert.equal((await validate(input)).length, 0);
+  assert.equal(input.reason, 'กรุณาแนบเอกสารที่อ่านได้ชัดเจน');
+  assert.equal((await validate(plainToInstance(VerificationReviewDto, { action: 'APPROVE' }))).length, 0);
+});
 
 test('Verification pagination rejects invalid limits, statuses and unknown query fields', async () => {
   for (const input of [{ page: '0' }, { page: '1.5' }, { pageSize: '51' }, { status: 'INVALID' }, { paginated: 'yes' }, { includeDocuments: 'true' }]) {

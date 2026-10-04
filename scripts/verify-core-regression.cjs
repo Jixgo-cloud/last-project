@@ -172,7 +172,7 @@ async function run() {
     // A screenshot of this disposable test site is a non-identity upload fixture.
     await (await page.$('input[type="file"][multiple]')).uploadFile(path.join(evidenceDir, 'home.png'));
     await page.waitForFunction(() => document.body.innerText.includes('home.png'));
-    await clickText('ยื่นตรวจสอบสิทธิ์พร้อมเอกสาร');
+    await page.evaluate(() => document.querySelector('#verification button[type="submit"]').click());
     await page.waitForFunction(() => document.body.innerText.includes('ส่งคำขอแล้ว รอผู้ดูแลตรวจสอบ'));
     assert(await page.$$eval('button', buttons => buttons.some(b => b.disabled && b.innerText.includes('ส่งคำขอแล้ว รอผู้ดูแลตรวจสอบ'))));
   };
@@ -198,6 +198,9 @@ async function run() {
   await check('Concurrent company submissions and reviews cannot duplicate or overwrite outcomes', async () => {
     const owner = await db.user.create({ data: { email: 'parallel@smartcareer.dev', passwordHash: hash, role: 'COMPANY' } });
     const parallelCompany = await db.company.create({ data: { name: 'Parallel Test Company', slug: databaseName + '-parallel', members: { create: { userId: owner.id, role: 'OWNER' } } } });
+    const colleague = await db.user.create({ data: { email: 'parallel-colleague@smartcareer.dev', passwordHash: hash, role: 'COMPANY' } });
+    const inactive = await db.user.create({ data: { email: 'parallel-inactive@smartcareer.dev', passwordHash: hash, role: 'COMPANY', isActive: false } });
+    await db.companyMember.createMany({ data: [colleague, inactive].map(user => ({ companyId: parallelCompany.id, userId: user.id })) });
     const token = (await request('/auth/login', 'POST', { email: owner.email, password: 'password123' })).token;
     const content = Buffer.from('%PDF-1.7\nTest-only concurrency fixture');
     const body = { businessRegNo: '1234567890123', documents: { files: [{ name: 'fixture.pdf', type: 'application/pdf', size: content.length, dataUrl: 'data:application/pdf;base64,' + content.toString('base64') }] } };
@@ -207,9 +210,21 @@ async function run() {
     assert.equal((await db.company.findUnique({ where: { id: parallelCompany.id } })).verificationStatus, 'PENDING');
     const pending = submitted.find(result => result.status === 201).data;
     const adminToken = (await request('/auth/login', 'POST', { email: 'admin@smartcareer.dev', password: 'admin123' })).token;
-    const reviews = await Promise.all(Array.from({ length: 2 }, () => requestResult('/admin/verifications/' + pending.id + '/review', 'PUT', { action: 'REJECT' }, adminToken)));
+    for (const reason of [undefined, '', '   ', 'สั้น', 42, 'x'.repeat(2001)]) {
+      assert.equal((await requestResult('/admin/verifications/' + pending.id + '/review', 'PUT', { action: 'REJECT', reason }, adminToken)).status, 400);
+    }
+    assert.equal(await db.notification.count({ where: { userId: owner.id } }), 0);
+    assert.equal((await db.companyVerification.findUnique({ where: { id: pending.id } })).status, 'PENDING');
+    const reviews = await Promise.all(Array.from({ length: 2 }, () => requestResult('/admin/verifications/' + pending.id + '/review', 'PUT', { action: 'REJECT', reason: '  กรุณาแนบเอกสารที่อ่านเลขทะเบียนได้ชัดเจน  ' }, adminToken)));
     assert.deepEqual(reviews.map(result => result.status).sort(), [200, 409]);
     assert.equal(reviews.find(result => result.status === 200).data.documents, undefined);
+    const notices = await db.notification.findMany({ where: { userId: owner.id } });
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0].message, 'กรุณาแนบเอกสารที่อ่านเลขทะเบียนได้ชัดเจน');
+    assert.equal(notices[0].link, '/company/profile#verification');
+    assert.equal(notices[0].metadata.verificationId, pending.id);
+    assert.equal(await db.notification.count({ where: { userId: colleague.id } }), 1);
+    assert.equal(await db.notification.count({ where: { userId: inactive.id } }), 0);
     const resubmitted = await request('/company/verify', 'POST', body, token);
     assert.equal((await requestResult('/admin/verifications/' + pending.id + '/review', 'PUT', { action: 'APPROVE' }, adminToken)).status, 409);
     assert.equal((await db.company.findUnique({ where: { id: parallelCompany.id } })).verificationStatus, 'PENDING');
@@ -217,6 +232,7 @@ async function run() {
     assert.equal((await requestResult('/company/verify', 'POST', body, token)).status, 409);
     assert.equal((await requestResult('/admin/verifications/' + resubmitted.id + '/review', 'PUT', { action: 'INVALID' }, adminToken)).status, 400);
     assert.equal((await db.company.findUnique({ where: { id: parallelCompany.id } })).verificationStatus, 'VERIFIED');
+    assert.equal(await db.notification.count({ where: { userId: owner.id } }), 2);
   });
   await check('Submitted documents and rejected requests show their actual state', async () => {
     await submitCompanyDocuments();
@@ -224,11 +240,20 @@ async function run() {
     await login('admin@smartcareer.dev', 'admin123', '/admin/dashboard');
     await goto('/admin/verifications');
     await clickText('ปฏิเสธ (Reject)');
+    assert.equal(await page.$eval('textarea', el => el.checkValidity()), false);
+    assert.equal((await db.company.findUnique({ where: { id: company.id } })).verificationStatus, 'PENDING');
+    await fill('textarea', 'กรุณาแนบเอกสารที่อ่านเลขทะเบียนได้ชัดเจน');
+    await clickText('ยืนยันการปฏิเสธ');
     await page.waitForFunction(() => document.body.innerText.includes('ดำเนินการ ปฏิเสธคำขอ'));
     assert.equal((await db.company.findUnique({ where: { id: company.id } })).verificationStatus, 'REJECTED');
     await login('hr@techcorp.co.th', 'password123', '/company/dashboard');
     await goto('/company/profile');
     await page.waitForFunction(() => document.body.innerText.includes('คำขอไม่ผ่านการตรวจสอบ'));
+    await goto('/company/profile#verification');
+    await page.waitForFunction(() => document.body.innerText.includes('กรุณาแนบเอกสารที่อ่านเลขทะเบียนได้ชัดเจน'));
+    await page.waitForFunction(() => { const top = document.querySelector('#verification')?.getBoundingClientRect().top; return top >= 70 && top < 200; });
+    const notices = await request('/notifications', 'GET', undefined, companyToken);
+    assert(notices.some(notice => notice.message === 'กรุณาแนบเอกสารที่อ่านเลขทะเบียนได้ชัดเจน' && notice.link === '/company/profile#verification'));
     await screenshot('company-rejected');
   });
   await check('Resubmitted documents can be approved through the admin UI', async () => {

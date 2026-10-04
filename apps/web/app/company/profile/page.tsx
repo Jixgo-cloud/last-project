@@ -59,6 +59,7 @@ export default function CompanyProfilePage() {
   const [verificationError, setVerificationError] = useState<string | null>(null);
   const documentReadInProgress = useRef(false);
   const docInputRef = useRef<HTMLInputElement>(null);
+  const verificationFormRef = useRef<HTMLFormElement>(null);
 
   const fetchProfile = async () => {
     try {
@@ -82,6 +83,10 @@ export default function CompanyProfilePage() {
   useEffect(() => {
     fetchProfile();
   }, []);
+
+  useEffect(() => {
+    if (!loading && window.location.hash === '#verification') verificationFormRef.current?.scrollIntoView({ block: 'start' });
+  }, [loading]);
 
   // Handle Logo Upload (Direct file selection to Base64)
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -496,8 +501,10 @@ export default function CompanyProfilePage() {
 
             {/* Official Verification Submission Form */}
             <form
+              id="verification"
+              ref={verificationFormRef}
               onSubmit={handleVerify}
-              className="bg-white/95 border border-slate-200/90 rounded-[28px] p-6 sm:p-8 shadow-[0_12px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm space-y-6"
+              className="scroll-mt-24 bg-white/95 border border-slate-200/90 rounded-[28px] p-6 sm:p-8 shadow-[0_12px_32px_rgba(15,23,42,0.04)] backdrop-blur-sm space-y-6"
             >
               <div className="flex items-center justify-between pb-4 border-b border-slate-100">
                 <div className="flex items-center gap-2">
@@ -513,6 +520,11 @@ export default function CompanyProfilePage() {
                 )}
               </div>
 
+              {verificationState === VerificationStatus.REJECTED && <div role="status" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+                <p className="font-bold">เหตุผลที่ต้องแก้ไขเอกสาร</p>
+                <p className="mt-2 whitespace-pre-wrap break-words">{existingVerification?.rejectionReason || 'คำขอเดิมไม่มีเหตุผลบันทึกไว้ กรุณาติดต่อผู้ดูแลเพื่อสอบถามสิ่งที่ต้องแก้ไข'}</p>
+                <p className="mt-3 text-xs">แก้ไขข้อมูลและแนบเอกสารชุดใหม่ในแบบฟอร์มด้านล่าง แล้วกดส่งให้ตรวจสอบอีกครั้ง เอกสารเดิมยังเก็บอยู่ในประวัติ</p>
+              </div>}
               <p className="text-xs text-slate-600 leading-relaxed">
                 กรอกเลขทะเบียนพาณิชย์ หรือเลขประจำตัวผู้เสียภาษีอากร 13 หลักของกรมพัฒนาธุรกิจการค้า (DBD) พร้อมแนบเอกสารรับรอง เพื่อให้ผู้ดูแลระบบตรวจสอบความถูกต้อง และปลดล็อกสัญลักษณ์ <strong className="text-indigo-600">Verified Employer</strong> ซึ่งช่วยเพิ่มความเชื่อมั่นและอัตราการคลิกสมัครงาน
               </p>
@@ -667,6 +679,8 @@ export default function CompanyProfilePage() {
                       ? 'ยืนยันตัวตนแล้ว (Verified)'
                       : isPending
                       ? 'ส่งคำขอแล้ว รอผู้ดูแลตรวจสอบ'
+                      : verificationState === VerificationStatus.REJECTED
+                      ? 'ส่งเอกสารที่แก้ไขให้ตรวจสอบอีกครั้ง'
                       : 'ยื่นตรวจสอบสิทธิ์พร้อมเอกสาร (Submit Verification)'}
                   </span>
                 </button>

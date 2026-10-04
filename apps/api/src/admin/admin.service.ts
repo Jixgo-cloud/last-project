@@ -115,6 +115,10 @@ export class AdminService {
     rejectionReason?: string,
   ) {
     if (action !== 'APPROVE' && action !== 'REJECT') throw new BadRequestException('Invalid verification review action');
+    const reason = typeof rejectionReason === 'string' ? rejectionReason.trim() : '';
+    if (action === 'REJECT' && (reason.length < 10 || reason.length > 2000)) {
+      throw new BadRequestException('กรุณาระบุเหตุผลที่บริษัทนำไปแก้ไขได้ ตั้งแต่ 10 ถึง 2,000 ตัวอักษร');
+    }
     const verification = await this.prisma.companyVerification.findUnique({
       where: { id: verificationId },
       select: { id: true, companyId: true },
@@ -140,7 +144,7 @@ export class AdminService {
           status: newStatus,
           reviewedBy: adminUserId,
           reviewedAt: new Date(),
-          rejectionReason: action === 'REJECT' ? rejectionReason : null,
+          rejectionReason: action === 'REJECT' ? reason : null,
         },
       });
       await tx.company.update({
@@ -149,6 +153,15 @@ export class AdminService {
           verificationStatus: newStatus,
         },
       });
+      const members = await tx.companyMember.findMany({ where: { companyId: verification.companyId, user: { isActive: true } }, select: { userId: true } });
+      if (members.length) await tx.notification.createMany({ data: members.map(member => ({
+        userId: member.userId,
+        type: 'SYSTEM_ANNOUNCEMENT' as const,
+        title: action === 'REJECT' ? 'กรุณาแก้ไขเอกสารรับรองบริษัท' : 'บริษัทผ่านการรับรองแล้ว',
+        message: action === 'REJECT' ? reason : 'ผู้ดูแลอนุมัติคำขอรับรองบริษัทของคุณแล้ว',
+        link: '/company/profile#verification',
+        metadata: { verificationId, status: newStatus },
+      })) });
       return updated;
     });
   }
