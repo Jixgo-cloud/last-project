@@ -321,7 +321,17 @@ async function run() {
     await goto('/applications'); assert((await page.$eval('body', e => e.innerText)).includes('พิจารณา')); await screenshot('candidate-status-updated');
   });
   await check('Admin login and dashboard data', async () => { const token = await login('admin@smartcareer.dev', 'admin123', '/admin/dashboard'); const stats = await request('/admin/dashboard', 'GET', undefined, token); assert(stats && Object.keys(stats).length > 0); await screenshot('admin-dashboard'); });
-  await check('Delete test job through UI', async () => { await login('hr@techcorp.co.th', 'password123', '/company/dashboard'); await goto('/company/jobs'); await clickText('ลบ'); await page.waitForFunction(() => !document.body.innerText.includes('Regression Backend Engineer')); assert.equal(await db.job.count({ where: { id: job.id } }), 0); });
+  await check('Delete test job through UI', async () => {
+    await login('hr@techcorp.co.th', 'password123', '/company/dashboard');
+    await goto('/company/jobs');
+    // DOM activation lacks a native user gesture in CI, so Chrome can suppress
+    // confirm(). Simulate consent only in this disposable browser fixture.
+    await page.evaluate(() => { window.confirm = () => true; });
+    report.deleteConfirmationMode = 'Fixture simulates accepting confirmation; native dialog is not verified';
+    await clickText('ลบ');
+    await page.waitForFunction(() => !document.body.innerText.includes('Regression Backend Engineer'));
+    assert.equal(await db.job.count({ where: { id: job.id } }), 0);
+  });
   await check('No browser runtime exceptions', async () => assert.equal(pageErrors.length, 0, pageErrors.join('; ')));
   await check('No failed browser API requests', async () => assert.equal(apiFailures.length, 0, JSON.stringify(apiFailures)));
   await check('Configured database remains unchanged', async () => assert.deepEqual({ users: await admin.user.count(), jobs: await admin.job.count(), attempts: await admin.assessmentAttempt.count() }, sourceCounts));
