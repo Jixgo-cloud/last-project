@@ -75,7 +75,7 @@ async function clickText(text) {
   throw new Error('Button missing: ' + text);
 }
 async function goto(route) { await page.goto('http://localhost:3000' + route, { waitUntil: 'networkidle2', timeout: 30000 }); assert((await page.$eval('body', e => e.innerText)).length > 50, 'Page was blank: ' + route); }
-async function fill(selector, value) { await page.waitForSelector(selector); await page.$eval(selector, e => e.focus()); await page.keyboard.down('Control'); await page.keyboard.press('A'); await page.keyboard.up('Control'); await page.keyboard.type(value); }
+async function fill(selector, value) { await page.locator(selector).fill(value); assert.equal(await page.$eval(selector, el => el.value), value, 'The browser did not fill the requested field: ' + selector); }
 async function login(email, password, landing) {
   await goto('/login');
   await page.evaluate(() => localStorage.removeItem('smartcareer_token'));
