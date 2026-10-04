@@ -78,11 +78,13 @@ async function goto(route) { await page.goto('http://localhost:3000' + route, { 
 async function fill(selector, value) {
   await page.bringToFront();
   await page.locator(selector).click();
-  await page.keyboard.down('Control'); await page.keyboard.press('A'); await page.keyboard.up('Control');
-  await page.keyboard.type(value, { delay: 15 });
+  await page.focus(selector);
+  await page.waitForFunction(sel => document.activeElement === document.querySelector(sel), { timeout: 5000 }, selector);
+  await page.$eval(selector, el => el.select());
+  await page.keyboard.sendCharacter(value);
   const actual = await page.$eval(selector, el => el.value);
   if (actual !== value) {
-    report.inputFailure = await page.$eval(selector, el => ({ type: el.type, focused: document.activeElement === el, pageFocused: document.hasFocus(), actualLength: el.value.length, disabled: el.disabled, readOnly: el.readOnly }));
+    report.inputFailure = await page.$eval(selector, el => ({ type: el.type, focused: document.activeElement === el, pageFocused: document.hasFocus(), activeTag: document.activeElement?.tagName, inputCount: document.querySelectorAll('input').length, actualLength: el.value.length, disabled: el.disabled, readOnly: el.readOnly }));
     report.browserVersion = await browser.version();
   }
   assert.equal(actual, value, 'The browser did not fill the requested field: ' + selector);
