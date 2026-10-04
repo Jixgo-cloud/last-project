@@ -70,14 +70,19 @@ async function requestResult(endpoint, method = 'GET', body, token) {
 async function clickText(text) {
   await page.waitForFunction(text => Array.from(document.querySelectorAll('button')).some(b => !b.disabled && b.innerText.includes(text)), { timeout: 15000 }, text);
   for (const handle of await page.$$('button')) {
-    if (await handle.evaluate((el, text) => !el.disabled && el.innerText.includes(text), text)) { await handle.click(); return; }
+    if (await handle.evaluate((el, text) => !el.disabled && el.innerText.includes(text), text)) { await handle.focus(); await handle.press('Enter'); return; }
   }
   throw new Error('Button missing: ' + text);
 }
 async function goto(route) { await page.goto('http://localhost:3000' + route, { waitUntil: 'networkidle2', timeout: 30000 }); assert((await page.$eval('body', e => e.innerText)).length > 50, 'Page was blank: ' + route); }
+async function activate(selector) {
+  const handle = await page.waitForSelector(selector, { visible: true });
+  assert(!(await handle.evaluate(el => el.disabled)), 'Cannot activate a disabled button');
+  await handle.focus();
+  await handle.press('Enter');
+}
 async function fill(selector, value) {
   await page.bringToFront();
-  await page.locator(selector).click();
   await page.focus(selector);
   await page.waitForFunction(sel => document.activeElement === document.querySelector(sel), { timeout: 5000 }, selector);
   await page.$eval(selector, el => el.select());
@@ -95,7 +100,7 @@ async function login(email, password, landing) {
   await goto('/login');
   await fill('input[type="email"]', email);
   await fill('input[type="password"]', password);
-  await Promise.all([page.waitForFunction(route => location.pathname === route, { timeout: 20000 }, landing), page.click('button[type="submit"]')]);
+  await Promise.all([page.waitForFunction(route => location.pathname === route, { timeout: 20000 }, landing), activate('button[type="submit"]')]);
   assert.equal(await page.evaluate(() => localStorage.getItem('smartcareer_token')), null, 'Bearer token must not be stored in localStorage');
   const cookie = (await browser.cookies()).find(c => c.name === 'smartcareer_session');
   assert(cookie && cookie.httpOnly, 'UI login must persist an HttpOnly session');
@@ -111,6 +116,7 @@ async function run() {
   await freePort(3000); await freePort(4000); await freePort(2359);
   judgeFixture = require('./fixtures/judge0.cjs').createJudgeFixture();
   await new Promise(resolve => judgeFixture.listen(2359, '127.0.0.1', resolve));
+  report.interactionMode = 'Native browser keyboard input and button activation';
   report.judgeProvider = 'Deterministic fixture; no applicant code is executed locally';
   const sourceCounts = { users: await admin.user.count(), jobs: await admin.job.count(), attempts: await admin.assessmentAttempt.count() };
   await admin.$executeRawUnsafe(`CREATE DATABASE "${databaseName}"`); created = true;
@@ -173,7 +179,7 @@ async function run() {
     report.jobFormBeforeSubmit = await page.$$eval('form input, form textarea', fields => fields.map(el => ({ type: el.type, required: el.required, length: el.value.length, valid: el.checkValidity() })));
     assert(await page.$eval('form', form => form.checkValidity()), 'The filled job form is invalid before submission');
     await page.evaluate(() => { window.__regressionClicks = []; document.addEventListener('click', e => window.__regressionClicks.push({ tag: e.target.tagName, text: e.target.textContent?.slice(0,80), x: e.clientX, y: e.clientY }), true); });
-    await Promise.all([page.waitForFunction(() => location.pathname === '/company/dashboard'), page.locator('button[type="submit"]').click()]);
+    await Promise.all([page.waitForFunction(() => location.pathname === '/company/dashboard'), activate('button[type="submit"]')]);
     job = await db.job.findFirst({ where: { title: 'Regression Backend Engineer', companyId: company.id }, include: { skills: true } });
     assert(job && job.isActive && job.skills.length === 1, 'UI job was not persisted correctly');
     await screenshot('job-created');
@@ -213,7 +219,7 @@ async function run() {
   });
   let application;
   await check('Apply for job through UI and verify database', async () => {
-    await goto('/jobs/' + job.id); await page.waitForSelector('#btn-apply-job'); await page.click('#btn-apply-job'); await page.waitForSelector('form textarea');
+    await goto('/jobs/' + job.id); await page.waitForSelector('#btn-apply-job'); await activate('#btn-apply-job'); await page.waitForSelector('form textarea');
     await fill('form textarea', 'Regression cover letter.');
     await Promise.all([page.waitForResponse(res => res.url().endsWith('/applications/' + job.id + '/apply') && res.request().method() === 'POST'), clickText('ยืนยันการสมัคร')]);
     await goto('/jobs/' + job.id);
