@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiRequest } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { UserRole } from '@smartcareer/shared';
 import {
   Bell,
   CheckCircle2,
@@ -32,6 +33,12 @@ interface NotificationItem {
 export default function NotificationBell() {
   const { user } = useAuth();
   const router = useRouter();
+  const applicationListPath = user?.role === UserRole.COMPANY
+    ? '/company/applications'
+    : '/applications';
+  const applicationListLabel = user?.role === UserRole.COMPANY
+    ? 'ดูรายชื่อผู้สมัครทั้งหมด'
+    : 'ดูการสมัครงานทั้งหมด';
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -292,11 +299,11 @@ export default function NotificationBell() {
               type="button"
               onClick={() => {
                 setOpen(false);
-                router.push('/applications');
+                router.push(applicationListPath);
               }}
               className="w-full py-1.5 text-[11px] font-bold text-[#4f46e5] hover:bg-[#e8eaff] rounded-xl transition flex items-center justify-center gap-1 cursor-pointer"
             >
-              ดูการสมัครงานทั้งหมด <ChevronRight className="w-3.5 h-3.5" />
+              {applicationListLabel} <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
