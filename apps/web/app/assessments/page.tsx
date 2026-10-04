@@ -17,7 +17,7 @@ import {
   XCircle,
   RotateCcw,
 } from 'lucide-react';
-import { AssessmentType } from '@smartcareer/shared';
+import { AssessmentType, getAttemptPercentage, formatAttemptScore } from '@smartcareer/shared';
 
 export default function AssessmentsPage() {
   const { user } = useAuth();
@@ -135,15 +135,17 @@ export default function AssessmentsPage() {
                               : 'bg-amber-50 text-amber-700 border border-amber-200'
                           }`}
                         >
-                          {latestAttempt.passed ? (
+                          {getAttemptPercentage(latestAttempt) === null ? (
+                            <><Clock className="h-3.5 w-3.5" />{latestAttempt.status === 'IN_PROGRESS' ? 'กำลังทำข้อสอบ' : 'รอตรวจ'}</>
+                          ) : latestAttempt.passed ? (
                             <>
                               <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                              ผ่านแล้ว ({latestAttempt.percentage}%)
+                              ผ่านแล้ว ({formatAttemptScore(latestAttempt)})
                             </>
                           ) : (
                             <>
                               <XCircle className="h-3.5 w-3.5 text-amber-600" />
-                              ยังไม่ผ่าน ({latestAttempt.percentage}%)
+                              ยังไม่ผ่าน ({formatAttemptScore(latestAttempt)})
                             </>
                           )}
                         </span>
