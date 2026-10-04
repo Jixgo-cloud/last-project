@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useRef, useState, useEffect } from 'react';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
@@ -54,17 +54,30 @@ export default function JobsPage() {
   // Filters
   const [keyword, setKeyword] = useState('');
   const [location, setLocation] = useState('');
+  const keywordRef = useRef('');
+  const locationRef = useRef('');
   const [isRemote, setIsRemote] = useState(false);
   const [selectedSource, setSelectedSource] = useState<string>('ALL');
   const [selectedCareer, setSelectedCareer] = useState<string>('ALL');
   const [sortBy, setSortBy] = useState<string>('recent'); // 'recent' | 'matchScore' | 'salary'
   const [favoritesOnly, setFavoritesOnly] = useState(false);
 
-  const fetchJobs = async () => {
+  const fetchJobs = useCallback(async (filters: {
+    keyword: string;
+    location: string;
+    isRemote: boolean;
+    selectedSource: string;
+    selectedCareer: string;
+    sortBy: string;
+    favoritesOnly: boolean;
+    isSignedIn: boolean;
+    page: number;
+    limit: number;
+  }) => {
     try {
       setLoading(true);
-      if (favoritesOnly) {
-        if (!user) {
+      if (filters.favoritesOnly) {
+        if (!filters.isSignedIn) {
           setJobs([]);
           setTotal(0);
           setTotalPages(1);
@@ -78,14 +91,14 @@ export default function JobsPage() {
       }
 
       const params = new URLSearchParams();
-      if (keyword) params.append('keyword', keyword);
-      if (location) params.append('location', location);
-      if (isRemote) params.append('isRemote', 'true');
-      if (selectedSource !== 'ALL') params.append('source', selectedSource);
-      if (selectedCareer !== 'ALL') params.append('career', selectedCareer);
-      if (sortBy) params.append('sortBy', sortBy);
-      params.append('page', String(page));
-      params.append('limit', String(limit));
+      if (filters.keyword) params.append('keyword', filters.keyword);
+      if (filters.location) params.append('location', filters.location);
+      if (filters.isRemote) params.append('isRemote', 'true');
+      if (filters.selectedSource !== 'ALL') params.append('source', filters.selectedSource);
+      if (filters.selectedCareer !== 'ALL') params.append('career', filters.selectedCareer);
+      if (filters.sortBy) params.append('sortBy', filters.sortBy);
+      params.append('page', String(filters.page));
+      params.append('limit', String(filters.limit));
 
       const data = await apiRequest(`/jobs?${params.toString()}`);
       setJobs(data.jobs || []);
@@ -96,11 +109,22 @@ export default function JobsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchJobs();
-  }, [page, limit, isRemote, selectedSource, selectedCareer, sortBy, favoritesOnly]);
+    void fetchJobs({
+      keyword: keywordRef.current,
+      location: locationRef.current,
+      isRemote,
+      selectedSource,
+      selectedCareer,
+      sortBy,
+      favoritesOnly,
+      isSignedIn: !!user,
+      page,
+      limit,
+    });
+  }, [fetchJobs, page, limit, isRemote, selectedSource, selectedCareer, sortBy, favoritesOnly, user]);
 
   const handleToggleFavorite = async (e: React.MouseEvent, jobId: string) => {
     e.preventDefault();
@@ -126,7 +150,18 @@ export default function JobsPage() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setPage(1);
-    fetchJobs();
+    void fetchJobs({
+      keyword,
+      location,
+      isRemote,
+      selectedSource,
+      selectedCareer,
+      sortBy,
+      favoritesOnly,
+      isSignedIn: !!user,
+      page: 1,
+      limit,
+    });
   };
 
   const handleSourceTab = (source: string) => {
@@ -310,7 +345,10 @@ export default function JobsPage() {
             <input
               type="text"
               value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
+              onChange={(e) => {
+                keywordRef.current = e.target.value;
+                setKeyword(e.target.value);
+              }}
               placeholder="ค้นหาชื่อตำแหน่ง, สกิล (React, Node.js, Python), หรือชื่อบริษัท..."
               className="w-full pl-10 pr-3 py-2 text-xs sm:text-sm bg-transparent outline-none placeholder:text-slate-400"
             />
@@ -321,7 +359,10 @@ export default function JobsPage() {
             <input
               type="text"
               value={location}
-              onChange={(e) => setLocation(e.target.value)}
+              onChange={(e) => {
+                locationRef.current = e.target.value;
+                setLocation(e.target.value);
+              }}
               placeholder="สถานที่ (เช่น กรุงเทพฯ, BTS)"
               className="w-full pl-8 pr-3 py-2 text-xs sm:text-sm bg-transparent outline-none placeholder:text-slate-400"
             />
@@ -364,7 +405,9 @@ export default function JobsPage() {
                   setSelectedCareer('ALL');
                   setSelectedSource('ALL');
                   setKeyword('');
+                  keywordRef.current = '';
                   setLocation('');
+                  locationRef.current = '';
                   setIsRemote(false);
                   setPage(1);
                 }}

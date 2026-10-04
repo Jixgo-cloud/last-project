@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiRequest } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
@@ -45,7 +45,7 @@ export default function NotificationBell() {
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     if (!user) return;
     try {
       const data = await apiRequest<NotificationItem[]>('/notifications?limit=25');
@@ -55,7 +55,7 @@ export default function NotificationBell() {
     } catch (err) {
       // Fail silently for background polling
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -64,7 +64,7 @@ export default function NotificationBell() {
     // Poll every 15 seconds for real-time notification experience
     const interval = setInterval(fetchNotifications, 15000);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, fetchNotifications]);
 
   // Click outside to close
   useEffect(() => {

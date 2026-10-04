@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useRef, useState, useEffect } from 'react';
+import Image from 'next/image';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useAuth } from '@/lib/auth-context';
@@ -30,6 +31,7 @@ export default function CoursesPage() {
 
   // Filters
   const [keyword, setKeyword] = useState('');
+  const keywordRef = useRef('');
   const [selectedProvider, setSelectedProvider] = useState<string>('ALL');
   const [selectedCareer, setSelectedCareer] = useState<string>('ALL');
   const [selectedSkillId, setSelectedSkillId] = useState<string>('ALL');
@@ -51,14 +53,19 @@ export default function CoursesPage() {
   }, [user]);
 
   // Fetch courses whenever filters change
-  const fetchFilteredCourses = async () => {
+  const fetchFilteredCourses = useCallback(async (filters: {
+    keyword: string;
+    provider: string;
+    career: string;
+    skillId: string;
+  }) => {
     try {
       setCoursesLoading(true);
       const params = new URLSearchParams();
-      if (keyword.trim()) params.append('keyword', keyword.trim());
-      if (selectedProvider !== 'ALL') params.append('provider', selectedProvider);
-      if (selectedCareer !== 'ALL') params.append('career', selectedCareer);
-      if (selectedSkillId !== 'ALL') params.append('skillId', selectedSkillId);
+      if (filters.keyword.trim()) params.append('keyword', filters.keyword.trim());
+      if (filters.provider !== 'ALL') params.append('provider', filters.provider);
+      if (filters.career !== 'ALL') params.append('career', filters.career);
+      if (filters.skillId !== 'ALL') params.append('skillId', filters.skillId);
 
       const courses = await apiRequest(`/recommendations/courses?${params.toString()}`);
       setAllCourses(courses || []);
@@ -67,19 +74,30 @@ export default function CoursesPage() {
     } finally {
       setCoursesLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchFilteredCourses();
-  }, [selectedProvider, selectedCareer, selectedSkillId]);
+    void fetchFilteredCourses({
+      keyword: keywordRef.current,
+      provider: selectedProvider,
+      career: selectedCareer,
+      skillId: selectedSkillId,
+    });
+  }, [fetchFilteredCourses, selectedProvider, selectedCareer, selectedSkillId]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchFilteredCourses();
+    void fetchFilteredCourses({
+      keyword,
+      provider: selectedProvider,
+      career: selectedCareer,
+      skillId: selectedSkillId,
+    });
   };
 
   const handleResetFilters = () => {
     setKeyword('');
+    keywordRef.current = '';
     setSelectedProvider('ALL');
     setSelectedCareer('ALL');
     setSelectedSkillId('ALL');
@@ -247,7 +265,10 @@ export default function CoursesPage() {
                     <input
                       type="text"
                       value={keyword}
-                      onChange={(e) => setKeyword(e.target.value)}
+                      onChange={(e) => {
+                        keywordRef.current = e.target.value;
+                        setKeyword(e.target.value);
+                      }}
                       placeholder="ค้นหาชื่อคอร์ส, หัวข้อ หรือเทคโนโลยี (เช่น Next.js, Docker, Microservices, Python)..."
                       className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-transparent outline-none placeholder:text-slate-400"
                     />
@@ -371,7 +392,7 @@ export default function CoursesPage() {
                         {/* Course Thumbnail */}
                         <div className="h-44 w-full bg-[#f4f5fa] relative overflow-hidden">
                           {c.thumbnailUrl ? (
-                            <img src={c.thumbnailUrl} alt={c.title} className="h-full w-full object-cover" />
+                            <Image src={c.thumbnailUrl} alt={c.title} width={640} height={352} unoptimized className="h-full w-full object-cover" />
                           ) : (
                             <div className="h-full w-full flex items-center justify-center bg-gradient-to-tr from-[#4f46e5] to-[#6366f1] text-white">
                               <BookOpen className="h-10 w-10 opacity-70" />

@@ -10,6 +10,7 @@ const puppeteer = require('puppeteer-core');
 const dotenv = require('dotenv');
 
 const root = path.resolve(__dirname, '..');
+const keepManualUi = process.argv.includes('--manual-ui');
 const configured = dotenv.parse(fs.readFileSync(path.join(root, '.env')));
 const sourceUrl = new URL(configured.DATABASE_URL);
 assert(['localhost', '127.0.0.1', '[::1]'].includes(sourceUrl.hostname), 'Regression requires a local PostgreSQL server');
@@ -25,6 +26,7 @@ const results = [];
 const children = [];
 const logs = [];
 const apiFailures = [];
+const expectedApiResponses = new Map();
 let browser;
 let page;
 let created = false;
@@ -59,6 +61,10 @@ async function request(endpoint, method = 'GET', body, token) {
   const data = await res.json();
   assert(res.ok, `${method} ${endpoint} returned ${res.status}: ${typeof data.message === 'string' ? data.message : 'request failed'}`);
   return data;
+}
+async function requestResult(endpoint, method = 'GET', body, token) {
+  const res = await fetch('http://localhost:4000/api' + endpoint, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(90000) });
+  return { status: res.status, data: await res.json() };
 }
 async function clickText(text) {
   await page.waitForFunction(text => Array.from(document.querySelectorAll('button')).some(b => !b.disabled && b.innerText.includes(text)), { timeout: 15000 }, text);
@@ -99,7 +105,7 @@ async function run() {
   const skill = await db.skill.create({ data: { name: 'JavaScript', slug: 'javascript', category: 'BACKEND' } });
   await db.candidateSkill.create({ data: { candidateId: candidate.candidateProfile.id, skillId: skill.id, practicalScore: 80 } });
   const theory = await db.assessment.create({ data: { title: 'Regression Theory', slug: 'regression-theory', type: 'THEORY', skillId: skill.id, questions: { create: { title: 'Regression choice', prompt: 'Choose the correct regression answer.', points: 10, choices: { create: [{ text: 'Correct regression answer', isCorrect: true, order: 0 }, { text: 'Incorrect regression answer', isCorrect: false, order: 1 }] } } } }, include: { questions: { include: { choices: true } } } });
-  const coding = await db.assessment.create({ data: { title: 'Regression Coding', slug: 'regression-coding', type: 'PRACTICAL_CODING', skillId: skill.id, questions: { create: { title: 'Add two numbers', prompt: 'Implement function solution(a, b) returning their sum.', points: 100, starterCode: 'function solution(a, b) { return a + b; }', testCases: [{ input: '[2,3]', expectedOutput: '5', isHidden: false }] } } }, include: { questions: true } });
+  const coding = await db.assessment.create({ data: { title: 'Regression Coding', slug: 'regression-coding', type: 'PRACTICAL_CODING', skillId: skill.id, questions: { create: { title: 'Add two numbers', prompt: 'Implement function solution(a, b) returning their sum.', points: 100, starterCode: 'function solution(a, b) { return a + b; }', testCases: [{ input: '[2,3]', expectedOutput: '5', isHidden: false }, { input: '[10,20]', expectedOutput: '30', isHidden: true }] } } }, include: { questions: true } });
   const apiChild = launch('api', [path.join(root, 'apps/api/dist/main.js')], root);
   await waitReady('http://localhost:4000/api/health', apiChild);
   const webChild = launch('web', [path.join(root, 'node_modules/next/dist/bin/next'), 'start', '-p', '3000'], path.join(root, 'apps/web'), { NODE_ENV: 'production' });
@@ -109,11 +115,27 @@ async function run() {
   page = await browser.newPage();
   const pageErrors = [];
   page.on('pageerror', error => pageErrors.push(error.message));
-  page.on('response', response => { if (response.url().startsWith('http://localhost:4000/api') && response.status() >= 400) apiFailures.push({ path: new URL(response.url()).pathname, status: response.status() }); });
+  page.on('response', response => {
+    if (!response.url().startsWith('http://localhost:4000/api') || response.status() < 400) return;
+    const requestPath = new URL(response.url()).pathname;
+    if (expectedApiResponses.get(requestPath) === response.status()) return;
+    apiFailures.push({ path: requestPath, status: response.status() });
+  });
   page.on('dialog', dialog => dialog.accept());
   await check('Home and login pages render', async () => { await goto('/'); await screenshot('home'); await goto('/login'); assert(await page.$('input[type="email"]')); });
   let companyToken;
+  let invalidLegacyAssessment;
   await check('Company login through UI', async () => { companyToken = await login('hr@techcorp.co.th', 'password123', '/company/dashboard'); await screenshot('company-login'); assert.equal((await request('/auth/me', 'GET', undefined, companyToken)).role, 'COMPANY'); });
+  await check('Company API rejects placeholder theory choices', async () => {
+    const result = await requestResult('/company/assessments', 'POST', {
+      title: 'Invalid regression assessment', type: 'THEORY', timeLimitMinutes: 30, passingScore: 70,
+      questions: [{ title: 'Question', prompt: 'Choose the right answer.', points: 10, choices: [
+        { text: 'ตัวเลือก 1', isCorrect: true }, { text: 'ตัวเลือก 2', isCorrect: false },
+      ] }],
+    }, companyToken);
+    assert.equal(result.status, 400, 'Placeholder choices should be rejected by the API');
+    assert.equal(await db.assessment.count({ where: { title: 'Invalid regression assessment' } }), 0, 'Invalid assessment was saved');
+  });
   let job;
   await check('Create job through UI and verify database', async () => {
     await goto('/company/jobs/new');
@@ -136,6 +158,28 @@ async function run() {
   });
   let candidateToken;
   await check('Candidate login through UI', async () => { candidateToken = await login('candidate@smartcareer.dev', 'password123', '/profile'); assert.equal((await request('/auth/me', 'GET', undefined, candidateToken)).role, 'CANDIDATE'); await screenshot('candidate-login'); });
+  await check('Invalid legacy assessment cannot start a timed attempt', async () => {
+    invalidLegacyAssessment = await db.assessment.create({
+      data: {
+        title: 'Invalid Legacy Theory', slug: 'invalid-legacy-theory', type: 'THEORY', skillId: skill.id,
+        questions: { create: { title: 'Placeholder question', prompt: 'Choose the right answer.', points: 10,
+          choices: { create: [{ text: 'ตัวเลือก 1', isCorrect: true }, { text: 'ตัวเลือก 2', isCorrect: false }] } } },
+      },
+    });
+    const result = await requestResult(`/assessments/${invalidLegacyAssessment.id}/start`, 'POST', {}, candidateToken);
+    assert.equal(result.status, 400, 'Invalid stored content should be rejected before an attempt begins');
+    assert.equal(await db.assessmentAttempt.count({ where: { assessmentId: invalidLegacyAssessment.id } }), 0, 'Invalid assessment created a timed attempt');
+  });
+  await check('Candidate sees a clear message for an invalid legacy assessment', async () => {
+    expectedApiResponses.set(`/api/assessments/${invalidLegacyAssessment.id}/start`, 400);
+    await goto('/assessments/' + invalidLegacyAssessment.id);
+    const body = await page.$eval('body', el => el.innerText);
+    assert(body.includes('ยังเปิดแบบทดสอบนี้ไม่ได้'), 'The assessment page did not explain why the test was blocked');
+    assert(body.includes('เปลี่ยนข้อความตัวอย่างให้เป็นตัวเลือกคำตอบจริง'), 'The assessment page did not show a useful repair message');
+    assert(!body.includes('เวลาที่เหลือ'), 'The page started a timer for an invalid assessment');
+    assert.equal(await db.assessmentAttempt.count({ where: { assessmentId: invalidLegacyAssessment.id } }), 0, 'The UI created an attempt for invalid content');
+    await screenshot('invalid-assessment-blocked');
+  });
   let application;
   await check('Apply for job through UI and verify database', async () => {
     await goto('/jobs/' + job.id); await page.waitForSelector('#btn-apply-job'); await page.click('#btn-apply-job'); await page.waitForSelector('form textarea');
@@ -150,13 +194,63 @@ async function run() {
     const reapplied = await request('/applications/' + job.id + '/apply', 'POST', { coverLetter: 'Regression second round' }, candidateToken); assert.equal(reapplied.roundNumber, 2); application = reapplied;
     await goto('/applications'); assert((await page.$eval('body', el => el.innerText)).includes('Regression Backend Engineer')); await screenshot('application-tracking');
   });
+  let companyAssessment;
+  let companyAssessmentQuestion;
+  await check('Company assessment is restricted to assigned applicants', async () => {
+    companyAssessment = await db.assessment.create({
+      data: {
+        companyId: company.id, title: 'Regression Company Assessment', slug: 'regression-company-assessment',
+        type: 'PRACTICAL_CODING', skillId: skill.id, timeLimitMinutes: 30,
+        questions: { create: {
+          title: 'Return a greeting', prompt: 'Write a solution that returns a greeting string.', points: 10,
+          evaluationMethod: 'OPEN_ENDED', starterCode: 'function solution() { return "Hello"; }',
+        } },
+      }, include: { questions: true },
+    });
+    companyAssessmentQuestion = companyAssessment.questions[0];
+    const denied = await requestResult(`/assessments/${companyAssessment.id}`, 'GET', undefined, candidateToken);
+    assert.equal(denied.status, 403, 'Unassigned candidate should not read a company assessment');
+
+    await db.jobApplication.update({ where: { id: application.id }, data: { assignedAssessmentId: companyAssessment.id } });
+    const allowed = await requestResult(`/assessments/${companyAssessment.id}`, 'GET', undefined, candidateToken);
+    assert.equal(allowed.status, 200, 'Assigned candidate should read the assessment');
+    const started = await requestResult(`/assessments/${companyAssessment.id}/start`, 'POST', {}, candidateToken);
+    assert([200, 201].includes(started.status), `Assigned candidate could not start the assessment: ${JSON.stringify(started.data)}`);
+
+    const event = await requestResult(`/assessments/${companyAssessment.id}/integrity-event`, 'POST', {
+      attemptId: started.data.id, event: { type: 'TAB_BLUR' },
+    }, candidateToken);
+    assert([200, 201].includes(event.status), 'Browser-reported visibility event was not recorded');
+    const companyAttempts = await request(`/company/assessment-attempts?assessmentId=${companyAssessment.id}`, 'GET', undefined, companyToken);
+    assert.equal(companyAttempts[0]?.integritySummary?.riskLevel, 'REVIEW', 'Browser telemetry must request contextual review instead of labeling a candidate suspicious');
+
+    const unrelatedQuestion = await requestResult(`/assessments/${companyAssessment.id}/run-code`, 'POST', {
+      attemptId: started.data.id, questionId: coding.questions[0].id, sourceCode: 'function solution() { return 1; }',
+    }, candidateToken);
+    assert.equal(unrelatedQuestion.status, 403, 'A code-run request must not execute a question outside its attempt');
+
+    const changedContent = await requestResult(`/company/assessments/${companyAssessment.id}`, 'PUT', {
+      title: companyAssessment.title, type: companyAssessment.type, timeLimitMinutes: 30, passingScore: 70,
+      questions: [{ id: companyAssessmentQuestion.id, title: companyAssessmentQuestion.title,
+        prompt: 'Changed scoring prompt after the candidate started.', points: 10,
+        evaluationMethod: 'OPEN_ENDED', starterCode: companyAssessmentQuestion.starterCode,
+        testCases: null, rubric: null, choices: [] }],
+    }, companyToken);
+    assert.equal(changedContent.status, 400, 'Question content must stay fixed after the first attempt');
+  });
   await check('Theory selection autosaves and integrity event persists', async () => {
     await goto('/assessments/' + theory.id); await clickText('Correct regression answer');
-    await page.evaluate(() => window.dispatchEvent(new Event('blur'))); await pause(4000);
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }); await pause(4000);
     const attempt = await db.assessmentAttempt.findFirst({ where: { assessmentId: theory.id, candidateId: candidate.candidateProfile.id } });
     assert(attempt && attempt.draftCode, 'Theory draft was not persisted after selecting an answer');
     assert.equal(attempt.draftCode.selectedChoices[theory.questions[0].id], theory.questions[0].choices.find(c => c.isCorrect).id);
-    assert(Array.isArray(attempt.integrityEvents) && attempt.integrityEvents.some(e => e.type === 'WINDOW_BLUR'), 'Integrity event was not persisted');
+    assert(Array.isArray(attempt.integrityEvents) && attempt.integrityEvents.some(e => e.type === 'TAB_BLUR'), 'Hidden-page integrity event was not persisted');
+    assert(!attempt.integrityEvents.some(e => e.type === 'WINDOW_BLUR'), 'Window blur should not be counted as leaving the assessment');
     await goto('/assessments/' + theory.id);
     const restoredChoice = await page.waitForFunction(() => [...document.querySelectorAll('button')].some(b => b.innerText.includes('Correct regression answer') && b.className.includes('border-[#6366f1]')));
     assert(restoredChoice, 'Theory answer was not restored after reloading');
@@ -199,6 +293,12 @@ async function run() {
     process.exitCode = 1;
   } finally {
     if (browser) await browser.close().catch(() => {});
+    if (keepManualUi && report.verdict === 'PASS') {
+      console.log('Manual UI session is ready at http://localhost:3000');
+      console.log('Local test accounts: hr@techcorp.co.th / password123 and candidate@smartcareer.dev / password123');
+      console.log('Press Ctrl+C when the manual UI checks are complete; this will stop both servers and remove the isolated database.');
+      await new Promise(resolve => process.once('SIGINT', resolve));
+    }
     for (const child of children.reverse()) { if (child.exitCode === null) { child.kill(); await Promise.race([new Promise(resolve => child.once('exit', resolve)), pause(3000)]); } }
     for (const fd of logs) fs.closeSync(fd);
     await db.$disconnect();

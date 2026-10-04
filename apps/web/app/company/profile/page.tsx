@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import Image from 'next/image';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { apiRequest } from '@/lib/api';
@@ -311,9 +312,12 @@ export default function CompanyProfilePage() {
               <div className="p-5 rounded-2xl bg-[#f8fafc] border border-slate-200/80 flex flex-col sm:flex-row items-center gap-5">
                 <div className="h-20 w-20 rounded-2xl bg-white border-2 border-slate-200 flex items-center justify-center overflow-hidden shrink-0 shadow-sm relative group">
                   {logoUrl ? (
-                    <img
+                    <Image
                       src={logoUrl}
                       alt="Company Logo Preview"
+                      width={80}
+                      height={80}
+                      unoptimized
                       className="h-full w-full object-cover"
                     />
                   ) : (

@@ -11,7 +11,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Judge0Client, TestCase } from './judge0.client';
 import { AiEvaluatorService } from './ai-evaluator.service';
 import {
+  ApplicationStatus,
+  AssessmentType,
   AttemptStatus,
+  getAssessmentValidationError,
   QuestionEvaluationMethod,
   AssessmentReviewStatus,
   CandidateEarnedBadge,
@@ -21,6 +24,7 @@ import {
 export class AssessmentsService {
   private readonly logger = new Logger(AssessmentsService.name);
   private readonly runCodeRateLimit = new Map<string, number>();
+  private readonly integrityEventRateLimit = new Map<string, number>();
 
   constructor(
     private prisma: PrismaService,
@@ -42,7 +46,7 @@ export class AssessmentsService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, candidateUserId: string) {
     const assessment = await this.prisma.assessment.findUnique({
       where: { id },
       include: {
@@ -62,6 +66,8 @@ export class AssessmentsService {
     if (!assessment) {
       throw new NotFoundException('Assessment not found');
     }
+    if (!assessment.isActive) throw new NotFoundException('Assessment not available');
+    await this.assertCandidateAccess(assessment, candidateUserId);
 
     // STRICT ZERO-LEAKAGE: Mask hidden test cases completely and omit solutionCode
     const sanitizedQuestions = assessment.questions.map((q) => {
@@ -134,10 +140,21 @@ export class AssessmentsService {
 
     const assessment = await this.prisma.assessment.findUnique({
       where: { id: assessmentId },
-      include: { questions: true },
+      include: { questions: { include: { choices: true } } },
     });
     if (!assessment || !assessment.isActive) {
       throw new NotFoundException('Assessment not available');
+    }
+    await this.assertCandidateAccess(assessment, candidateUserId);
+    const validationError = getAssessmentValidationError({
+      title: assessment.title,
+      type: assessment.type,
+      timeLimitMinutes: assessment.timeLimitMinutes,
+      passingScore: assessment.passingScore,
+      questions: assessment.questions,
+    });
+    if (validationError) {
+      throw new BadRequestException(`แบบทดสอบนี้ยังไม่พร้อมให้เริ่มทำ: ${validationError}`);
     }
 
     // Security & Integrity: Check if an attempt is already IN_PROGRESS for this candidate
@@ -250,7 +267,7 @@ export class AssessmentsService {
   }
 
   /**
-   * Log an integrity event (e.g. Tab switch / Blur)
+   * Log a browser-reported page visibility event.
    */
   async logIntegrityEvent(
     attemptId: string,
@@ -258,21 +275,41 @@ export class AssessmentsService {
     event: { type: string; timestamp?: string; details?: any },
   ) {
     const attempt = await this.validateAttemptOwnership(attemptId, candidateUserId);
-    const existingEvents: any[] = Array.isArray(attempt.integrityEvents)
-      ? (attempt.integrityEvents as any[])
-      : [];
+    if (attempt.status !== AttemptStatus.IN_PROGRESS) {
+      throw new BadRequestException('บันทึกเหตุการณ์ได้เฉพาะระหว่างทำแบบทดสอบ');
+    }
+    if (!event || !['TAB_BLUR', 'TAB_FOCUS'].includes(event.type)) {
+      throw new BadRequestException('ประเภทเหตุการณ์ไม่ถูกต้อง');
+    }
 
-    const updatedEvents = [
-      ...existingEvents,
-      {
-        ...event,
-        timestamp: event.timestamp || new Date().toISOString(),
-      },
-    ];
+    const now = Date.now();
+    const previousBlurAt = this.integrityEventRateLimit.get(attemptId) || 0;
+    if (event.type === 'TAB_BLUR' && now - previousBlurAt < 750) {
+      throw new HttpException('Please wait before recording another page-hidden event.', HttpStatus.TOO_MANY_REQUESTS);
+    }
+    if (event.type === 'TAB_BLUR') this.integrityEventRateLimit.set(attemptId, now);
 
-    return this.prisma.assessmentAttempt.update({
-      where: { id: attemptId },
-      data: { integrityEvents: updatedEvents },
+    return this.prisma.$transaction(async (tx) => {
+      // Serialize appends so simultaneous hide/focus events cannot overwrite each other.
+      await tx.$queryRaw`SELECT "id" FROM "assessment_attempts" WHERE "id" = ${attemptId} FOR UPDATE`;
+      const current = await tx.assessmentAttempt.findUnique({
+        where: { id: attemptId },
+        select: { integrityEvents: true },
+      });
+      if (!current) throw new NotFoundException('Assessment attempt not found');
+
+      const existingEvents: any[] = Array.isArray(current.integrityEvents)
+        ? (current.integrityEvents as any[])
+        : [];
+      return tx.assessmentAttempt.update({
+        where: { id: attemptId },
+        data: {
+          integrityEvents: [
+            ...existingEvents,
+            { type: event.type, timestamp: new Date().toISOString() },
+          ],
+        },
+      });
     });
   }
 
@@ -280,7 +317,33 @@ export class AssessmentsService {
    * Run code against VISIBLE test cases only (Run Code button)
    * With 3s Rate Limit and Strict Judge0 execution
    */
-  async testRunCode(questionId: string, candidateUserId: string, sourceCode: string) {
+  async testRunCode(
+    assessmentId: string,
+    attemptId: string,
+    questionId: string,
+    candidateUserId: string,
+    sourceCode: string,
+  ) {
+    const attempt = await this.validateAttemptOwnership(attemptId, candidateUserId);
+    if (attempt.assessmentId !== assessmentId) {
+      throw new ForbiddenException('This question does not belong to the active assessment');
+    }
+    if (attempt.status !== AttemptStatus.IN_PROGRESS) {
+      throw new BadRequestException('แบบทดสอบนี้ไม่ได้อยู่ในสถานะที่ทำต่อได้');
+    }
+    if (attempt.assessment.type !== AssessmentType.PRACTICAL_CODING) {
+      throw new BadRequestException('การรันโค้ดใช้ได้เฉพาะแบบทดสอบเขียนโค้ด');
+    }
+    if (Date.now() - attempt.startedAt.getTime() > attempt.assessment.timeLimitMinutes * 60_000 + 30_000) {
+      throw new BadRequestException('หมดเวลาทำแบบทดสอบแล้ว');
+    }
+    if (typeof sourceCode !== 'string' || !sourceCode.trim() || sourceCode.length > 100_000) {
+      throw new BadRequestException('กรุณากรอกโค้ดไม่เกิน 100,000 ตัวอักษร');
+    }
+
+    const question = attempt.assessment.questions.find((item) => item.id === questionId);
+    if (!question) throw new ForbiddenException('This question is not part of the active attempt');
+
     const candidate = await this.prisma.candidateProfile.findUnique({
       where: { userId: candidateUserId },
     });
@@ -297,11 +360,6 @@ export class AssessmentsService {
       );
     }
     this.runCodeRateLimit.set(candidate.id, now);
-
-    const question = await this.prisma.question.findUnique({
-      where: { id: questionId },
-    });
-    if (!question) throw new NotFoundException('Question not found');
 
     // Production Control: Automatic Language Detection (Python 3.11 = 71, JS = 63)
     const langId = this.detectLanguageId(sourceCode, question.starterCode);
@@ -1031,7 +1089,7 @@ export class AssessmentsService {
 
   getIntegritySummary(integrityEvents: any): {
     tabSwitchCount: number;
-    riskLevel: 'NORMAL' | 'SUSPICIOUS' | 'HIGH_RISK';
+    riskLevel: 'NORMAL' | 'REVIEW';
     events: any[];
   } {
     const events: any[] = Array.isArray(integrityEvents) ? integrityEvents : [];
@@ -1039,12 +1097,8 @@ export class AssessmentsService {
       (e) => e.type === 'TAB_BLUR' || e.eventType === 'TAB_BLUR',
     ).length;
 
-    let riskLevel: 'NORMAL' | 'SUSPICIOUS' | 'HIGH_RISK' = 'NORMAL';
-    if (tabSwitchCount >= 8) {
-      riskLevel = 'HIGH_RISK';
-    } else if (tabSwitchCount >= 3) {
-      riskLevel = 'SUSPICIOUS';
-    }
+    // These events originate in the candidate's browser and cannot prove misconduct.
+    const riskLevel: 'NORMAL' | 'REVIEW' = tabSwitchCount > 0 ? 'REVIEW' : 'NORMAL';
 
     return { tabSwitchCount, riskLevel, events };
   }
@@ -1075,6 +1129,32 @@ export class AssessmentsService {
     }
 
     return attempt;
+  }
+
+  private async assertCandidateAccess(assessment: { id: string; companyId: string | null }, candidateUserId: string) {
+    if (!assessment.companyId) return;
+
+    const candidate = await this.prisma.candidateProfile.findUnique({
+      where: { userId: candidateUserId },
+      select: { id: true },
+    });
+    if (!candidate) throw new NotFoundException('Candidate profile not found');
+
+    const application = await this.prisma.jobApplication.findFirst({
+      where: {
+        candidateId: candidate.id,
+        status: { notIn: [ApplicationStatus.CANCELLED, ApplicationStatus.REJECTED] },
+        OR: [
+          { assignedAssessmentId: assessment.id },
+          { job: { companyId: assessment.companyId, customAssessmentId: assessment.id } },
+        ],
+      },
+      select: { id: true },
+    });
+
+    if (!application) {
+      throw new ForbiddenException('แบบทดสอบนี้เปิดให้เฉพาะผู้สมัครที่บริษัทมอบหมายเท่านั้น');
+    }
   }
 
   private async updateCandidateSkillScoreInTx(

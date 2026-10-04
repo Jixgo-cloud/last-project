@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Image from 'next/image';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useAuth } from '@/lib/auth-context';
@@ -132,9 +133,11 @@ export default function JobDetailPage() {
   const [applied, setApplied] = useState(false);
   const [userApplication, setUserApplication] = useState<any>(null);
 
-  const fetchJobDetails = () => {
+  const fetchJobDetails = useCallback(() => {
     if (!id) return;
     setLoading(true);
+    setUserApplication(null);
+    setApplied(false);
     const endpoint = user ? `/jobs/${id}/detail` : `/jobs/${id}`;
     apiRequest(endpoint)
       .then((data) => {
@@ -163,11 +166,11 @@ export default function JobDetailPage() {
         })
         .catch(() => {});
     }
-  };
+  }, [id, user]);
 
   useEffect(() => {
     fetchJobDetails();
-  }, [id, user]);
+  }, [fetchJobDetails]);
 
   const handleToggleFavorite = async () => {
     if (!user) {
@@ -269,10 +272,12 @@ export default function JobDetailPage() {
                 <div className="flex items-center gap-4">
                   <div className="h-14 w-14 sm:h-16 sm:w-16 rounded-2xl bg-[#f4f5fa] border border-slate-200/80 flex items-center justify-center overflow-hidden flex-shrink-0">
                     {job.companyLogoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <Image
                         src={job.companyLogoUrl}
                         alt={job.companyName}
+                        width={64}
+                        height={64}
+                        unoptimized
                         className="h-full w-full object-contain p-2"
                         onError={(e) => {
                           e.currentTarget.style.display = 'none';
@@ -652,9 +657,12 @@ export default function JobDetailPage() {
                     {/* Course Thumbnail */}
                     <div className="relative h-36 w-full rounded-xl overflow-hidden bg-slate-100 mb-3 border border-slate-200/60">
                       {course.thumbnailUrl ? (
-                        <img
+                        <Image
                           src={course.thumbnailUrl}
                           alt={course.title}
+                          width={640}
+                          height={360}
+                          unoptimized
                           className="h-full w-full object-cover group-hover:scale-105 transition duration-300"
                         />
                       ) : (

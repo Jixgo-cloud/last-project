@@ -35,6 +35,7 @@ import {
   QuestionDifficulty,
   QuestionEvaluationMethod,
   FeedbackVisibility,
+  getAssessmentValidationError,
 } from '@smartcareer/shared';
 
 export default function AdminAssessmentsPage() {
@@ -136,7 +137,7 @@ export default function AdminAssessmentsPage() {
     setFormFeedbackVisibility(FeedbackVisibility.IMMEDIATE);
     setFormQuestions([
       {
-        title: 'คำถามข้อที่ 1',
+        title: '',
         prompt: '',
         difficulty: QuestionDifficulty.MEDIUM,
         points: 25,
@@ -147,14 +148,14 @@ export default function AdminAssessmentsPage() {
         rubric: '',
         explanation: '',
         testCases: [
-          { input: '2, 3', expectedOutput: '5', isHidden: false },
-          { input: '10, 20', expectedOutput: '30', isHidden: true },
+          { input: '', expectedOutput: '', isHidden: false },
+          { input: '', expectedOutput: '', isHidden: true },
         ],
         choices: [
-          { text: 'ตัวเลือก A', isCorrect: true },
-          { text: 'ตัวเลือก B', isCorrect: false },
-          { text: 'ตัวเลือก C', isCorrect: false },
-          { text: 'ตัวเลือก D', isCorrect: false },
+          { text: '', isCorrect: true },
+          { text: '', isCorrect: false },
+          { text: '', isCorrect: false },
+          { text: '', isCorrect: false },
         ],
       },
     ]);
@@ -397,72 +398,16 @@ export default function AdminAssessmentsPage() {
 
   const handleSaveAssessment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formTitle.trim()) {
-      alert('กรุณาระบุชื่อชุดแบบทดสอบ');
+    const validationError = getAssessmentValidationError({
+      title: formTitle,
+      type: formType,
+      timeLimitMinutes: formTimeLimit,
+      passingScore: formPassingScore,
+      questions: formQuestions,
+    });
+    if (validationError) {
+      alert(validationError);
       return;
-    }
-    if (formQuestions.length === 0) {
-      alert('กรุณาเพิ่มข้อสอบอย่างน้อย 1 ข้อ');
-      return;
-    }
-
-    // Strict Validation: THEORY
-    if (formType === AssessmentType.THEORY) {
-      for (let i = 0; i < formQuestions.length; i++) {
-        const q = formQuestions[i];
-        if (!q.title?.trim() && !q.prompt?.trim()) {
-          alert(`ข้อที่ ${i + 1}: กรุณาระบุหัวข้อหรือคำถาม`);
-          return;
-        }
-        if (!q.choices || q.choices.length < 2) {
-          alert(`ข้อที่ ${i + 1}: ต้องมีตัวเลือกอย่างน้อย 2 ตัวเลือก`);
-          return;
-        }
-        const hasCorrect = q.choices.some((c: any) => !!c.isCorrect);
-        if (!hasCorrect) {
-          alert(`ข้อที่ ${i + 1}: กรุณาเลือกตัวเลือกที่ถูกต้อง (ต้องมีเฉลยอย่างน้อย 1 ข้อ)`);
-          return;
-        }
-        const emptyChoice = q.choices.some((c: any) => !c.text?.trim());
-        if (emptyChoice) {
-          alert(`ข้อที่ ${i + 1}: มีตัวเลือกที่ข้อความว่างเปล่า กรุณากรอกข้อความให้ครบทุกตัวเลือก`);
-          return;
-        }
-      }
-    }
-
-    // Strict Validation: PRACTICAL_CODING
-    if (formType === AssessmentType.PRACTICAL_CODING) {
-      for (let i = 0; i < formQuestions.length; i++) {
-        const q = formQuestions[i];
-        if (!q.title?.trim()) {
-          alert(`ข้อที่ ${i + 1}: กรุณาระบุหัวข้อคำถาม`);
-          return;
-        }
-        if (q.evaluationMethod === QuestionEvaluationMethod.AUTOMATED_TEST_CASES) {
-          if (!q.testCases || q.testCases.length < 2) {
-            alert(`ข้อที่ ${i + 1}: กรุณากำหนดชุด Test Cases อย่างน้อย 2 ข้อ`);
-            return;
-          }
-          const hasVisible = q.testCases.some((tc: any) => !tc.isHidden);
-          const hasHidden = q.testCases.some((tc: any) => !!tc.isHidden);
-          if (!hasVisible) {
-            alert(`ข้อที่ ${i + 1}: ต้องมี Test Case แบบเปิดเผย (Visible) อย่างน้อย 1 ข้อ เพื่อให้ผู้สมัครรันโค้ดทดสอบได้`);
-            return;
-          }
-          if (!hasHidden) {
-            alert(`ข้อที่ ${i + 1}: ต้องมี Test Case แบบซ่อน (Hidden) อย่างน้อย 1 ข้อ สำหรับตรวจคะแนนตอนส่ง`);
-            return;
-          }
-          const emptyExpected = q.testCases.some(
-            (tc: any) => tc.expectedOutput === undefined || tc.expectedOutput === null || String(tc.expectedOutput).trim() === '',
-          );
-          if (emptyExpected) {
-            alert(`ข้อที่ ${i + 1}: มี Test Case ที่ไม่มีค่า Expected Output กรุณาระบุผลลัพธ์ที่คาดหวังให้ครบ`);
-            return;
-          }
-        }
-      }
     }
 
     setSaving(true);

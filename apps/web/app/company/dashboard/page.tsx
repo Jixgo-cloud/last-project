@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Image from 'next/image';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useAuth } from '@/lib/auth-context';
@@ -46,7 +47,7 @@ export default function CompanyDashboardPage() {
               <div className="flex items-center gap-4 sm:gap-5">
                 <div className="h-16 w-16 rounded-2xl bg-[#f4f5fa] border border-slate-200/80 flex items-center justify-center overflow-hidden flex-shrink-0">
                   {company?.logoUrl ? (
-                    <img src={company.logoUrl} alt={company.name} className="h-full w-full object-cover" />
+                    <Image src={company.logoUrl} alt={company.name} width={64} height={64} unoptimized className="h-full w-full object-cover" />
                   ) : (
                     <Building2 className="h-8 w-8 text-[#4f46e5]" />
                   )}

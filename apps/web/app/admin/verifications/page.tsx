@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import Image from 'next/image';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { apiRequest } from '@/lib/api';
@@ -178,9 +179,12 @@ export default function AdminVerificationsPage() {
                       {/* Avatar */}
                       <div className="h-14 w-14 rounded-2xl bg-slate-100 border border-slate-200/80 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
                         {v.company?.logoUrl ? (
-                          <img
+                          <Image
                             src={v.company.logoUrl}
                             alt={v.company.name}
+                            width={56}
+                            height={56}
+                            unoptimized
                             className="h-full w-full object-cover"
                           />
                         ) : (

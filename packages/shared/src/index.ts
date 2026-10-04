@@ -98,6 +98,8 @@ export interface OverrideScoreDTO {
   reviewReason: string;
 }
 
+export * from './assessment-validation';
+
 export enum AttemptStatus {
   IN_PROGRESS = 'IN_PROGRESS',
   SUBMITTING = 'SUBMITTING',

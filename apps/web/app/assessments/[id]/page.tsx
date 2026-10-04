@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
@@ -36,6 +36,7 @@ export default function AssessmentRunnerPage() {
   const [assessment, setAssessment] = useState<any>(null);
   const [attempt, setAttempt] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Timer & Expiry
   const [timeLeftSeconds, setTimeLeftSeconds] = useState<number | null>(null);
@@ -44,6 +45,8 @@ export default function AssessmentRunnerPage() {
   // Anti-Cheat (Tab switch & Window blur detection + Server Logging)
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
   const [showAntiCheatBanner, setShowAntiCheatBanner] = useState(false);
+  const wasPageHiddenRef = useRef(false);
+  const timeExpiredHandlerRef = useRef<() => void>(() => {});
 
   // Autosave status ('idle' | 'saving' | 'saved')
   const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -70,70 +73,66 @@ export default function AssessmentRunnerPage() {
   const [codingFinalResult, setCodingFinalResult] = useState<any>(null);
 
   // Load Assessment & Start Attempt
-  const initAssessment = () => {
+  const initAssessment = useCallback(async () => {
     if (!id || !user) return;
     setLoading(true);
+    setLoadError(null);
 
-    Promise.all([
-      apiRequest(`/assessments/${id}`),
-      apiRequest(`/assessments/${id}/start`, { method: 'POST' }),
-    ])
-      .then(([assessData, attemptData]) => {
-        setAssessment(assessData);
-        setAttempt(attemptData);
+    try {
+      // Load and validate the assessment before creating a timed attempt.
+      const assessData = await apiRequest(`/assessments/${id}`);
+      const attemptData = await apiRequest(`/assessments/${id}/start`, { method: 'POST' });
+      setAssessment(assessData);
+      setAttempt(attemptData);
 
-        // Initialize timer (accounting for elapsed time if resumed)
-        const totalSeconds = (assessData.timeLimitMinutes || 30) * 60;
-        if (attemptData?.startedAt) {
-          const elapsed = Math.floor((Date.now() - new Date(attemptData.startedAt).getTime()) / 1000);
-          const remaining = Math.max(0, totalSeconds - elapsed);
-          setTimeLeftSeconds(remaining);
-        } else {
-          setTimeLeftSeconds(totalSeconds);
-        }
+      const totalSeconds = (assessData.timeLimitMinutes || 30) * 60;
+      if (attemptData?.startedAt) {
+        const elapsed = Math.floor((Date.now() - new Date(attemptData.startedAt).getTime()) / 1000);
+        setTimeLeftSeconds(Math.max(0, totalSeconds - elapsed));
+      } else {
+        setTimeLeftSeconds(totalSeconds);
+      }
 
-        // Initialize code for all questions
-        if (assessData.type === AssessmentType.PRACTICAL_CODING && assessData.questions) {
-          const initialCodes: Record<string, string> = {};
-          assessData.questions.forEach((q: any) => {
-            const isPy =
-              q.starterCode?.includes('def solution') ||
-              q.starterCode?.includes('def ') ||
-              q.starterCode?.includes('#');
-            initialCodes[q.id] =
-              q.starterCode ||
-              (isPy
-                ? '# เขียนฟังก์ชันแก้ปัญหาด้านล่าง\ndef solution(*args):\n    return 0'
-                : '// เขียนฟังก์ชันแก้ปัญหาด้านล่าง\nfunction solution() {\n  return 0;\n}');
-          });
-          setCodes(initialCodes);
-        }
+      if (assessData.type === AssessmentType.PRACTICAL_CODING && assessData.questions) {
+        const initialCodes: Record<string, string> = {};
+        assessData.questions.forEach((q: any) => {
+          const isPy =
+            q.starterCode?.includes('def solution') ||
+            q.starterCode?.includes('def ') ||
+            q.starterCode?.includes('#');
+          initialCodes[q.id] =
+            q.starterCode ||
+            (isPy
+              ? '# เขียนฟังก์ชันแก้ปัญหาด้านล่าง\ndef solution(*args):\n    return 0'
+              : '// เขียนฟังก์ชันแก้ปัญหาด้านล่าง\nfunction solution() {\n  return 0;\n}');
+        });
+        setCodes(initialCodes);
+      }
 
-        // Restore draft code if available
-        if (attemptData?.draftCode) {
-          try {
-            const parsed = typeof attemptData.draftCode === 'string'
-              ? JSON.parse(attemptData.draftCode)
-              : attemptData.draftCode;
-            if (parsed.codes) {
-              setCodes((prev) => ({ ...prev, ...parsed.codes }));
-            }
-            if (parsed.selectedChoices) {
-              setSelectedChoices((prev) => ({ ...prev, ...parsed.selectedChoices }));
-            }
-            if (!parsed.codes && !parsed.selectedChoices && typeof parsed === 'object') {
-              setCodes((prev) => ({ ...prev, ...parsed }));
-            }
-          } catch {
-            if (assessData.questions?.[0]) {
-              setCodes((prev) => ({ ...prev, [assessData.questions[0].id]: attemptData.draftCode }));
-            }
+      if (attemptData?.draftCode) {
+        try {
+          const parsed = typeof attemptData.draftCode === 'string'
+            ? JSON.parse(attemptData.draftCode)
+            : attemptData.draftCode;
+          if (parsed.codes) setCodes((prev) => ({ ...prev, ...parsed.codes }));
+          if (parsed.selectedChoices) setSelectedChoices((prev) => ({ ...prev, ...parsed.selectedChoices }));
+          if (!parsed.codes && !parsed.selectedChoices && typeof parsed === 'object') {
+            setCodes((prev) => ({ ...prev, ...parsed }));
+          }
+        } catch {
+          if (assessData.questions?.[0]) {
+            setCodes((prev) => ({ ...prev, [assessData.questions[0].id]: attemptData.draftCode }));
           }
         }
-      })
-      .catch((e) => console.error(e))
-      .finally(() => setLoading(false));
-  };
+      }
+    } catch (error: any) {
+      setAssessment(null);
+      setAttempt(null);
+      setLoadError(error?.message || 'ไม่สามารถเปิดแบบทดสอบได้ กรุณาลองใหม่อีกครั้ง');
+    } finally {
+      setLoading(false);
+    }
+  }, [id, user]);
 
   useEffect(() => {
     if (!id || authLoading) return;
@@ -142,7 +141,7 @@ export default function AssessmentRunnerPage() {
       return;
     }
     initAssessment();
-  }, [id, user, authLoading]);
+  }, [id, user, authLoading, router, initAssessment]);
 
   // Active Real-time Countdown Timer
   useEffect(() => {
@@ -155,7 +154,7 @@ export default function AssessmentRunnerPage() {
         if (prev === null) return null;
         if (prev <= 1) {
           clearInterval(interval);
-          handleTimeExpired();
+          timeExpiredHandlerRef.current();
           return 0;
         }
         return prev - 1;
@@ -195,7 +194,7 @@ export default function AssessmentRunnerPage() {
     };
   }, [codes, selectedChoices, attempt, id, theoryResult, codingFinalResult, submittingTheory, submittingCoding, finalizingAttempt]);
 
-  // Anti-Cheat: Visibility Change & Window Blur (Tab switch detector + Server Integrity Event Logging)
+  // Record only transitions where the assessment page is actually hidden.
   useEffect(() => {
     if (theoryResult || codingFinalResult || !attempt) return;
 
@@ -214,43 +213,26 @@ export default function AssessmentRunnerPage() {
     };
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
+      if (document.visibilityState === 'hidden' && !wasPageHiddenRef.current) {
+        wasPageHiddenRef.current = true;
         setTabSwitchCount((prev) => {
           const next = prev + 1;
           logIntegrity('TAB_BLUR', { switchCount: next, timestamp: Date.now() });
           return next;
         });
         setShowAntiCheatBanner(true);
-      } else {
+      } else if (document.visibilityState === 'visible' && wasPageHiddenRef.current) {
+        wasPageHiddenRef.current = false;
         logIntegrity('TAB_FOCUS', { timestamp: Date.now() });
       }
     };
 
-    const handleWindowBlur = () => {
-      logIntegrity('WINDOW_BLUR', { timestamp: Date.now() });
-    };
-
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('blur', handleWindowBlur);
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('blur', handleWindowBlur);
     };
   }, [theoryResult, codingFinalResult, attempt, id]);
-
-  // Auto-submit when timer hits zero
-  const handleTimeExpired = () => {
-    if (hasAutoSubmitted || theoryResult || codingFinalResult) return;
-    setHasAutoSubmitted(true);
-    alert('⏱️ หมดเวลาทำข้อสอบแล้ว! ระบบกำลังบันทึกและส่งผลการสอบของคุณโดยอัตโนมัติ');
-
-    if (assessment?.type === AssessmentType.THEORY) {
-      handleSubmitTheory();
-    } else if (assessment?.type === AssessmentType.PRACTICAL_CODING) {
-      handleFinalizeAttempt();
-    }
-  };
 
   const formatTimer = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -263,7 +245,7 @@ export default function AssessmentRunnerPage() {
     setSelectedChoices((prev) => ({ ...prev, [questionId]: choiceId }));
   };
 
-  const handleSubmitTheory = async () => {
+  const handleSubmitTheory = useCallback(async () => {
     if (!attempt || submittingTheory) return;
     setSubmittingTheory(true);
     try {
@@ -285,7 +267,7 @@ export default function AssessmentRunnerPage() {
     } finally {
       setSubmittingTheory(false);
     }
-  };
+  }, [attempt, submittingTheory, selectedChoices, id]);
 
   // Question Language Detector (Python vs JavaScript)
   const isQuestionPython = (q?: any): boolean => {
@@ -306,7 +288,7 @@ export default function AssessmentRunnerPage() {
   const currentCode = currentQuestion ? codes[currentQuestion.id] || '' : '';
 
   const handleCodeChange = (val: string | undefined) => {
-    if (!currentQuestion) return;
+    if (!attempt || !currentQuestion) return;
     setCodes((prev) => ({
       ...prev,
       [currentQuestion.id]: val || '',
@@ -315,7 +297,7 @@ export default function AssessmentRunnerPage() {
 
   // 1. Run Test Cases (Visible only, testing sandbox without finalizing)
   const handleRunTests = async () => {
-    if (!currentQuestion) return;
+    if (!attempt || !currentQuestion) return;
     setRunningCode(true);
     setRateLimitMessage(null);
     setJudgeUnavailableError(null);
@@ -323,6 +305,7 @@ export default function AssessmentRunnerPage() {
       const result = await apiRequest(`/assessments/${id}/run-code`, {
         method: 'POST',
         body: JSON.stringify({
+          attemptId: attempt.id,
           questionId: currentQuestion.id,
           sourceCode: currentCode,
         }),
@@ -397,7 +380,7 @@ export default function AssessmentRunnerPage() {
   };
 
   // 3. Finalize Multi-Question Attempt (Calculates total and closes attempt)
-  const handleFinalizeAttempt = async () => {
+  const handleFinalizeAttempt = useCallback(async () => {
     if (!attempt || finalizingAttempt) return;
     const answeredCount = Object.keys(submittedQuestions).length;
     const totalCount = assessment?.questions?.length || 1;
@@ -420,7 +403,24 @@ export default function AssessmentRunnerPage() {
     } finally {
       setFinalizingAttempt(false);
     }
-  };
+  }, [attempt, finalizingAttempt, submittedQuestions, assessment, id]);
+
+  // Auto-submit when timer hits zero.
+  const handleTimeExpired = useCallback(() => {
+    if (hasAutoSubmitted || theoryResult || codingFinalResult) return;
+    setHasAutoSubmitted(true);
+    alert('⏱️ หมดเวลาทำข้อสอบแล้ว! ระบบกำลังบันทึกและส่งผลการสอบของคุณโดยอัตโนมัติ');
+
+    if (assessment?.type === AssessmentType.THEORY) {
+      void handleSubmitTheory();
+    } else if (assessment?.type === AssessmentType.PRACTICAL_CODING) {
+      void handleFinalizeAttempt();
+    }
+  }, [hasAutoSubmitted, theoryResult, codingFinalResult, assessment, handleSubmitTheory, handleFinalizeAttempt]);
+
+  useEffect(() => {
+    timeExpiredHandlerRef.current = handleTimeExpired;
+  }, [handleTimeExpired]);
 
   if (loading) {
     return (
@@ -442,14 +442,23 @@ export default function AssessmentRunnerPage() {
       <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#f9fbfe] via-[#f3f6fb] to-[#eef2f8]">
         <Navbar />
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-          <p className="font-bold text-slate-800 text-lg mb-2">ไม่พบแบบทดสอบที่คุณต้องการ</p>
-          <p className="text-xs text-[#667085] mb-5">อาจมีการปิดหรือปรับปรุงชุดแบบทดสอบนี้</p>
-          <Link
-            href="/assessments"
-            className="px-5 py-2.5 rounded-full bg-[#6366f1] text-white text-xs font-semibold hover:bg-[#4f46e5] transition shadow-xs"
-          >
-            กลับสู่หน้ารายการแบบทดสอบ
-          </Link>
+          <p className="font-bold text-slate-800 text-lg mb-2">ยังเปิดแบบทดสอบนี้ไม่ได้</p>
+          <p className="text-sm text-[#667085] mb-5 max-w-xl">{loadError || 'แบบทดสอบอาจถูกปิด ยังไม่ได้มอบหมายให้คุณ หรือผู้สร้างยังกรอกโจทย์ไม่ครบ'}</p>
+          <div className="flex flex-wrap justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => void initAssessment()}
+              className="px-5 py-2.5 rounded-full bg-[#6366f1] text-white text-xs font-semibold hover:bg-[#4f46e5] transition shadow-xs"
+            >
+              ลองอีกครั้ง
+            </button>
+            <Link
+              href="/applications"
+              className="px-5 py-2.5 rounded-full bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition"
+            >
+              กลับหน้าการสมัครงาน
+            </Link>
+          </div>
         </div>
         <Footer />
       </div>
@@ -469,9 +478,9 @@ export default function AssessmentRunnerPage() {
             <div className="flex items-center gap-2.5">
               <ShieldAlert className="h-4 w-4 text-amber-600 flex-shrink-0" />
               <span>
-                <strong>ระบบตรวจจับการทุจริต:</strong> ตรวจพบการสลับหน้าจอ/แท็บไปแล้ว{' '}
+                ระบบบันทึกการออกจากหน้าข้อสอบไว้{' '}
                 <span className="font-bold text-amber-900">{tabSwitchCount} ครั้ง</span>{' '}
-                กรุณาทำข้อสอบในหน้านี้อย่างต่อเนื่อง
+                เพื่อประกอบการตรวจสอบ ข้อมูลนี้เพียงอย่างเดียวไม่ได้สรุปว่ามีการทุจริต
               </span>
             </div>
             <button
@@ -524,42 +533,6 @@ export default function AssessmentRunnerPage() {
               className="text-[11px] font-semibold text-amber-700 hover:text-amber-900 px-2 py-0.5 rounded hover:bg-amber-100 transition"
             >
               ปิด
-            </button>
-          </div>
-        )}
-
-        {/* Anti-Cheat Real-Time Warning Banner */}
-        {showAntiCheatBanner && !theoryResult && !codingFinalResult && (
-          <div
-            className={`mb-4 rounded-2xl border p-3.5 flex items-center justify-between text-xs shadow-xs animate-in fade-in duration-200 ${
-              tabSwitchCount >= 3
-                ? 'bg-rose-50 border-rose-200 text-rose-800'
-                : 'bg-amber-50 border-amber-200 text-amber-800'
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              <ShieldAlert
-                className={`h-4 w-4 shrink-0 ${
-                  tabSwitchCount >= 3 ? 'text-rose-600 animate-pulse' : 'text-amber-600'
-                }`}
-              />
-              <div>
-                <span className="font-bold">
-                  {tabSwitchCount >= 3
-                    ? '⚠️ แจ้งเตือนความซื่อสัตย์ระดับสูง (Anti-Cheat Suspicious Alert)'
-                    : 'ระบบป้องกันการทุจริต (Anti-Cheat Monitor)'}
-                  :
-                </span>{' '}
-                <span>
-                  ตรวจพบการสลับแท็บ/หน้าต่าง <strong>{tabSwitchCount} ครั้ง</strong> (ข้อมูลการสลับหน้าจอจะถูกส่งให้ผู้ประเมินผลและบันทึกในระบบ)
-                </span>
-              </div>
-            </div>
-            <button
-              onClick={() => setShowAntiCheatBanner(false)}
-              className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 px-2 py-0.5 rounded hover:bg-black/5 transition shrink-0 ml-2"
-            >
-              รับทราบ
             </button>
           </div>
         )}

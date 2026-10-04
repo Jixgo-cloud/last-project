@@ -29,10 +29,11 @@ export class AssessmentsController {
     return this.assessmentsService.getCandidateBadges(req.user.id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.CANDIDATE)
   @Get(':id')
-  async getOne(@Param('id') id: string) {
-    return this.assessmentsService.findOne(id);
+  async getOne(@Param('id') id: string, @Request() req: any) {
+    return this.assessmentsService.findOne(id, req.user.id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -46,10 +47,17 @@ export class AssessmentsController {
   @Roles(UserRole.CANDIDATE)
   @Post(':id/run-code')
   async runCode(
+    @Param('id') assessmentId: string,
     @Request() req: any,
-    @Body() body: { questionId: string; sourceCode: string },
+    @Body() body: { attemptId: string; questionId: string; sourceCode: string },
   ) {
-    return this.assessmentsService.testRunCode(body.questionId, req.user.id, body.sourceCode);
+    return this.assessmentsService.testRunCode(
+      assessmentId,
+      body.attemptId,
+      body.questionId,
+      req.user.id,
+      body.sourceCode,
+    );
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

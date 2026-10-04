@@ -1,7 +1,13 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CandidateService } from '../candidate/candidate.service';
-import { VerificationStatus, ApplicationStatus, NotificationType } from '@smartcareer/shared';
+import {
+  assessmentQuestionsMatch,
+  getAssessmentValidationError,
+  VerificationStatus,
+  ApplicationStatus,
+  NotificationType,
+} from '@smartcareer/shared';
 import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
@@ -538,6 +544,15 @@ export class CompanyService {
 
   async createCompanyAssessment(userId: string, data: any) {
     const company = await this.getCompanyByUserId(userId);
+    const validationError = getAssessmentValidationError({
+      title: data.title,
+      type: data.type || 'PRACTICAL_CODING',
+      timeLimitMinutes: data.timeLimitMinutes ?? 30,
+      passingScore: data.passingScore ?? 70,
+      questions: data.questions,
+    });
+    if (validationError) throw new BadRequestException(validationError);
+
     const cleanSlugPart = (data.title || '')
       .toLowerCase()
       .trim()
@@ -595,15 +610,63 @@ export class CompanyService {
 
   async updateCompanyAssessment(userId: string, id: string, data: any) {
     const company = await this.getCompanyByUserId(userId);
-    const assessment = await this.prisma.assessment.findUnique({ where: { id } });
+    const assessment = await this.prisma.assessment.findUnique({
+      where: { id },
+      include: { questions: { include: { choices: { orderBy: { order: 'asc' } } } } },
+    });
     if (!assessment || assessment.companyId !== company.id) {
       throw new ForbiddenException('You are not authorized to edit this assessment');
     }
 
+    if (Array.isArray(data.questions)) {
+      const validationError = getAssessmentValidationError({
+        title: data.title ?? assessment.title,
+        type: data.type ?? assessment.type,
+        timeLimitMinutes: data.timeLimitMinutes ?? assessment.timeLimitMinutes,
+        passingScore: data.passingScore ?? assessment.passingScore,
+        questions: data.questions,
+      });
+      if (validationError) throw new BadRequestException(validationError);
+    }
+
+    const metadataUpdate = {
+      title: data.title ?? assessment.title,
+      description: data.description ?? assessment.description,
+      type: data.type ?? assessment.type,
+      timeLimitMinutes: data.timeLimitMinutes !== undefined ? parseInt(data.timeLimitMinutes) : assessment.timeLimitMinutes,
+      passingScore: data.passingScore !== undefined ? parseFloat(data.passingScore) : assessment.passingScore,
+      feedbackVisibility: data.feedbackVisibility ?? assessment.feedbackVisibility,
+      skillId: data.skillId !== undefined ? data.skillId : assessment.skillId,
+      isActive: data.isActive !== undefined ? data.isActive : assessment.isActive,
+      version: { increment: 1 },
+    };
+
     return this.prisma.$transaction(async (tx) => {
+      const attemptCount = await tx.assessmentAttempt.count({ where: { assessmentId: id } });
+      const scoringSettingsChanged =
+        (data.type !== undefined && data.type !== assessment.type) ||
+        (data.timeLimitMinutes !== undefined && Number(data.timeLimitMinutes) !== assessment.timeLimitMinutes) ||
+        (data.passingScore !== undefined && Number(data.passingScore) !== assessment.passingScore);
+      if (attemptCount > 0 && scoringSettingsChanged) {
+        throw new BadRequestException(
+          'แบบทดสอบนี้มีผู้สมัครเริ่มทำแล้ว จึงแก้ประเภท เวลา หรือคะแนนผ่านไม่ได้ กรุณาสร้างชุดใหม่เพื่อรักษาผลเดิม',
+        );
+      }
+
       // 1. Update questions if provided in payload
       if (Array.isArray(data.questions)) {
-        const attemptCount = await tx.assessmentAttempt.count({ where: { assessmentId: id } });
+        if (attemptCount > 0) {
+          if (!assessmentQuestionsMatch(assessment.questions, data.questions)) {
+            throw new BadRequestException(
+              'แบบทดสอบนี้มีผู้สมัครเริ่มทำแล้ว จึงแก้โจทย์หรือตัวเลือกไม่ได้ กรุณาสร้างชุดใหม่เพื่อรักษาผลเดิม',
+            );
+          }
+          return tx.assessment.update({
+            where: { id },
+            data: metadataUpdate,
+            include: { skill: true, questions: { include: { choices: true } } },
+          });
+        }
 
         if (attemptCount === 0) {
           // No attempts yet: safely recreate all questions & choices
@@ -722,17 +785,7 @@ export class CompanyService {
       // 2. Update Assessment metadata
       return tx.assessment.update({
         where: { id },
-        data: {
-          title: data.title ?? assessment.title,
-          description: data.description ?? assessment.description,
-          type: data.type ?? assessment.type,
-          timeLimitMinutes: data.timeLimitMinutes ? parseInt(data.timeLimitMinutes) : assessment.timeLimitMinutes,
-          passingScore: data.passingScore ? parseFloat(data.passingScore) : assessment.passingScore,
-          feedbackVisibility: data.feedbackVisibility ?? assessment.feedbackVisibility,
-          skillId: data.skillId !== undefined ? data.skillId : assessment.skillId,
-          isActive: data.isActive !== undefined ? data.isActive : assessment.isActive,
-          version: { increment: 1 },
-        },
+        data: metadataUpdate,
         include: {
           skill: true,
           questions: { include: { choices: true } },
@@ -809,9 +862,7 @@ export class CompanyService {
       const tabSwitchCount = events.filter(
         (e) => e.type === 'TAB_BLUR' || e.eventType === 'TAB_BLUR',
       ).length;
-      let riskLevel: 'NORMAL' | 'SUSPICIOUS' | 'HIGH_RISK' = 'NORMAL';
-      if (tabSwitchCount >= 8) riskLevel = 'HIGH_RISK';
-      else if (tabSwitchCount >= 3) riskLevel = 'SUSPICIOUS';
+      const riskLevel: 'NORMAL' | 'REVIEW' = tabSwitchCount > 0 ? 'REVIEW' : 'NORMAL';
 
       return {
         ...att,
@@ -920,9 +971,7 @@ export class CompanyService {
       const tabSwitchCount = events.filter(
         (e) => e.type === 'TAB_BLUR' || e.eventType === 'TAB_BLUR',
       ).length;
-      let riskLevel: 'NORMAL' | 'SUSPICIOUS' | 'HIGH_RISK' = 'NORMAL';
-      if (tabSwitchCount >= 8) riskLevel = 'HIGH_RISK';
-      else if (tabSwitchCount >= 3) riskLevel = 'SUSPICIOUS';
+      const riskLevel: 'NORMAL' | 'REVIEW' = tabSwitchCount > 0 ? 'REVIEW' : 'NORMAL';
 
       return {
         ...att,

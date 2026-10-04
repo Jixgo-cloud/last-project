@@ -33,6 +33,7 @@ import {
   QuestionDifficulty,
   QuestionEvaluationMethod,
   FeedbackVisibility,
+  getAssessmentValidationError,
 } from '@smartcareer/shared';
 
 export default function CompanyAssessmentsPage() {
@@ -57,7 +58,7 @@ export default function CompanyAssessmentsPage() {
   const [formFeedbackVisibility, setFormFeedbackVisibility] = useState<FeedbackVisibility>(FeedbackVisibility.IMMEDIATE);
   const [formQuestions, setFormQuestions] = useState<any[]>([
     {
-      title: 'โจทย์ทดสอบการเขียนโค้ด',
+      title: '',
       prompt: '',
       difficulty: QuestionDifficulty.MEDIUM,
       points: 50,
@@ -134,8 +135,8 @@ export default function CompanyAssessmentsPage() {
     setFormFeedbackVisibility(FeedbackVisibility.IMMEDIATE);
     setFormQuestions([
       {
-        title: 'โจทย์ปัญหาทางเทคนิค',
-        prompt: 'เขียนโค้ดตามความต้องการของระบบ และออกแบบการทำงานให้รองรับสถานการณ์ต่าง ๆ',
+        title: '',
+        prompt: '',
         difficulty: QuestionDifficulty.MEDIUM,
         points: 50,
         language: 'javascript',
@@ -145,14 +146,14 @@ export default function CompanyAssessmentsPage() {
         rubric: '',
         explanation: '',
         testCases: [
-          { input: '1, 2', expectedOutput: '3', isHidden: false },
-          { input: '10, 20', expectedOutput: '30', isHidden: true },
+          { input: '', expectedOutput: '', isHidden: false },
+          { input: '', expectedOutput: '', isHidden: true },
         ],
         choices: [
-          { text: 'ตัวเลือก 1', isCorrect: true },
-          { text: 'ตัวเลือก 2', isCorrect: false },
-          { text: 'ตัวเลือก 3', isCorrect: false },
-          { text: 'ตัวเลือก 4', isCorrect: false },
+          { text: '', isCorrect: true },
+          { text: '', isCorrect: false },
+          { text: '', isCorrect: false },
+          { text: '', isCorrect: false },
         ],
       },
     ]);
@@ -374,72 +375,16 @@ export default function CompanyAssessmentsPage() {
 
   const handleSaveAssessment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formTitle.trim()) {
-      alert('กรุณาระบุชื่อชุดแบบทดสอบ');
+    const validationError = getAssessmentValidationError({
+      title: formTitle,
+      type: formType,
+      timeLimitMinutes: formTimeLimit,
+      passingScore: formPassingScore,
+      questions: formQuestions,
+    });
+    if (validationError) {
+      alert(validationError);
       return;
-    }
-    if (formQuestions.length === 0) {
-      alert('กรุณาเพิ่มข้อสอบอย่างน้อย 1 ข้อ');
-      return;
-    }
-
-    // Strict Validation: THEORY
-    if (formType === AssessmentType.THEORY) {
-      for (let i = 0; i < formQuestions.length; i++) {
-        const q = formQuestions[i];
-        if (!q.title?.trim() && !q.prompt?.trim()) {
-          alert(`ข้อที่ ${i + 1}: กรุณาระบุหัวข้อหรือคำถาม`);
-          return;
-        }
-        if (!q.choices || q.choices.length < 2) {
-          alert(`ข้อที่ ${i + 1}: ต้องมีตัวเลือกอย่างน้อย 2 ตัวเลือก`);
-          return;
-        }
-        const hasCorrect = q.choices.some((c: any) => !!c.isCorrect);
-        if (!hasCorrect) {
-          alert(`ข้อที่ ${i + 1}: กรุณาเลือกตัวเลือกที่ถูกต้อง (ต้องมีเฉลยอย่างน้อย 1 ข้อ)`);
-          return;
-        }
-        const emptyChoice = q.choices.some((c: any) => !c.text?.trim());
-        if (emptyChoice) {
-          alert(`ข้อที่ ${i + 1}: มีตัวเลือกที่ข้อความว่างเปล่า กรุณากรอกข้อความให้ครบทุกตัวเลือก`);
-          return;
-        }
-      }
-    }
-
-    // Strict Validation: PRACTICAL_CODING
-    if (formType === AssessmentType.PRACTICAL_CODING) {
-      for (let i = 0; i < formQuestions.length; i++) {
-        const q = formQuestions[i];
-        if (!q.title?.trim()) {
-          alert(`ข้อที่ ${i + 1}: กรุณาระบุหัวข้อคำถาม`);
-          return;
-        }
-        if (q.evaluationMethod === QuestionEvaluationMethod.AUTOMATED_TEST_CASES) {
-          if (!q.testCases || q.testCases.length < 2) {
-            alert(`ข้อที่ ${i + 1}: กรุณากำหนดชุด Test Cases อย่างน้อย 2 ข้อ`);
-            return;
-          }
-          const hasVisible = q.testCases.some((tc: any) => !tc.isHidden);
-          const hasHidden = q.testCases.some((tc: any) => !!tc.isHidden);
-          if (!hasVisible) {
-            alert(`ข้อที่ ${i + 1}: ต้องมี Test Case แบบเปิดเผย (Visible) อย่างน้อย 1 ข้อ เพื่อให้ผู้สมัครรันโค้ดทดสอบได้`);
-            return;
-          }
-          if (!hasHidden) {
-            alert(`ข้อที่ ${i + 1}: ต้องมี Test Case แบบซ่อน (Hidden) อย่างน้อย 1 ข้อ สำหรับตรวจคะแนนตอนส่ง`);
-            return;
-          }
-          const emptyExpected = q.testCases.some(
-            (tc: any) => tc.expectedOutput === undefined || tc.expectedOutput === null || String(tc.expectedOutput).trim() === '',
-          );
-          if (emptyExpected) {
-            alert(`ข้อที่ ${i + 1}: มี Test Case ที่ไม่มีค่า Expected Output กรุณาระบุผลลัพธ์ที่คาดหวังให้ครบ`);
-            return;
-          }
-        }
-      }
     }
 
     setSaving(true);
@@ -1592,24 +1537,16 @@ export default function CompanyAssessmentsPage() {
                               {(() => {
                                 const summary = att.integritySummary;
                                 const count = summary?.tabSwitchCount || 0;
-                                const risk = summary?.riskLevel || 'NORMAL';
-                                if (risk === 'HIGH_RISK') {
+                                if (count > 0) {
                                   return (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200" title={`สลับหน้าจอ ${count} ครั้ง`}>
-                                      🚨 สลับจอ {count} ครั้ง
-                                    </span>
-                                  );
-                                }
-                                if (risk === 'SUSPICIOUS') {
-                                  return (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200" title={`สลับหน้าจอ ${count} ครั้ง`}>
-                                      ⚠️ สลับจอ {count} ครั้ง
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200" title="เหตุการณ์จากเบราว์เซอร์ต้องตรวจสอบตามบริบท ไม่ใช่ข้อสรุปว่าทุจริต">
+                                      📝 มีบันทึก {count} ครั้ง
                                     </span>
                                   );
                                 }
                                 return (
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                    🛡️ ปกติ ({count})
+                                    🛡️ ไม่มีบันทึก
                                   </span>
                                 );
                               })()}

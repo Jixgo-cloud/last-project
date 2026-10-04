@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import Image from 'next/image';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { apiRequest } from '@/lib/api';
@@ -471,7 +472,7 @@ export default function CompanyApplicationsPage() {
                           title="คลิกเพื่อดูโปรไฟล์ผู้สมัครแบบเต็ม"
                         >
                           {app.candidate?.avatarUrl ? (
-                            <img src={app.candidate.avatarUrl} alt={app.candidate?.fullName} className="h-full w-full object-cover" />
+                            <Image src={app.candidate.avatarUrl} alt={app.candidate?.fullName || 'รูปโปรไฟล์ผู้สมัคร'} width={44} height={44} unoptimized className="h-full w-full object-cover" />
                           ) : (
                             <span>{(app.candidate?.fullName || 'C').charAt(0).toUpperCase()}</span>
                           )}
@@ -1006,7 +1007,7 @@ export default function CompanyApplicationsPage() {
                     <div className="flex items-start gap-4">
                       <div className="h-16 w-16 rounded-2xl bg-gradient-to-tr from-[#6366f1] via-[#4f46e5] to-[#3730a3] text-white flex items-center justify-center font-black text-2xl shrink-0 shadow-md overflow-hidden ring-4 ring-indigo-50">
                         {candidateProfile.avatarUrl ? (
-                          <img src={candidateProfile.avatarUrl} alt={candidateProfile.fullName} className="h-full w-full object-cover" />
+                          <Image src={candidateProfile.avatarUrl} alt={candidateProfile.fullName || 'รูปโปรไฟล์ผู้สมัคร'} width={64} height={64} unoptimized className="h-full w-full object-cover" />
                         ) : (
                           <span>{(candidateProfile.fullName || 'C').charAt(0).toUpperCase()}</span>
                         )}
@@ -1402,7 +1403,7 @@ export default function CompanyApplicationsPage() {
                       <div className="space-y-4">
                         <div className="flex items-center justify-between">
                           <h3 className="text-sm font-bold text-slate-900">
-                            ประวัติการทำแบบทดสอบเชิงปฏิบัติการ & รายงานความซื่อสัตย์ (Integrity)
+                            ประวัติการทำแบบทดสอบและบันทึกการออกจากหน้าสอบ
                           </h3>
                           <span className="text-xs text-slate-500 font-medium">
                             ทำแล้ว {candidateProfile.assessmentAttempts?.length || 0} ครั้ง
@@ -1416,7 +1417,7 @@ export default function CompanyApplicationsPage() {
                                 att.score >= (att.assessment?.passingScore || 70) || att.passed === true;
                               const integrity = att.integritySummary;
                               const tabSwitches = integrity?.tabSwitchCount || 0;
-                              const riskLevel = integrity?.riskLevel || 'NORMAL';
+                              const requiresReview = tabSwitches > 0;
 
                               return (
                                 <div
@@ -1462,20 +1463,15 @@ export default function CompanyApplicationsPage() {
                                   <div className="bg-white rounded-xl p-3.5 border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
                                     <div className="flex items-center gap-2.5">
                                       <ShieldAlert
-                                        className={`h-4 w-4 shrink-0 ${
-                                          riskLevel === 'HIGH_RISK'
-                                            ? 'text-rose-600'
-                                            : riskLevel === 'SUSPICIOUS'
-                                            ? 'text-amber-500'
-                                            : 'text-emerald-600'
-                                        }`}
+                                        className={`h-4 w-4 shrink-0 ${requiresReview ? 'text-amber-500' : 'text-slate-400'}`}
                                       />
                                       <div>
                                         <span className="text-xs font-bold text-slate-800 block">
-                                          ระบบตรวจจับความซื่อสัตย์ (Anti-Cheat Telemetry)
+                                          บันทึกการแสดงหน้าข้อสอบ
                                         </span>
                                         <span className="text-[11px] text-slate-500">
-                                          สลับหน้าจอ (Tab Switches): <strong>{tabSwitches} ครั้ง</strong>
+                                          ออกจากหน้าข้อสอบตามที่เบราว์เซอร์รายงาน: <strong>{tabSwitches} ครั้ง</strong>
+                                          {' '}· ข้อมูลนี้ใช้ตรวจสอบตามบริบท ไม่ใช่ข้อสรุปว่าทุจริต
                                         </span>
                                       </div>
                                     </div>
@@ -1483,18 +1479,12 @@ export default function CompanyApplicationsPage() {
                                     <div>
                                       <span
                                         className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border inline-flex items-center gap-1 ${
-                                          riskLevel === 'HIGH_RISK'
-                                            ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                            : riskLevel === 'SUSPICIOUS'
+                                          requiresReview
                                             ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                            : 'bg-slate-50 text-slate-600 border-slate-200'
                                         }`}
                                       >
-                                        {riskLevel === 'HIGH_RISK'
-                                          ? '🚨 ความเสี่ยงสูง (High Risk)'
-                                          : riskLevel === 'SUSPICIOUS'
-                                          ? '⚠️ น่าสงสัย (Suspicious)'
-                                          : '✓ พฤติกรรมปกติ (Normal)'}
+                                        {requiresReview ? '📝 มีบันทึกให้ตรวจสอบ' : 'ไม่มีรายการบันทึก'}
                                       </span>
                                     </div>
                                   </div>
