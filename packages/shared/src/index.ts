@@ -99,6 +99,7 @@ export interface OverrideScoreDTO {
 }
 
 export * from './assessment-validation';
+export * from './company-verification';
 
 export enum AttemptStatus {
   IN_PROGRESS = 'IN_PROGRESS',

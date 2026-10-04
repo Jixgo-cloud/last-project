@@ -176,6 +176,47 @@ async function run() {
     await page.waitForFunction(() => document.body.innerText.includes('ส่งคำขอแล้ว รอผู้ดูแลตรวจสอบ'));
     assert(await page.$$eval('button', buttons => buttons.some(b => b.disabled && b.innerText.includes('ส่งคำขอแล้ว รอผู้ดูแลตรวจสอบ'))));
   };
+  await check('Verification form blocks incomplete ID and missing documents without saving', async () => {
+    await fill('input[maxlength="13"]', '123');
+    assert.equal(await page.$eval('input[maxlength="13"]', input => input.checkValidity()), false);
+    await fill('input[maxlength="13"]', '1234567890123');
+    await clickText('ยื่นตรวจสอบสิทธิ์พร้อมเอกสาร');
+    await page.waitForFunction(() => document.body.innerText.includes('กรุณาแนบเอกสารอย่างน้อย 1 ไฟล์'));
+    assert.equal(await db.companyVerification.count(), 0);
+    await screenshot('verification-required-documents');
+  });
+  await check('Verification API rejects invalid ID and incomplete file content', async () => {
+    const file = { name: 'test.pdf', type: 'application/pdf', size: 9, dataUrl: 'data:application/pdf;base64,' + Buffer.from('not a PDF').toString('base64') };
+    for (const body of [
+      { businessRegNo: '123', documents: { files: [file] } },
+      { businessRegNo: '1234567890123' },
+      { businessRegNo: '1234567890123', documents: { files: [] } },
+      { businessRegNo: '1234567890123', documents: { files: [file] } },
+    ]) assert.equal((await requestResult('/company/verify', 'POST', body, companyToken)).status, 400);
+    assert.equal(await db.companyVerification.count(), 0);
+  });
+  await check('Concurrent company submissions and reviews cannot duplicate or overwrite outcomes', async () => {
+    const owner = await db.user.create({ data: { email: 'parallel@smartcareer.dev', passwordHash: hash, role: 'COMPANY' } });
+    const parallelCompany = await db.company.create({ data: { name: 'Parallel Test Company', slug: databaseName + '-parallel', members: { create: { userId: owner.id, role: 'OWNER' } } } });
+    const token = (await request('/auth/login', 'POST', { email: owner.email, password: 'password123' })).token;
+    const content = Buffer.from('%PDF-1.7\nTest-only concurrency fixture');
+    const body = { businessRegNo: '1234567890123', documents: { files: [{ name: 'fixture.pdf', type: 'application/pdf', size: content.length, dataUrl: 'data:application/pdf;base64,' + content.toString('base64') }] } };
+    const submitted = await Promise.all(Array.from({ length: 4 }, () => requestResult('/company/verify', 'POST', body, token)));
+    assert.deepEqual(submitted.map(result => result.status).sort(), [201, 409, 409, 409]);
+    assert.equal(await db.companyVerification.count({ where: { companyId: parallelCompany.id } }), 1);
+    assert.equal((await db.company.findUnique({ where: { id: parallelCompany.id } })).verificationStatus, 'PENDING');
+    const pending = submitted.find(result => result.status === 201).data;
+    const adminToken = (await request('/auth/login', 'POST', { email: 'admin@smartcareer.dev', password: 'admin123' })).token;
+    const reviews = await Promise.all(Array.from({ length: 2 }, () => requestResult('/admin/verifications/' + pending.id + '/review', 'PUT', { action: 'REJECT' }, adminToken)));
+    assert.deepEqual(reviews.map(result => result.status).sort(), [200, 409]);
+    const resubmitted = await request('/company/verify', 'POST', body, token);
+    assert.equal((await requestResult('/admin/verifications/' + pending.id + '/review', 'PUT', { action: 'APPROVE' }, adminToken)).status, 409);
+    assert.equal((await db.company.findUnique({ where: { id: parallelCompany.id } })).verificationStatus, 'PENDING');
+    await request('/admin/verifications/' + resubmitted.id + '/review', 'PUT', { action: 'APPROVE' }, adminToken);
+    assert.equal((await requestResult('/company/verify', 'POST', body, token)).status, 409);
+    assert.equal((await requestResult('/admin/verifications/' + resubmitted.id + '/review', 'PUT', { action: 'INVALID' }, adminToken)).status, 400);
+    assert.equal((await db.company.findUnique({ where: { id: parallelCompany.id } })).verificationStatus, 'VERIFIED');
+  });
   await check('Submitted documents and rejected requests show their actual state', async () => {
     await submitCompanyDocuments();
     await screenshot('company-pending-review');

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { assessmentQuestionsMatch, getAssessmentValidationError, VerificationStatus } from '@smartcareer/shared';
 
@@ -61,6 +61,7 @@ export class AdminService {
     action: 'APPROVE' | 'REJECT',
     rejectionReason?: string,
   ) {
+    if (action !== 'APPROVE' && action !== 'REJECT') throw new BadRequestException('Invalid verification review action');
     const verification = await this.prisma.companyVerification.findUnique({
       where: { id: verificationId },
       include: { company: true },
@@ -72,8 +73,14 @@ export class AdminService {
 
     const newStatus = action === 'APPROVE' ? VerificationStatus.VERIFIED : VerificationStatus.REJECTED;
 
-    const updated = await this.prisma.$transaction([
-      this.prisma.companyVerification.update({
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM companies WHERE id = ${verification.companyId} FOR UPDATE`;
+      const current = await tx.companyVerification.findUniqueOrThrow({ where: { id: verificationId } });
+      const latest = await tx.companyVerification.findFirst({ where: { companyId: verification.companyId }, orderBy: { createdAt: 'desc' } });
+      if (current.status !== VerificationStatus.PENDING || latest?.id !== verificationId) {
+        throw new ConflictException('คำขอนี้ถูกพิจารณาแล้วหรือมีคำขอใหม่ กรุณาโหลดรายการอีกครั้ง');
+      }
+      const updated = await tx.companyVerification.update({
         where: { id: verificationId },
         data: {
           status: newStatus,
@@ -81,16 +88,15 @@ export class AdminService {
           reviewedAt: new Date(),
           rejectionReason: action === 'REJECT' ? rejectionReason : null,
         },
-      }),
-      this.prisma.company.update({
+      });
+      await tx.company.update({
         where: { id: verification.companyId },
         data: {
           verificationStatus: newStatus,
         },
-      }),
-    ]);
-
-    return updated[0];
+      });
+      return updated;
+    });
   }
 
   async listUsers() {

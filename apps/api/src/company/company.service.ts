@@ -1,4 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { VerificationDocumentsDto } from './dto/company-profile.dto';
+import { validateVerificationDocuments } from './verification-documents';
 import { PrismaService } from '../prisma/prisma.service';
 import { CandidateService } from '../candidate/candidate.service';
 import {
@@ -75,24 +77,24 @@ export class CompanyService {
     return updated;
   }
 
-  async submitVerification(userId: string, businessRegNo: string, documents?: any) {
+  async submitVerification(userId: string, businessRegNo: string, documents: VerificationDocumentsDto) {
     const company = await this.getCompanyByUserId(userId);
-
-    const verification = await this.prisma.companyVerification.create({
-      data: {
-        companyId: company.id,
-        businessRegNo,
-        documents: documents || { taxId: businessRegNo, submittedDate: new Date().toISOString() },
-        status: VerificationStatus.PENDING,
-      },
+    const validated = validateVerificationDocuments(documents);
+    return this.prisma.$transaction(async tx => {
+      // Serialize submissions and reviews for the same company across processes/tabs.
+      await tx.$queryRaw`SELECT id FROM companies WHERE id = ${company.id} FOR UPDATE`;
+      const current = await tx.company.findUniqueOrThrow({ where: { id: company.id } });
+      if (current.verificationStatus === VerificationStatus.VERIFIED) {
+        throw new ConflictException('บริษัทได้รับการยืนยันแล้ว ไม่ต้องส่งคำขอซ้ำ');
+      }
+      const pending = await tx.companyVerification.findFirst({ where: { companyId: company.id, status: VerificationStatus.PENDING } });
+      if (pending) throw new ConflictException('ส่งคำขอแล้ว กรุณารอผู้ดูแลตรวจสอบ');
+      const verification = await tx.companyVerification.create({
+        data: { companyId: company.id, businessRegNo, documents: { ...validated, taxId: businessRegNo, submittedAt: new Date().toISOString() }, status: VerificationStatus.PENDING },
+      });
+      await tx.company.update({ where: { id: company.id }, data: { verificationStatus: VerificationStatus.PENDING } });
+      return verification;
     });
-
-    await this.prisma.company.update({
-      where: { id: company.id },
-      data: { verificationStatus: VerificationStatus.PENDING },
-    });
-
-    return verification;
   }
 
   private async validateJob(companyId: string, data: any, existing?: any) {

@@ -24,7 +24,7 @@ import {
   FileCheck2,
   ExternalLink,
 } from 'lucide-react';
-import { VerificationStatus } from '@smartcareer/shared';
+import { VerificationStatus, VERIFICATION_MAX_BYTES, VERIFICATION_MAX_FILES, VERIFICATION_MIME_TYPES } from '@smartcareer/shared';
 import { companyVerificationLabels, getCompanyVerificationState } from '@/lib/company-verification';
 
 interface UploadedDocument {
@@ -55,6 +55,9 @@ export default function CompanyProfilePage() {
   // Verification Form States
   const [taxId, setTaxId] = useState('');
   const [documents, setDocuments] = useState<UploadedDocument[]>([]);
+  const [documentLoading, setDocumentLoading] = useState(false);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
+  const documentReadInProgress = useRef(false);
   const docInputRef = useRef<HTMLInputElement>(null);
 
   const fetchProfile = async () => {
@@ -113,39 +116,39 @@ export default function CompanyProfilePage() {
   };
 
   // Handle Document Upload (Multiple files to Base64)
-  const handleDocumentUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    const validTypes = ['application/pdf', 'image/jpeg', 'image/png'];
-
-    Array.from(files).forEach((file) => {
-      if (!validTypes.includes(file.type)) {
-        alert(`ไฟล์ "${file.name}" ไม่รองรับ (รองรับเฉพาะ PDF, JPG, PNG)`);
-        return;
-      }
-      if (file.size > 10 * 1024 * 1024) {
-        alert(`ไฟล์ "${file.name}" มีขนาดเกิน 10MB`);
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onload = () => {
-        setDocuments((prev) => [
-          ...prev,
-          {
-            name: file.name,
-            type: file.type,
-            size: file.size,
-            dataUrl: reader.result as string,
-          },
-        ]);
-      };
-      reader.readAsDataURL(file);
-    });
-
-    if (docInputRef.current) {
-      docInputRef.current.value = '';
+  const handleDocumentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length || documentReadInProgress.current || verifying || isPending || isVerified) return;
+    setVerificationError(null);
+    if (files.some(file => !VERIFICATION_MIME_TYPES.includes(file.type) || file.size === 0 || file.name.length > 255)) {
+      setVerificationError('กรุณาเลือกไฟล์ PDF, JPG หรือ PNG ที่มีข้อมูลและชื่อไม่เกิน 255 ตัวอักษร');
+      return;
+    }
+    if (documents.length + files.length > VERIFICATION_MAX_FILES) {
+      setVerificationError('แนบเอกสารได้ไม่เกิน 5 ไฟล์');
+      return;
+    }
+    if ([...documents, ...files].reduce((total, file) => total + file.size, 0) > VERIFICATION_MAX_BYTES) {
+      setVerificationError('เอกสารทั้งหมดรวมกันต้องไม่เกิน 6MB');
+      return;
+    }
+    documentReadInProgress.current = true;
+    setDocumentLoading(true);
+    try {
+      const selected = await Promise.all(files.map(file => new Promise<UploadedDocument>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ name: file.name, type: file.type, size: file.size, dataUrl: reader.result as string });
+        reader.onerror = () => reject(new Error('อ่านไฟล์ไม่สำเร็จ กรุณาเลือกไฟล์ใหม่'));
+        reader.onabort = () => reject(new Error('การอ่านไฟล์ถูกยกเลิก กรุณาเลือกไฟล์ใหม่'));
+        reader.readAsDataURL(file);
+      })));
+      setDocuments(prev => [...prev, ...selected]);
+    } catch (err) {
+      setVerificationError(err instanceof Error ? err.message : 'อ่านไฟล์ไม่สำเร็จ กรุณาเลือกไฟล์ใหม่');
+    } finally {
+      documentReadInProgress.current = false;
+      setDocumentLoading(false);
     }
   };
 
@@ -182,7 +185,16 @@ export default function CompanyProfilePage() {
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!taxId || isVerified || isPending) return;
+    if (verifying || documentReadInProgress.current || isVerified || isPending) return;
+    setVerificationError(null);
+    if (!/^[0-9]{13}$/.test(taxId)) {
+      setVerificationError('เลขทะเบียนหรือเลขผู้เสียภาษีต้องเป็นตัวเลข 13 หลัก');
+      return;
+    }
+    if (!documents.length) {
+      setVerificationError('กรุณาแนบเอกสารอย่างน้อย 1 ไฟล์');
+      return;
+    }
     setVerifying(true);
     setSuccess(null);
     try {
@@ -191,8 +203,6 @@ export default function CompanyProfilePage() {
         body: JSON.stringify({
           businessRegNo: taxId,
           documents: {
-            taxId,
-            submittedAt: new Date().toISOString(),
             files: documents.map((d) => ({
               name: d.name,
               type: d.type,
@@ -203,10 +213,13 @@ export default function CompanyProfilePage() {
         }),
       });
       setSuccess('ส่งคำขอรับรองนิติบุคคลและเอกสารไปยังผู้ดูแลระบบเรียบร้อยแล้ว');
+      setDocuments([]);
       setTimeout(() => setSuccess(null), 4000);
-      fetchProfile();
+      await fetchProfile();
     } catch (err: any) {
-      alert(`Verification failed: ${err.message}`);
+      setVerificationError(err.message || 'ส่งคำขอไม่สำเร็จ กรุณาลองใหม่');
+      // Another tab may have submitted while this form was open.
+      await fetchProfile();
     } finally {
       setVerifying(false);
     }
@@ -515,6 +528,11 @@ export default function CompanyProfilePage() {
                   onChange={(e) => setTaxId(e.target.value)}
                   placeholder="เช่น 0105562089123"
                   maxLength={13}
+                  minLength={13}
+                  pattern="[0-9]{13}"
+                  inputMode="numeric"
+                  title="กรุณากรอกตัวเลข 13 หลัก"
+                  disabled={verifying || isPending || isVerified}
                   className="w-full rounded-2xl border border-slate-200/90 px-4 py-3 text-xs font-mono font-bold text-slate-900 bg-slate-50/60 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition tracking-wider"
                 />
               </div>
@@ -525,7 +543,7 @@ export default function CompanyProfilePage() {
                   <label className="block text-xs font-bold text-slate-700">
                     เอกสารแนบประกอบการพิจารณา (Verification Documents)
                   </label>
-                  <span className="text-[11px] text-slate-400">PDF, JPG, PNG ไม่เกิน 10MB/ไฟล์</span>
+                  <span className="text-[11px] text-slate-400">PDF, JPG, PNG สูงสุด 5 ไฟล์ รวมไม่เกิน 6MB</span>
                 </div>
 
                 <input
@@ -534,12 +552,15 @@ export default function CompanyProfilePage() {
                   multiple
                   accept=".pdf,image/png,image/jpeg"
                   onChange={handleDocumentUpload}
+                  disabled={documentLoading || verifying || isPending || isVerified}
                   className="hidden"
                 />
 
-                <div
+                <button
+                  type="button"
+                  disabled={documentLoading || verifying || isPending || isVerified}
                   onClick={() => docInputRef.current?.click()}
-                  className="border-2 border-dashed border-slate-200/90 hover:border-indigo-400 hover:bg-indigo-50/20 rounded-2xl p-6 text-center cursor-pointer transition flex flex-col items-center justify-center gap-2 group bg-slate-50/40"
+                  className="w-full border-2 border-dashed border-slate-200/90 hover:border-indigo-400 hover:bg-indigo-50/20 rounded-2xl p-6 text-center cursor-pointer transition flex flex-col items-center justify-center gap-2 group bg-slate-50/40 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <div className="h-10 w-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition">
                     <Paperclip className="h-5 w-5" />
@@ -548,9 +569,9 @@ export default function CompanyProfilePage() {
                     คลิกเพื่อเลือกไฟล์เอกสารแนบ (เช่น หนังสือรับรองบริษัท, ภ.พ.20)
                   </div>
                   <p className="text-[11px] text-slate-400">
-                    สามารถเลือกได้หลายไฟล์พร้อมกัน
+                    {documentLoading ? 'กำลังอ่านไฟล์...' : 'ต้องแนบเอกสารอย่างน้อย 1 ไฟล์'}
                   </p>
-                </div>
+                </button>
 
                 {/* Newly Added Documents to Upload */}
                 {documents.length > 0 && (
@@ -574,6 +595,7 @@ export default function CompanyProfilePage() {
                           <button
                             type="button"
                             onClick={() => handleRemoveDocument(idx)}
+                            disabled={documentLoading || verifying || isPending || isVerified}
                             className="p-1 text-slate-400 hover:text-rose-600 transition shrink-0"
                             title="ลบไฟล์นี้"
                           >
@@ -625,6 +647,8 @@ export default function CompanyProfilePage() {
                 )}
               </div>
 
+              {verificationError && <p role="alert" className="text-xs font-semibold text-rose-600">{verificationError}</p>}
+
               <div className="pt-3 flex items-center justify-between">
                 <span className="text-[11px] text-slate-400 flex items-center gap-1">
                   <HelpCircle className="h-3.5 w-3.5 text-slate-400" />
@@ -632,7 +656,7 @@ export default function CompanyProfilePage() {
                 </span>
                 <button
                   type="submit"
-                  disabled={verifying || isVerified || isPending}
+                  disabled={documentLoading || verifying || isVerified || isPending}
                   className="inline-flex items-center gap-2 rounded-full bg-slate-900 hover:bg-slate-800 text-white px-6 py-2.5 text-xs font-bold shadow-xs transition disabled:opacity-50"
                 >
                   <ShieldCheck className="h-4 w-4" />

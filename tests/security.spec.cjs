@@ -11,6 +11,31 @@ const { UpdateCandidateProfileDto } = require('../apps/api/dist/candidate/dto/ca
 const { CreateJobDto } = require('../apps/api/dist/company/dto/job.dto');
 const { Judge0Client } = require('../apps/api/dist/assessments/judge0.client');
 const axios = require('axios').default;
+const { SubmitCompanyVerificationDto } = require('../apps/api/dist/company/dto/company-profile.dto');
+const { validateVerificationDocuments } = require('../apps/api/dist/company/verification-documents');
+
+test('Verification rejects missing attachments, malformed IDs and nested file fields', async () => {
+  for (const input of [
+    { businessRegNo: '123456789012' },
+    { businessRegNo: 'abcdefghijklm', documents: { files: [] } },
+    { businessRegNo: '1234567890123', documents: { files: [{ name: 'file.pdf', type: 'text/html', size: -1, dataUrl: '', owner: 'other' }] } },
+  ]) assert((await validate(plainToInstance(SubmitCompanyVerificationDto, input), { whitelist: true, forbidNonWhitelisted: true })).length);
+});
+
+test('Verification rejects corrupted, mislabeled and oversized attachment content', () => {
+  const pdf = Buffer.from('%PDF-1.7\nDisposable test document');
+  const file = { name: 'test.pdf', type: 'application/pdf', size: pdf.length, dataUrl: 'data:application/pdf;base64,' + pdf.toString('base64') };
+  assert.equal(validateVerificationDocuments({ files: [file] }).files.length, 1);
+  for (const invalid of [
+    { ...file, size: file.size + 1 },
+    { ...file, type: 'image/png' },
+    { ...file, dataUrl: file.dataUrl + '=' },
+    { ...file, dataUrl: 'data:application/pdf;base64,' + Buffer.from('not a PDF').toString('base64'), size: 9 },
+  ]) assert.throws(() => validateVerificationDocuments({ files: [invalid] }));
+  const large = Buffer.alloc(4 * 1024 * 1024); pdf.copy(large);
+  const attachment = { ...file, size: large.length, dataUrl: 'data:application/pdf;base64,' + large.toString('base64') };
+  assert.throws(() => validateVerificationDocuments({ files: [attachment, attachment] }));
+});
 
 function security() {
   const rows = new Map();
