@@ -93,9 +93,9 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-slate-200/90 bg-white/90 backdrop-blur-md">
-      <div className="mx-auto flex min-h-[82px] max-w-[1216px] items-center justify-between gap-7 px-4 sm:px-8">
+      <div className="mx-auto flex min-h-[82px] max-w-[1216px] flex-wrap items-center justify-between gap-2 px-4 py-3 sm:flex-nowrap sm:gap-7 sm:px-8 sm:py-0">
         {/* Brand */}
-        <Link href="/" className="inline-flex items-center gap-3 flex-shrink-0" aria-label="Smart Career หน้าหลัก">
+        <Link href="/" className="inline-flex w-full shrink-0 items-center gap-3 sm:w-auto" aria-label="Smart Career หน้าหลัก">
           <span className="grid place-items-center w-9 h-9 rounded-xl font-extrabold text-[13px] text-[#4f46e5] bg-[#e8eaff]">
             SC
           </span>
@@ -106,7 +106,7 @@ export default function Navbar() {
         </Link>
 
         {/* Header Actions */}
-        <div className="flex items-center justify-end gap-3">
+        <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-2 sm:w-auto sm:flex-nowrap sm:justify-end sm:gap-3">
           {/* Core Nav Dropdown (Home, Jobs, Courses only) */}
           <nav className="flex items-center gap-1.5" aria-label="เมนูหลัก">
             <div className="relative" ref={navDropdownRef}>
@@ -157,7 +157,7 @@ export default function Navbar() {
           </nav>
 
           {/* Auth Actions (Guest vs Signed-In) */}
-          <div className="flex items-center gap-2.5 ml-2 pl-3 border-l border-slate-200">
+          <div className="ml-auto flex min-w-0 flex-wrap items-center gap-1.5 border-l border-slate-200 pl-2 sm:ml-2 sm:gap-2.5 sm:pl-3">
             {/* Language Switch */}
             <div className="flex items-center p-0.5 border border-slate-200 rounded-full bg-white">
               <button
@@ -187,13 +187,13 @@ export default function Navbar() {
               <div className="flex items-center gap-2">
                 <Link
                   href="/login"
-                  className="px-3 py-1.5 rounded-full text-xs font-medium text-slate-700 hover:text-[#4f46e5] hover:bg-[#e8eaff] transition whitespace-nowrap"
+                  className="px-2 py-1.5 sm:px-3 rounded-full text-xs font-medium text-slate-700 hover:text-[#4f46e5] hover:bg-[#e8eaff] transition whitespace-nowrap"
                 >
                   เข้าสู่ระบบ
                 </Link>
                 <Link
                   href="/register"
-                  className="px-3.5 py-2 rounded-full text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#4f46e5] shadow-sm shadow-indigo-500/20 transition whitespace-nowrap"
+                  className="px-2 py-2 sm:px-3.5 rounded-full text-xs font-semibold text-white bg-[#6366f1] hover:bg-[#4f46e5] shadow-sm shadow-indigo-500/20 transition whitespace-nowrap"
                 >
                   สมัครสมาชิก
                 </Link>
@@ -213,6 +213,7 @@ export default function Navbar() {
                   }}
                   className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white py-1 px-2.5 shadow-xs hover:border-indigo-300 hover:shadow-sm transition cursor-pointer"
                   aria-expanded={userMenuOpen}
+                  aria-label={`เมนูบัญชี ${user.candidateProfile?.fullName || user.company?.name || user.email} (${user.role})`}
                 >
                   <span className="grid place-items-center w-6 h-6 rounded-full bg-[#6366f1] text-white text-[11px] font-bold">
                     {(user.candidateProfile?.fullName || user.company?.name || user.email || 'U').charAt(0).toUpperCase()}
@@ -220,7 +221,7 @@ export default function Navbar() {
                   <span className="text-xs font-semibold text-slate-700 max-w-[120px] truncate hidden sm:inline">
                     {user.candidateProfile?.fullName || user.company?.name || user.email}
                   </span>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getRoleBadgeStyle(user.role)}`}>
+                  <span className={`hidden sm:inline text-[10px] font-bold px-2 py-0.5 rounded-full border ${getRoleBadgeStyle(user.role)}`}>
                     {user.role}
                   </span>
                   <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${userMenuOpen ? 'rotate-180' : ''}`} />

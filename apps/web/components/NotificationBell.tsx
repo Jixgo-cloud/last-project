@@ -173,7 +173,7 @@ export default function NotificationBell() {
   if (!user) return null;
 
   return (
-    <div className="relative" ref={dropdownRef}>
+    <div className="static sm:relative" ref={dropdownRef}>
       {/* Bell Button */}
       <button
         type="button"
@@ -202,7 +202,7 @@ export default function NotificationBell() {
 
       {/* Dropdown Popover */}
       {open && (
-        <div className="absolute top-[calc(100%+8px)] right-0 z-50 w-80 sm:w-96 rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/10 animate-in fade-in zoom-in-95 duration-150 overflow-hidden">
+        <div className="absolute inset-x-4 top-[calc(100%+8px)] z-50 w-auto sm:inset-x-auto sm:right-0 sm:w-96 rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/10 animate-in fade-in zoom-in-95 duration-150 overflow-hidden">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-[#fbfcfe]">
             <div className="flex items-center gap-2">
