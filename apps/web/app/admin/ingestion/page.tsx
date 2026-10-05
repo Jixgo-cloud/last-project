@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import DeleteConfirmation from '@/components/DeleteConfirmation';
 import { apiRequest } from '@/lib/api';
 import Link from 'next/link';
 import {
@@ -47,6 +48,7 @@ export default function AdminIngestionPage() {
   const [quotasLoading, setQuotasLoading] = useState(false);
   const [savingQuotas, setSavingQuotas] = useState(false);
   const [showQuotaModal, setShowQuotaModal] = useState(false);
+  const [confirmQuotaReset, setConfirmQuotaReset] = useState(false);
 
   // Screening & Cleanup Tabs ('JOBS' | 'COURSES')
   const [screeningTab, setScreeningTab] = useState<'JOBS' | 'COURSES'>('JOBS');
@@ -127,7 +129,6 @@ export default function AdminIngestionPage() {
   };
 
   const handleResetQuotas = async () => {
-    if (!confirm('ต้องการคืนค่าโควต้าทั้งหมดกลับเป็นค่ามาตรฐานของระบบใช่หรือไม่?')) return;
     try {
       setSavingQuotas(true);
       const res = await apiRequest('/ingestion/quotas/reset', { method: 'POST' });
@@ -139,7 +140,7 @@ export default function AdminIngestionPage() {
       setEditingQuotas(resetEditing);
       setMsg('คืนค่าโควต้ากลับเป็นค่ามาตรฐานเริ่มต้นเรียบร้อยแล้ว!');
     } catch (err: any) {
-      alert(`คืนค่าโควต้าล้มเหลว: ${err.message}`);
+      throw err;
     } finally {
       setSavingQuotas(false);
     }
@@ -1356,7 +1357,7 @@ export default function AdminIngestionPage() {
             <div className="p-4 sm:p-6 border-t border-slate-100 bg-slate-50/70 rounded-b-[28px] flex flex-col sm:flex-row items-center justify-between gap-3">
               <button
                 type="button"
-                onClick={handleResetQuotas}
+                onClick={() => setConfirmQuotaReset(true)}
                 disabled={savingQuotas}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 transition disabled:opacity-50"
               >
@@ -1392,6 +1393,9 @@ export default function AdminIngestionPage() {
         </div>
       )}
 
+      {confirmQuotaReset && <DeleteConfirmation title="โควต้าทั้ง 7 แหล่ง" confirmLabel="ยืนยันคืนค่าเริ่มต้น"
+        description="คืนจำนวนรายการนำเข้าทุกแหล่งเป็นค่ามาตรฐาน รวมค่างานและคอร์สเรียน กรุณาบันทึกค่าเดิมไว้หากต้องการนำกลับมาใช้"
+        onCancel={() => setConfirmQuotaReset(false)} onConfirm={handleResetQuotas} />}
       <Footer />
     </div>
   );

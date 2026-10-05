@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MatchingService } from '../matching/matching.service';
 import { honestJobContent } from './job-content';
+import { isLegacySampleJob, legacySampleJobIds } from './legacy-sample-jobs';
 import { JobType, JobSource, SkillCategory, CareerTrack } from '@smartcareer/shared';
 
 export const CAREER_DEFINITIONS: Record<string, { categories: SkillCategory[]; keywords: string[] }> = {
@@ -64,6 +65,7 @@ export class JobsService {
 
     const where: any = {
       isActive: true,
+      NOT: { AND: [{ source: { not: JobSource.INTERNAL } }, { externalId: { in: legacySampleJobIds } }] },
       AND: [
         {
           OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
@@ -191,7 +193,7 @@ export class JobsService {
     }
 
     return {
-      jobs,
+      jobs: jobs.map(job => ({ ...job, ...honestJobContent(job) })),
       total,
       page,
       totalPages: Math.ceil(total / limit),
@@ -222,6 +224,9 @@ export class JobsService {
 
     if (!job) {
       throw new NotFoundException('Job not found');
+    }
+    if (isLegacySampleJob(job)) {
+      throw new NotFoundException('ประกาศนี้เป็นข้อมูลตัวอย่างเดิม จึงไม่เปิดรับสมัคร กรุณาตรวจประกาศจริงจากต้นทาง');
     }
 
     let matchScore = null;
@@ -308,6 +313,7 @@ export class JobsService {
 
     const job = await this.prisma.job.findUnique({ where: { id: jobId } });
     if (!job) throw new NotFoundException('Job not found');
+    if (isLegacySampleJob(job)) throw new NotFoundException('ประกาศนี้เป็นข้อมูลตัวอย่างเดิม จึงไม่เปิดรับสมัคร');
 
     const existing = await this.prisma.jobFavorite.findUnique({
       where: {
@@ -354,8 +360,9 @@ export class JobsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return favorites.map((f) => ({
+    return favorites.filter(f => !isLegacySampleJob(f.job)).map((f) => ({
       ...f.job,
+      ...honestJobContent(f.job),
       isFavorited: true,
       favoritedAt: f.createdAt,
     }));

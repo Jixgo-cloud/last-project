@@ -8,6 +8,18 @@ const { CompanyService } = require('../apps/api/dist/company/company.service');
 const { AssessmentsService } = require('../apps/api/dist/assessments/assessments.service');
 const { honestJobContent } = require('../apps/api/dist/jobs/job-content');
 const { IngestionService } = require('../apps/api/dist/ingestion/ingestion.service');
+const { JobsService } = require('../apps/api/dist/jobs/jobs.service');
+const { legacySampleJobIds } = require('../apps/api/dist/jobs/legacy-sample-jobs');
+
+test('Public vacancies quarantine exact legacy sample IDs without deleting any stored job', async () => {
+  const sample={source:'BLOGNONE',externalId:legacySampleJobIds[0]};
+  await assert.rejects(new JobsService({job:{findUnique:async()=>sample}},{}).findOne('qa'),/ข้อมูลตัวอย่างเดิม/);
+  let query;
+  const prisma={job:{findMany:async(args)=>{query=args.where;return [];},count:async()=>0}};
+  await new JobsService(prisma,{}).findAll();
+  assert.deepEqual(query.NOT.AND,[{source:{not:'INTERNAL'}},{externalId:{in:legacySampleJobIds}}]);
+  assert.deepEqual(honestJobContent({source:'REMOTIVE',salaryMin:70000,salaryMax:140000}),{requirements:undefined,benefits:undefined,salaryMin:null,salaryMax:null});
+});
 
 test('Job ingestion preserves missing fields and zero salary rather than fabricating benefits or pay', async () => {
   const saved=[];
