@@ -700,6 +700,29 @@ async function run() {
     assert.equal((await db.jobApplication.findUnique({ where: { id: application.id } })).status, 'CANCELLED');
     await screenshot('candidate-withdrawal-confirmed');
   });
+  await check('Closed applicants can read owned finished results but cannot start new attempts, including a later unfinished draft', async () => {
+    const owned = await db.assessmentAttempt.findFirst({ where: { assessmentId: companyAssessment.id, candidateId: candidate.candidateProfile.id } });
+    await db.assessmentAttempt.update({where:{id:owned.id},data:{status:'COMPLETED',completedAt:new Date(),score:5,maxScore:10,percentage:50,humanScore:50,finalScore:50,reviewStatus:'HUMAN_REVIEWED'}});
+    await db.assessmentAttempt.create({data:{assessmentId:companyAssessment.id,candidateId:candidate.candidateProfile.id,status:'IN_PROGRESS',startedAt:new Date(Date.now()+1000)}});
+    await db.assessment.update({where:{id:companyAssessment.id},data:{feedbackVisibility:'AFTER_REVIEW'}});
+    const count=await db.assessmentAttempt.count();
+    const metadata=await request(`/assessments/${companyAssessment.id}`,'GET',undefined,candidateToken);
+    assert.equal(metadata.canStartAttempt,false);
+    assert.deepEqual(metadata.questions,[]);
+    assert.equal((await requestResult(`/assessments/${companyAssessment.id}/start`,'POST',{},candidateToken)).status,403);
+    await goto('/assessments/'+companyAssessment.id);
+    await page.waitForFunction(()=>document.body.innerText.includes('คะแนนการประเมินผล:')&&document.body.innerText.includes('50%'));
+    assert(!(await page.$eval('body',e=>e.innerText)).includes('(Retake)'));
+    assert.equal(await db.assessmentAttempt.count(),count,'Viewing a result must not create a timed attempt');
+    await db.assessment.update({where:{id:companyAssessment.id},data:{feedbackVisibility:'PRIVATE_TO_COMPANY'}});
+    const hidden=(await request('/assessments/my-attempts','GET',undefined,candidateToken)).find(a=>a.id===owned.id);
+    assert.equal(hidden.feedbackHidden,true);
+    assert.equal(hidden.humanScore,null);
+    assert.equal(hidden.score,null);
+    await db.assessment.update({where:{id:companyAssessment.id},data:{feedbackVisibility:'AFTER_REVIEW',isActive:false}});
+    assert.equal((await request(`/assessments/${companyAssessment.id}`,'GET',undefined,candidateToken)).canStartAttempt,false);
+    assert.equal((await requestResult(`/assessments/${companyAssessment.id}/start`,'POST',{},candidateToken)).status,404);
+  });
   await check('Admin login and dashboard data', async () => { const token = await login('admin@smartcareer.dev', 'admin123', '/admin/dashboard'); const stats = await request('/admin/dashboard', 'GET', undefined, token); assert(stats && Object.keys(stats).length > 0); await screenshot('admin-dashboard'); });
   await check('Delete test job through UI', async () => {
     await login('hr@techcorp.co.th', 'password123', '/company/dashboard');

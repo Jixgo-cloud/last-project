@@ -71,8 +71,7 @@ export class AssessmentsService {
     if (!assessment) {
       throw new NotFoundException('Assessment not found');
     }
-    if (!assessment.isActive) throw new NotFoundException('Assessment not available');
-    await this.assertCandidateAccess(assessment, candidateUserId);
+    const canStartAttempt = await this.assertCandidateAccess(assessment, candidateUserId, true);
 
     // STRICT ZERO-LEAKAGE: Mask hidden test cases completely and omit solutionCode
     const sanitizedQuestions = assessment.questions.map((q) => {
@@ -104,7 +103,8 @@ export class AssessmentsService {
 
     return {
       ...assessment,
-      questions: sanitizedQuestions,
+      canStartAttempt,
+      questions: canStartAttempt ? sanitizedQuestions : [],
     };
   }
 
@@ -1115,8 +1115,12 @@ export class AssessmentsService {
     return attempt;
   }
 
-  private async assertCandidateAccess(assessment: { id: string; companyId: string | null }, candidateUserId: string) {
-    if (!assessment.companyId) return;
+  private async assertCandidateAccess(
+    assessment: { id: string; companyId: string | null; isActive?: boolean },
+    candidateUserId: string,
+    allowFinishedResult = false,
+  ): Promise<boolean> {
+    if (!assessment.companyId && assessment.isActive !== false) return true;
 
     const candidate = await this.prisma.candidateProfile.findUnique({
       where: { userId: candidateUserId },
@@ -1124,7 +1128,7 @@ export class AssessmentsService {
     });
     if (!candidate) throw new NotFoundException('Candidate profile not found');
 
-    const application = await this.prisma.jobApplication.findFirst({
+    const application = assessment.companyId && assessment.isActive !== false ? await this.prisma.jobApplication.findFirst({
       where: {
         candidateId: candidate.id,
         status: { notIn: [ApplicationStatus.CANCELLED, ApplicationStatus.REJECTED] },
@@ -1134,11 +1138,26 @@ export class AssessmentsService {
         ],
       },
       select: { id: true },
-    });
+    }) : null;
 
-    if (!application) {
-      throw new ForbiddenException('แบบทดสอบนี้เปิดให้เฉพาะผู้สมัครที่บริษัทมอบหมายเท่านั้น');
+    if (application) return true;
+
+    // A closed application cannot start another exam, but its owner retains
+    // access to a finished result. Do not use drafts or another user's attempt.
+    if (allowFinishedResult) {
+      const finished = await this.prisma.assessmentAttempt.findFirst({
+        where: {
+          candidateId: candidate.id,
+          assessmentId: assessment.id,
+          status: { in: [AttemptStatus.COMPLETED, AttemptStatus.EXPIRED] },
+        },
+        select: { id: true },
+      });
+      if (finished) return false;
     }
+
+    if (assessment.isActive === false) throw new NotFoundException('Assessment not available');
+    throw new ForbiddenException('แบบทดสอบนี้เปิดให้เฉพาะผู้สมัครที่บริษัทมอบหมายเท่านั้น');
   }
 
   private async updateCandidateSkillScoreInTx(

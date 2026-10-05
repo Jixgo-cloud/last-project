@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getAttemptPercentage, formatAttemptScore } from '@smartcareer/shared';
+import { getAttemptPercentage, formatAttemptScore, getLatestFinishedAttempt } from '@smartcareer/shared';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import DeleteConfirmation from '@/components/DeleteConfirmation';
@@ -264,6 +264,11 @@ export default function ApplicationsPage() {
                   const customAttempt = (app.candidate?.assessmentAttempts || []).find(
                     (att: any) => att.assessmentId === effectiveAssessment?.id
                   );
+                  const applicationClosed = app.status === 'REJECTED' || app.status === 'CANCELLED';
+                  const finishedAttempt = getLatestFinishedAttempt(
+                    (app.candidate?.assessmentAttempts || []).filter((att: any) => ['COMPLETED', 'EXPIRED'].includes(att.status)),
+                    effectiveAssessment?.id,
+                  );
                   const isPassed = customAttempt && (getAttemptPercentage(customAttempt) ?? -1) >= (effectiveAssessment?.passingScore || 70);
 
                   return (
@@ -336,7 +341,7 @@ export default function ApplicationsPage() {
                           )}
                         </div>
 
-                        {effectiveAssessment?.id && (
+                        {effectiveAssessment?.id && (!applicationClosed || finishedAttempt) && (
                           <div className="flex items-center gap-2">
                             <Link
                               href={`/assessments/${effectiveAssessment.id}`}
@@ -348,7 +353,7 @@ export default function ApplicationsPage() {
                             >
                               {customAttempt ? (
                                 <>
-                                  <span>ดูผล / ทำแบบทดสอบอีกครั้ง</span>
+                                  <span>{applicationClosed ? 'ดูผลสอบที่ส่งแล้ว' : 'ดูผล / ทำแบบทดสอบอีกครั้ง'}</span>
                                   <ArrowRight className="h-3.5 w-3.5" />
                                 </>
                               ) : (

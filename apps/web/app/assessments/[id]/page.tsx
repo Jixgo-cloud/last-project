@@ -85,9 +85,15 @@ export default function AssessmentRunnerPage() {
     try {
       // Load and validate the assessment before creating a timed attempt.
       const assessData = await apiRequest(`/assessments/${id}`);
+      if (retake && assessData.canStartAttempt === false) {
+        throw new Error('ดูผลสอบเดิมได้ แต่ใบสมัครหรือแบบทดสอบนี้ไม่เปิดให้เริ่มสอบใหม่');
+      }
       if (!retake) {
         const history = await apiRequest('/assessments/my-attempts');
-        const finished = getLatestFinishedAttempt<any>(history, String(id));
+        const resultHistory = assessData.canStartAttempt === false
+          ? history.filter((item: any) => ['COMPLETED', 'EXPIRED'].includes(item.status))
+          : history;
+        const finished = getLatestFinishedAttempt<any>(resultHistory, String(id));
         if (finished) {
           const result = { ...finished, percentage: getAttemptPercentage(finished) };
           setAssessment(assessData);
@@ -716,7 +722,7 @@ export default function AssessmentRunnerPage() {
                   >
                     ดูเรดาร์ทักษะในโปรไฟล์
                   </Link>
-                  <button
+                  {assessment.canStartAttempt !== false && <button
                     onClick={() => {
                       setTheoryResult(null);
                       setSelectedChoices({});
@@ -725,7 +731,7 @@ export default function AssessmentRunnerPage() {
                     className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-6 py-2.5 rounded-full border border-slate-200/90 bg-white text-slate-700 font-semibold text-xs hover:bg-slate-50 transition"
                   >
                     <RotateCcw className="h-3.5 w-3.5" /> สอบใหม่อีกครั้ง (Retake)
-                  </button>
+                  </button>}
                 </div>
               </div>
             ) : (
@@ -987,7 +993,7 @@ export default function AssessmentRunnerPage() {
                       >
                         ดูเรดาร์ทักษะในโปรไฟล์
                       </Link>
-                      <button
+                      {assessment.canStartAttempt !== false && <button
                         onClick={() => {
                           setCodingFinalResult(null);
                           setTestRunResults({});
@@ -996,7 +1002,7 @@ export default function AssessmentRunnerPage() {
                         className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-6 py-2.5 rounded-full border border-slate-200/90 bg-white text-slate-700 font-semibold text-xs hover:bg-slate-50 transition"
                       >
                         <RotateCcw className="h-3.5 w-3.5" /> ทดสอบใหม่อีกครั้ง (Retake)
-                      </button>
+                      </button>}
                     </div>
                   </div>
                 )}

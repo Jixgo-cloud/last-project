@@ -19,6 +19,49 @@ const { codingAttemptTotals } = require('../apps/api/dist/assessments/coding-att
 const { JobScreeningService } = require('../apps/api/dist/ingestion/job-screening.service');
 const { SchedulerService } = require('../apps/api/dist/scheduler/scheduler.service');
 
+test('Finished results remain readable for closed applications without granting retakes or exposing exam content', async () => {
+  for (const status of ['REJECTED', 'CANCELLED']) {
+    const candidate = { id: 'owner-profile' };
+    const assessment = {id:'company-exam',companyId:'qa-company',isActive:true,questions:[{id:'q',solutionCode:'secret',testCases:[{isHidden:true,input:'secret',expectedOutput:'secret'}]}]};
+    const service = new AssessmentsService({
+      candidateProfile:{findUnique:async ({where}) => {assert.equal(where.userId,'owner-user');return candidate;}},
+      assessment:{findUnique:async()=>assessment},
+      jobApplication:{findFirst:async ({where})=>{assert(where.status.notIn.includes(status));return null;}},
+      assessmentAttempt:{findFirst:async ({where})=>{assert.equal(where.candidateId,candidate.id);assert.equal(where.assessmentId,assessment.id);assert.deepEqual(where.status.in,['COMPLETED','EXPIRED']);return {id:'finished-own'};},create:async()=>assert.fail('Closed applications cannot create attempts')},
+    },{},{});
+    const metadata=await service.findOne(assessment.id,'owner-user');
+    assert.equal(metadata.canStartAttempt,false);
+    assert.deepEqual(metadata.questions,[]);
+    await assert.rejects(service.startAttempt(assessment.id,'owner-user'),/เฉพาะผู้สมัคร/);
+  }
+});
+
+test('Another candidate or an unfinished draft cannot grant access to a closed company exam', async () => {
+  for (const attempt of [{candidateId:'someone-else',status:'COMPLETED'},{candidateId:'viewer',status:'IN_PROGRESS'},{candidateId:'viewer',status:'SYSTEM_ERROR'}]) {
+    const service=new AssessmentsService({
+      candidateProfile:{findUnique:async()=>({id:'viewer'})},
+      assessment:{findUnique:async()=>({id:'exam',companyId:'company',isActive:true,questions:[]})},
+      jobApplication:{findFirst:async()=>null},
+      assessmentAttempt:{findFirst:async({where})=>where.candidateId===attempt.candidateId&&where.status.in.includes(attempt.status)?attempt:null},
+    },{},{});
+    await assert.rejects(service.findOne('exam','viewer-user'),/เฉพาะผู้สมัคร/);
+  }
+});
+
+test('An inactive exam permits only an owned finished result while active assignments keep start permission', async () => {
+  let active=false;
+  const service=new AssessmentsService({
+    candidateProfile:{findUnique:async()=>({id:'owner'})},
+    assessment:{findUnique:async()=>({id:'exam',companyId:'company',isActive:active,questions:[]})},
+    jobApplication:{findFirst:async()=>({id:'assigned'})},
+    assessmentAttempt:{findFirst:async()=>({id:'completed'})},
+  },{},{});
+  assert.equal((await service.findOne('exam','user')).canStartAttempt,false);
+  await assert.rejects(service.startAttempt('exam','user'),/not available/);
+  active=true;
+  assert.equal((await service.findOne('exam','user')).canStartAttempt,true);
+});
+
 test('Job cleanup keeps closed internal jobs and expired external jobs even for legacy DELETE requests', async () => {
   const jobs=[{id:'hired',source:'INTERNAL',isActive:false},{id:'external',source:'JSEARCH',isActive:true,expiresAt:new Date(0)}];
   let writes;
