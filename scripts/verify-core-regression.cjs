@@ -443,7 +443,7 @@ async function run() {
   });
   await check('Public job details show required and preferred skills with their actual minimum scores', async () => {
     const main = await db.jobSkill.findFirst({ where: { jobId: job.id }, include: { skill: true } });
-    const another = await db.skill.findFirst({ where: { id: { not: main.skillId } } });
+    const another = await db.skill.create({ data: { name: 'Regression Optional Skill', slug: 'regression-optional-skill', category: 'BACKEND' } });
     const optional = await db.jobSkill.create({ data: { jobId: job.id, skillId: another.id, isRequired: false, minimumScore: 0 } });
     try {
       await goto('/jobs/' + job.id);
@@ -453,7 +453,10 @@ async function run() {
       assert(texts.some(text => text.includes(main.skill.name) && text.includes('ทักษะหลัก (Required)') && text.includes(`คะแนนขั้นต่ำ ${main.minimumScore}%`)));
       assert(texts.some(text => text.includes(another.name) && text.includes('ทักษะเสริม (Preferred)') && text.includes('คะแนนขั้นต่ำ 0%')));
       await screenshot('job-skill-requirements');
-    } finally { await db.jobSkill.delete({ where: { id: optional.id } }); }
+    } finally {
+      await db.jobSkill.delete({ where: { id: optional.id } });
+      await db.skill.delete({ where: { id: another.id } });
+    }
   });
   await check('Toggle job off and on through UI', async () => {
     await goto('/company/jobs');
