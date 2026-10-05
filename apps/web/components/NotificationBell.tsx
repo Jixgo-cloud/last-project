@@ -44,6 +44,7 @@ export default function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const bellRef = useRef<HTMLButtonElement>(null);
 
   const fetchNotifications = useCallback(async () => {
     if (!user) return;
@@ -73,9 +74,22 @@ export default function NotificationBell() {
         setOpen(false);
       }
     }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    if (!open) return;
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setOpen(false);
+        bellRef.current?.focus();
+      }
+    }
+    document.addEventListener('pointerdown', handleClickOutside);
+    document.addEventListener('click', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('pointerdown', handleClickOutside);
+      document.removeEventListener('click', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [open]);
 
   const handleMarkAsRead = async (id: string, link?: string | null) => {
     try {
@@ -178,6 +192,7 @@ export default function NotificationBell() {
       <button
         type="button"
         id="btn-notification-bell"
+        ref={bellRef}
         onClick={() => {
           setOpen(!open);
           if (!open) {

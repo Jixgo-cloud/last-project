@@ -142,7 +142,7 @@ function RegisterForm() {
 
                 <div className="p-3 rounded-2xl bg-[#e8eaff]/50 border border-[#dce0ff] flex items-center gap-2 text-[11px] text-[#4f46e5]">
                   <Info className="h-4 w-4 shrink-0 text-[#4f46e5]" />
-                  <span>ผู้สมัครต้องสมัครด้วย GitHub เท่านั้น เพื่อนำ Repositories มาคำนวณเรดาร์ทักษะได้ทันที</span>
+                  <span>ผู้สมัครต้องสมัครด้วย GitHub เท่านั้น หลังเข้าสู่ระบบให้กดซิงค์ผลงานในหน้าโปรไฟล์เพื่ออัปเดตหลักฐานทักษะ</span>
                 </div>
               </>
             ) : (

@@ -55,9 +55,9 @@ export default function CompanyDashboardPage() {
                     <Building2 className="h-8 w-8 text-[#4f46e5]" />
                   )}
                 </div>
-                <div>
-                  <div className="flex items-center gap-2.5">
-                    <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <h1 className="break-words text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
                       {company?.name || 'My Company'}
                     </h1>
                     <span

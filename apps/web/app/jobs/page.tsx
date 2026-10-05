@@ -203,22 +203,23 @@ export default function JobsPage() {
               </span>
             </h1>
             <p className="text-[13px] text-[#667085] mt-2 max-w-2xl leading-relaxed">
-              รวบรวมตำแหน่งงานสายเทคแบบเรียลไทม์จาก JobsDB Thailand, JobThai, Blognone, Remotive และ Google Jobs พร้อมประเมิน Match Score อัจฉริยะ
+              ค้นหางานจากบริษัทและแหล่งงานที่แสดงในระบบ เข้าสู่ระบบด้วยบัญชีผู้สมัครเพื่อดูคะแนนความเหมาะสมกับทักษะของคุณ
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
             {/* Sort Dropdown */}
-            <div className="flex items-center gap-2 bg-white/95 border border-slate-200/90 rounded-full px-4 py-2 shadow-xs">
+            <div className="flex min-w-0 max-w-full items-center gap-2 bg-white/95 border border-slate-200/90 rounded-full px-4 py-2 shadow-xs">
               <ArrowUpDown className="h-3.5 w-3.5 text-[#4f46e5]" />
-              <span className="text-[11px] font-semibold text-[#667085]">เรียงตาม:</span>
+              <span className="shrink-0 text-[11px] font-semibold text-[#667085]">เรียงตาม:</span>
               <select
                 value={sortBy}
                 onChange={(e) => {
                   setSortBy(e.target.value);
                   setPage(1);
                 }}
-                className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                aria-label="เรียงลำดับงาน"
+                className="min-w-0 flex-1 bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
               >
                 <option value="recent">🕒 ล่าสุด (Newest)</option>
                 <option value="matchScore">🌟 Best Match (ตรงกับทักษะคุณ)</option>

@@ -1,7 +1,9 @@
 # SmartCareer — UAT Master Index & Acceptance Protocol
+> อัปเดต 6 ตุลาคม 2026: ขั้นตอนและบัญชีในเอกสารชุดเดิมด้านล่างเป็นข้อมูลย้อนหลัง ใช้ [คู่มือปัจจุบัน](CURRENT_USER_GUIDE.md) และ [นโยบาย GitHub/Google](AUTH_PROVIDER_POLICY.md) สำหรับรอบใหม่ โดยเฉพาะการสมัครด้วยอีเมล การเข้าสู่ระบบด้วยรหัสผ่านของบัญชีทั่วไป และ LocalStorage ไม่ตรงกับระบบปัจจุบัน ผลเดิมไม่ได้รับรองว่าผ่านข้อกำหนดใหม่
+
 **Document Code**: `UAT-DOC-00`  
 **Version**: `2.0 (Official Execution Edition)`  
-**Status**: `READY FOR EXECUTION`  
+**Status**: `HISTORICAL — use CURRENT_USER_GUIDE.md for current procedures`
 **Target System**: SmartCareer Monorepo (`apps/api` NestJS 10, `apps/web` Next.js 14, PostgreSQL 18, Prisma ORM 5.22)
 
 ---

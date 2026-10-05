@@ -1,7 +1,9 @@
 # SmartCareer — UAT Test Scripts: Company (Employer) Role
+> เอกสารขั้นตอนรุ่นเก่า: ดู [คู่มือปัจจุบัน](CURRENT_USER_GUIDE.md) และ [การเข้าสู่ระบบ GitHub/Google](AUTH_PROVIDER_POLICY.md) ก่อนทดสอบ การสมัครด้วยอีเมล รหัสผ่านของบัญชีทั่วไป และ LocalStorage ในเอกสารเดิมไม่ใช่พฤติกรรมปัจจุบัน
+
 **Document Code**: `UAT-DOC-02`  
 **User Role**: `COMPANY (บริษัทนายจ้าง / HR / Tech Lead)`  
-**Status**: `READY FOR EXECUTION`  
+**Status**: `HISTORICAL`
 **Target Routes**: `/login`, `/register`, `/company/dashboard`, `/company/profile`, `/company/jobs`, `/company/jobs/new`, `/company/applications`, `/company/assessments`  
 **Index Reference**: [00_UAT_MASTER_INDEX.md](file:///d:/Workshop/last-project/docs/uat/00_UAT_MASTER_INDEX.md)
 

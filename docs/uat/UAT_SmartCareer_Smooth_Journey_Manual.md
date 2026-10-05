@@ -1,4 +1,6 @@
 # คู่มือและแบบบันทึกผลการทดสอบระบบ UAT (User Acceptance Testing)
+> เอกสารขั้นตอนรุ่นเก่า: ดู [คู่มือปัจจุบัน](CURRENT_USER_GUIDE.md) และ [การเข้าสู่ระบบ GitHub/Google](AUTH_PROVIDER_POLICY.md) ก่อนทดสอบ การสมัครด้วยอีเมล รหัสผ่านของบัญชีทั่วไป และ LocalStorage ในเอกสารเดิมไม่ใช่พฤติกรรมปัจจุบัน
+
 ## SmartCareer Platform · ระบบวิเคราะห์ทักษะและจับคู่งานอัจฉริยะด้วย AI
 **รหัสเอกสาร:** `DOC-UAT-SC2026-JOURNEY-V2.0` | **ฉบับ:** Smooth End-to-End Simulation | **วันที่:** 2 ตุลาคม 2026
 

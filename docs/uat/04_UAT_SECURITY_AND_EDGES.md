@@ -1,7 +1,9 @@
 # SmartCareer — UAT Test Scripts: Security, Concurrency & Edge Cases
+> เอกสารขั้นตอนรุ่นเก่า: ดู [คู่มือปัจจุบัน](CURRENT_USER_GUIDE.md) และ [การเข้าสู่ระบบ GitHub/Google](AUTH_PROVIDER_POLICY.md) ก่อนทดสอบ การสมัครด้วยอีเมล รหัสผ่านของบัญชีทั่วไป และ LocalStorage ในเอกสารเดิมไม่ใช่พฤติกรรมปัจจุบัน
+
 **Document Code**: `UAT-DOC-04`  
 **Focus Area**: `SECURITY, RBAC, CONCURRENCY, RESILIENCY & EDGE CASES`  
-**Status**: `READY FOR EXECUTION`  
+**Status**: `HISTORICAL`
 **Standards Reference**: OWASP Top 10 API Security Risks, ISO/IEC 25010 Quality Standards  
 **Index Reference**: [00_UAT_MASTER_INDEX.md](file:///d:/Workshop/last-project/docs/uat/00_UAT_MASTER_INDEX.md)
 
