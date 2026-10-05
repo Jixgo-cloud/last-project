@@ -6,6 +6,14 @@ const { candidateFeedback } = require('../apps/api/dist/assessments/candidate-fe
 const { GithubService } = require('../apps/api/dist/github/github.service');
 const { CompanyService } = require('../apps/api/dist/company/company.service');
 const { AssessmentsService } = require('../apps/api/dist/assessments/assessments.service');
+const { honestJobContent } = require('../apps/api/dist/jobs/job-content');
+
+test('External job details suppress exact fabricated ingestion defaults without changing employer content', () => {
+  const inserted = {source:'REMOTIVE',requirements:'Proficiency with modern web tech stack, Git, team collaboration, and problem-solving.',benefits:'Flexible working arrangements, competitive compensation, learning budget, and medical insurance.'};
+  assert.deepEqual(honestJobContent(inserted), {requirements:null, benefits:null});
+  assert.deepEqual(honestJobContent({...inserted,source:'INTERNAL'}), {requirements:inserted.requirements,benefits:inserted.benefits});
+  assert.deepEqual(honestJobContent({source:'REMOTIVE',requirements:'Source requirements',benefits:'Source benefits'}), {requirements:'Source requirements',benefits:'Source benefits'});
+});
 
 test('Human review preserves raw points when the maximum is not 100', async () => {
   for (const humanScore of [0,40,75,100]) {

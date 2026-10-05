@@ -54,6 +54,7 @@ export default function AdminAssessmentsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Modal State: Attempts & Admin Review
   const [showAttemptsModal, setShowAttemptsModal] = useState(false);
@@ -122,6 +123,7 @@ export default function AdminAssessmentsPage() {
 
   const handleDelete = (id: string, title: string) => setDeleteTarget({ id, title });
   const handleOpenCreateModal = () => {
+    setFormError(null);
     setEditingId(null);
     setFormTitle('');
     setFormDescription('');
@@ -158,6 +160,7 @@ export default function AdminAssessmentsPage() {
   };
 
   const handleEditAssessment = async (id: string) => {
+    setFormError(null);
     try {
       setSaving(true);
       const data = await apiRequest(`/admin/assessments/${id}`);
@@ -393,6 +396,7 @@ export default function AdminAssessmentsPage() {
 
   const handleSaveAssessment = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     const validationError = getAssessmentValidationError({
       title: formTitle,
       type: formType,
@@ -401,7 +405,7 @@ export default function AdminAssessmentsPage() {
       questions: formQuestions,
     });
     if (validationError) {
-      alert(validationError);
+      setFormError(validationError);
       return;
     }
 
@@ -446,7 +450,7 @@ export default function AdminAssessmentsPage() {
       setShowModal(false);
       loadData();
     } catch (err: any) {
-      alert(`Save error: ${err.message}`);
+      setFormError(err.message || 'บันทึกแบบทดสอบไม่สำเร็จ กรุณาลองอีกครั้ง');
     } finally {
       setSaving(false);
     }
@@ -767,6 +771,7 @@ export default function AdminAssessmentsPage() {
               </div>
 
               <form onSubmit={handleSaveAssessment} className="space-y-6">
+                {formError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{formError}</p>}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">

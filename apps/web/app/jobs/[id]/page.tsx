@@ -366,23 +366,23 @@ export default function JobDetailPage() {
                 )}
 
                 {/* 2. คุณสมบัติผู้สมัคร */}
-                {job.requirements && (
+                {(
                   <div>
                     <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-3 tracking-tight">
                       คุณสมบัติผู้สมัคร (Qualifications)
                     </h3>
-                    <FormattedJobContent content={job.requirements} />
+                    {job.requirements ? <FormattedJobContent content={job.requirements} /> : <p className="text-sm text-slate-500">ยังไม่มีข้อมูลคุณสมบัติจากแหล่งประกาศ กรุณาตรวจที่ต้นทาง</p>}
                   </div>
                 )}
 
                 {/* 3. สวัสดิการ */}
-                {job.benefits && (
+                {(
                   <div>
                     <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-3 tracking-tight">
                       สวัสดิการ (Benefits)
                     </h3>
                     <div className="bg-[#f9fafb] border border-slate-200/70 rounded-2xl p-4 sm:p-5">
-                      <FormattedJobContent content={job.benefits} />
+                      {job.benefits ? <FormattedJobContent content={job.benefits} /> : <p className="text-sm text-slate-500">ยังไม่มีข้อมูลสวัสดิการจากแหล่งประกาศ กรุณาตรวจที่ต้นทาง</p>}
                     </div>
                   </div>
                 )}

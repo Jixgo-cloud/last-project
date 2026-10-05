@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MatchingService } from '../matching/matching.service';
+import { honestJobContent } from './job-content';
 import { JobType, JobSource, SkillCategory, CareerTrack } from '@smartcareer/shared';
 
 export const CAREER_DEFINITIONS: Record<string, { categories: SkillCategory[]; keywords: string[] }> = {
@@ -292,6 +293,7 @@ export class JobsService {
 
     return {
       ...job,
+      ...honestJobContent(job),
       isFavorited,
       matchScore,
       recommendedCourses,
