@@ -215,6 +215,42 @@ async function run() {
     }
     assert.equal(await db.user.count(), before);
   });
+  await check('New provider identities create complete accounts once and reject cross-role signup', async () => {
+    const before = await db.user.count();
+    for (const [role, provider, email] of [
+      ['CANDIDATE', 'github', 'new-candidate@isolated-qa.test'],
+      ['COMPANY', 'google', 'new-company@isolated-qa.test'],
+    ]) {
+      const identity = { role, provider, email, fullName: 'Isolated signup QA',
+        ...(role === 'CANDIDATE' ? { githubUsername: 'isolated-new-candidate' } : {}) };
+      const created = await request('/auth/dev-callback', 'POST', identity);
+      assert.equal(created.role, role);
+      const saved = await db.user.findUnique({ where: { id: created.id }, include: {
+        candidateProfile: true, companyMembers: { include: { company: true } },
+      } });
+      assert.equal(saved.passwordHash, null);
+      assert.equal(saved.authProvider, provider.toUpperCase());
+      if (role === 'CANDIDATE') {
+        assert.equal(saved.candidateProfile.githubUsername, identity.githubUsername);
+        assert.equal(saved.candidateProfile.userId, created.id);
+        assert.equal(saved.companyMembers.length, 0);
+      } else {
+        assert.equal(saved.candidateProfile, null);
+        assert.equal(saved.companyMembers.length, 1);
+        assert.equal(saved.companyMembers[0].role, 'OWNER');
+        assert.equal(saved.companyMembers[0].company.verificationStatus, 'PENDING');
+      }
+      assert.equal((await request('/auth/dev-callback', 'POST', identity)).id, created.id);
+      assert.equal((await requestResult('/auth/dev-callback', 'POST', {
+        ...identity, provider: provider === 'github' ? 'google' : 'github',
+      })).status, 400);
+      assert.equal((await requestResult('/auth/login', 'POST', { email, password: 'qa-negative-check-only' })).status, 401);
+      const unchanged = await db.user.findUnique({ where: { id: created.id } });
+      assert.equal(unchanged.role, role);
+      assert.equal(unchanged.authProvider, provider.toUpperCase());
+    }
+    assert.equal(await db.user.count(), before + 2, 'Repeat signup must reuse identities without creating duplicate accounts');
+  });
   await check('Guest job favorites explain sign-in without blocking browser dialogs or saving data', async () => {
     const fixture = await db.job.create({data:{companyId:company.id,companyName:company.name,title:'Guest favorite fixture',slug:'guest-favorite-fixture',description:'Isolated regression only'}});
     let dialogs = 0;
