@@ -12,6 +12,26 @@ import {
 } from '@smartcareer/shared';
 import { NotificationsService } from '../notifications/notifications.service';
 
+// Pipeline/profile views need results, not question snapshots or submitted code.
+const attemptSummarySelect = {
+  id: true,
+  assessmentId: true,
+  status: true,
+  score: true,
+  maxScore: true,
+  percentage: true,
+  passed: true,
+  humanScore: true,
+  finalScore: true,
+  reviewStatus: true,
+  startedAt: true,
+  completedAt: true,
+  integrityEvents: true,
+  assessment: {
+    select: { id: true, title: true, passingScore: true, type: true, companyId: true },
+  },
+} as const;
+
 @Injectable()
 export class CompanyService {
   constructor(
@@ -269,13 +289,10 @@ export class CompanyService {
             skills: { include: { skill: true } },
             githubRepos: { take: 3 },
             assessmentAttempts: {
+              where: { assessment: { OR: [{ companyId: company.id }, { companyId: null }] } },
               orderBy: { startedAt: 'desc' },
               take: 5,
-              include: {
-                assessment: {
-                  select: { id: true, title: true, passingScore: true, type: true },
-                },
-              },
+              select: attemptSummarySelect,
             },
           },
         },
@@ -911,12 +928,13 @@ export class CompanyService {
     });
   }
 
-  async getCandidateProfile(userId: string, candidateId: string) {
+  async getCandidateProfile(userId: string, candidateId: string, applicationId?: string) {
     const company = await this.getCompanyByUserId(userId);
 
     // Verify authorization: Ensure candidate has applied to at least one job from this company
     const application = await this.prisma.jobApplication.findFirst({
       where: {
+        ...(applicationId ? { id: applicationId } : {}),
         candidateId,
         job: { companyId: company.id },
       },
@@ -973,18 +991,9 @@ export class CompanyService {
           orderBy: { stargazersCount: 'desc' },
         },
         assessmentAttempts: {
+          where: { assessment: { OR: [{ companyId: company.id }, { companyId: null }] } },
           orderBy: { startedAt: 'desc' },
-          include: {
-            assessment: {
-              select: {
-                id: true,
-                title: true,
-                type: true,
-                passingScore: true,
-                companyId: true,
-              },
-            },
-          },
+          select: attemptSummarySelect,
         },
         evaluations: {
           where: { companyId: company.id },

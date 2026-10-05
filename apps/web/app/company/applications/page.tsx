@@ -140,13 +140,15 @@ function CompanyApplicationsContent() {
     }
   };
 
-  const handleOpenProfile = useCallback(async (candidateId: string) => {
+  const handleOpenProfile = useCallback(async (candidateId: string, applicationId?: string) => {
     if (!candidateId) return;
     setSelectedCandidateId(candidateId);
+    setCandidateProfile(null);
     setLoadingProfile(true);
     setProfileTab('overview');
     try {
-      const data = await apiRequest(`/company/candidates/${candidateId}`);
+      const query = applicationId ? `?applicationId=${encodeURIComponent(applicationId)}` : '';
+      const data = await apiRequest(`/company/candidates/${candidateId}${query}`);
       setCandidateProfile(data);
     } catch (err: any) {
       alert(`ไม่สามารถดึงข้อมูลโปรไฟล์ผู้สมัครได้: ${err.message}`);
@@ -162,7 +164,7 @@ function CompanyApplicationsContent() {
   };
 
   const handleOpenEvalFromProfile = () => {
-    const currentApp = applications.find((a) => (a.candidate?.id || a.candidateId) === selectedCandidateId) || candidateProfile?.application;
+    const currentApp = applications.find((a) => a.id === candidateProfile?.application?.id) || candidateProfile?.application;
     if (currentApp) {
       handleCloseProfile();
       handleOpenEvaluation(currentApp);
@@ -170,16 +172,16 @@ function CompanyApplicationsContent() {
   };
 
   const handleStatusChangeFromProfile = async (newStatus: ApplicationStatus) => {
-    const appId = candidateProfile?.application?.id || applications.find((a) => (a.candidate?.id || a.candidateId) === selectedCandidateId)?.id;
+    const appId = candidateProfile?.application?.id;
     if (!appId) return;
-    await handleStatusChange(appId, newStatus);
+    if (!(await handleStatusChange(appId, newStatus))) return;
     setCandidateProfile((prev: any) =>
-      prev
+      prev?.application?.id === appId
         ? {
             ...prev,
             application: prev.application ? { ...prev.application, status: newStatus } : undefined,
           }
-        : null,
+        : prev,
     );
   };
 
@@ -203,7 +205,7 @@ function CompanyApplicationsContent() {
       !targetApp.job?.customAssessment
     ) {
       handleOpenAssignAssessment(targetApp);
-      return;
+      return false;
     }
     try {
       await apiRequest(`/company/applications/${appId}/status`, {
@@ -211,8 +213,10 @@ function CompanyApplicationsContent() {
         body: JSON.stringify({ status: newStatus }),
       });
       fetchApps();
+      return true;
     } catch (err: any) {
       alert(`Status update failed: ${err.message}`);
+      return false;
     }
   };
 
@@ -472,7 +476,7 @@ function CompanyApplicationsContent() {
                       <div className="flex items-start gap-3">
                         <button
                           type="button"
-                          onClick={() => handleOpenProfile(app.candidate?.id || app.candidateId)}
+                          onClick={() => handleOpenProfile(app.candidate?.id || app.candidateId, app.id)}
                           className="h-11 w-11 rounded-2xl bg-gradient-to-tr from-[#6366f1] via-[#4f46e5] to-[#3730a3] text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs hover:ring-2 hover:ring-indigo-400 hover:scale-105 transition cursor-pointer overflow-hidden group"
                           title="คลิกเพื่อดูโปรไฟล์ผู้สมัครแบบเต็ม"
                         >
@@ -485,7 +489,7 @@ function CompanyApplicationsContent() {
                         <div>
                           <button
                             type="button"
-                            onClick={() => handleOpenProfile(app.candidate?.id || app.candidateId)}
+                            onClick={() => handleOpenProfile(app.candidate?.id || app.candidateId, app.id)}
                             className="text-base font-black text-slate-900 hover:text-[#4f46e5] transition flex items-center gap-1.5 text-left group cursor-pointer"
                             title="คลิกดูโปรไฟล์ผู้สมัครและเรดาร์ทักษะ"
                           >
@@ -643,7 +647,7 @@ function CompanyApplicationsContent() {
                   <div className="mt-5 pt-3 border-t border-slate-100 flex flex-col sm:flex-row gap-2">
                     <button
                       type="button"
-                      onClick={() => handleOpenProfile(app.candidate?.id || app.candidateId)}
+                      onClick={() => handleOpenProfile(app.candidate?.id || app.candidateId, app.id)}
                       className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-full text-xs font-bold border border-slate-200/90 bg-slate-50/70 hover:bg-indigo-50/80 hover:border-indigo-200 hover:text-[#4f46e5] text-slate-700 transition shadow-2xs cursor-pointer group"
                     >
                       <UserCheck className="h-3.5 w-3.5 text-[#4f46e5] group-hover:scale-110 transition" />
@@ -1578,12 +1582,17 @@ function CompanyApplicationsContent() {
                   <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     {/* Stage Selector inside Modal */}
                     <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-500">รอบที่ {candidateProfile.application?.roundNumber || 1}</span>
                       <span className="text-xs font-bold text-slate-600 whitespace-nowrap">ขั้นตอน:</span>
                       <select
                         value={candidateProfile.application?.status || ApplicationStatus.APPLIED}
+                        disabled={candidateProfile.application?.status === ApplicationStatus.CANCELLED}
                         onChange={(e) => handleStatusChangeFromProfile(e.target.value as ApplicationStatus)}
                         className="text-xs font-bold rounded-xl border border-slate-200 bg-white py-2 px-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition cursor-pointer shadow-2xs"
                       >
+                        {candidateProfile.application?.status === ApplicationStatus.CANCELLED && (
+                          <option value={ApplicationStatus.CANCELLED}>Cancelled — ยกเลิกใบสมัครแล้ว</option>
+                        )}
                         {STATUS_OPTIONS.map((opt) => (
                           <option key={opt.value} value={opt.value}>
                             {opt.label} — {opt.labelTh}

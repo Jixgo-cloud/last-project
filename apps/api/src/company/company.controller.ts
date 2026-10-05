@@ -8,6 +8,7 @@ import {
   Body,
   Param,
   Query,
+  ParseUUIDPipe,
   UseGuards,
   Request,
   Res,
@@ -111,8 +112,9 @@ export class CompanyController {
   async getCandidateProfile(
     @Request() req: any,
     @Param('candidateId') candidateId: string,
+    @Query('applicationId', new ParseUUIDPipe({ optional: true })) applicationId?: string,
   ) {
-    return this.companyService.getCandidateProfile(req.user.id, candidateId);
+    return this.companyService.getCandidateProfile(req.user.id, candidateId, applicationId);
   }
 
   // --- Company Custom Assessments ---

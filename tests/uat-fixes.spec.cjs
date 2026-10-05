@@ -99,6 +99,31 @@ test('Foreign job scope fails before querying any applications; owned scope reac
   prisma.job.findFirst = async()=>({id:'owned'});
   await service.getApplications('user','owned');
   assert.deepEqual(query.where.job,{companyId:'company',id:'owned'});
+  const attempts=query.include.candidate.include.assessmentAttempts;
+  assert.deepEqual(attempts.where.assessment.OR,[{companyId:'company'},{companyId:null}]);
+  assert.equal(attempts.select.snapshot,undefined);
+  assert.equal(attempts.select.sourceCode,undefined);
+});
+
+test('Profile actions use the selected application and exclude another company’s exam evidence', async () => {
+  let applicationQuery;
+  let candidateQuery;
+  const prisma={
+    jobApplication:{findFirst:async args=>{applicationQuery=args;return{id:'round-1',status:'CANCELLED'};}},
+    candidateProfile:{findUnique:async args=>{candidateQuery=args;return{userId:'candidate-user',assessmentAttempts:[]};}},
+  };
+  const service=new CompanyService(prisma,{getRadarData:async()=>[]},{});
+  service.getCompanyByUserId=async()=>({id:'owner'});
+  const result=await service.getCandidateProfile('user','candidate','round-1');
+  assert.deepEqual(applicationQuery.where,{id:'round-1',candidateId:'candidate',job:{companyId:'owner'}});
+  assert.equal(result.application.id,'round-1');
+  const attempts=candidateQuery.include.assessmentAttempts;
+  assert.deepEqual(attempts.where.assessment.OR,[{companyId:'owner'},{companyId:null}]);
+  for(const field of ['snapshot','sourceCode','draftCode','evaluationSnapshot','answers']) assert.equal(attempts.select[field],undefined);
+  candidateQuery=undefined;
+  prisma.jobApplication.findFirst=async()=>null;
+  await assert.rejects(service.getCandidateProfile('user','candidate','foreign-round'), /only view/);
+  assert.equal(candidateQuery,undefined);
 });
 
 test('Inactive or incomplete assignments never change the application status', async () => {
