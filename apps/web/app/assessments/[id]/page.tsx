@@ -7,6 +7,7 @@ import Footer from '@/components/Footer';
 import { useAuth } from '@/lib/auth-context';
 import { apiRequest } from '@/lib/api';
 import Editor from '@monaco-editor/react';
+import ConfirmationDialog from '@/components/DeleteConfirmation';
 import {
   Code2,
   Clock,
@@ -69,8 +70,11 @@ export default function AssessmentRunnerPage() {
   const [testRunResults, setTestRunResults] = useState<Record<string, any>>({});
   const [submittedQuestions, setSubmittedQuestions] = useState<Record<string, any>>({});
   const [finalizingAttempt, setFinalizingAttempt] = useState(false);
+  const finalizingRef = useRef(false);
   const [submissionFeedback, setSubmissionFeedback] = useState<string | null>(null);
   const [codingFinalResult, setCodingFinalResult] = useState<any>(null);
+  const [confirmFinalize, setConfirmFinalize] = useState(false);
+  const [finalizeError, setFinalizeError] = useState<string | null>(null);
 
   // Load Assessment & Start Attempt
   const initAssessment = useCallback(async (retake = false) => {
@@ -113,6 +117,9 @@ export default function AssessmentRunnerPage() {
       const attemptData = await apiRequest(`/assessments/${id}/start`, { method: 'POST' });
       setAssessment(assessData);
       setAttempt(attemptData);
+      setSubmittedQuestions(Object.fromEntries(
+        (attemptData.submittedQuestionIds || []).map((questionId: string) => [questionId, true]),
+      ));
 
       const totalSeconds = (assessData.timeLimitMinutes || 30) * 60;
       if (attemptData?.startedAt) {
@@ -410,29 +417,32 @@ export default function AssessmentRunnerPage() {
 
   // 3. Finalize Multi-Question Attempt (Calculates total and closes attempt)
   const handleFinalizeAttempt = useCallback(async (automatic = false) => {
-    if (!attempt || finalizingAttempt) return;
+    if (!attempt || finalizingRef.current) return;
     const answeredCount = Object.keys(submittedQuestions).length;
     const totalCount = assessment?.questions?.length || 1;
     if (!automatic && answeredCount < totalCount) {
-      const confirmSubmit = window.confirm(
-        `คุณเพิ่งส่งคำตอบไปแล้ว ${answeredCount} จาก ${totalCount} ข้อ คุณแน่ใจหรือไม่ว่าต้องการจบการสอบและส่งผลคะแนนทั้งหมดตอนนี้?`,
-      );
-      if (!confirmSubmit) return;
+      setConfirmFinalize(true);
+      return;
     }
 
+    finalizingRef.current = true;
     setFinalizingAttempt(true);
+    setFinalizeError(null);
     try {
       const result = await apiRequest(`/assessments/${id}/finalize-attempt`, {
         method: 'POST',
         body: JSON.stringify({ attemptId: attempt.id }),
       });
       setCodingFinalResult(result);
+      setConfirmFinalize(false);
     } catch (e: any) {
-      alert(`Finalize error: ${e.message}`);
+      setFinalizeError(e.message || 'ส่งข้อสอบไม่สำเร็จ กรุณาลองใหม่');
+      throw e;
     } finally {
+      finalizingRef.current = false;
       setFinalizingAttempt(false);
     }
-  }, [attempt, finalizingAttempt, submittedQuestions, assessment, id]);
+  }, [attempt, submittedQuestions, assessment, id]);
 
   // Auto-submit when timer hits zero.
   const handleTimeExpired = useCallback(() => {
@@ -443,7 +453,7 @@ export default function AssessmentRunnerPage() {
     if (assessment?.type === AssessmentType.THEORY) {
       void handleSubmitTheory();
     } else if (assessment?.type === AssessmentType.PRACTICAL_CODING) {
-      void handleFinalizeAttempt(true);
+      void handleFinalizeAttempt(true).catch(() => undefined);
     }
   }, [hasAutoSubmitted, theoryResult, codingFinalResult, assessment, handleSubmitTheory, handleFinalizeAttempt]);
 
@@ -1030,7 +1040,7 @@ export default function AssessmentRunnerPage() {
                     </div>
 
                     <button
-                      onClick={() => void handleFinalizeAttempt()}
+                      onClick={() => void handleFinalizeAttempt().catch(() => undefined)}
                       disabled={finalizingAttempt || Object.keys(submittedQuestions).length === 0}
                       className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-xs transition disabled:opacity-50"
                       title="ส่งชุดข้อสอบทั้งหมดและคำนวณคะแนนรวม"
@@ -1321,6 +1331,15 @@ export default function AssessmentRunnerPage() {
           </div>
         )}
       </main>
+
+      {finalizeError && <div role="alert" className="mx-auto mb-6 max-w-3xl rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <p>ส่งข้อสอบไม่สำเร็จ: {finalizeError}</p>
+        <button disabled={finalizingAttempt} onClick={() => void handleFinalizeAttempt(true).catch(() => undefined)}
+          className="mt-3 rounded-lg border border-red-300 px-4 py-2 disabled:opacity-50">ลองส่งอีกครั้ง</button>
+      </div>}
+      {confirmFinalize && <ConfirmationDialog title={assessment.title} confirmLabel="ยืนยันจบการสอบ"
+        description={`ส่งคำตอบแล้ว ${Object.keys(submittedQuestions).length} จาก ${assessment.questions.length} ข้อ หากจบตอนนี้ ข้อที่ยังไม่ส่งจะไม่ได้คะแนน ร่างคำตอบยังไม่ถือว่าส่ง`}
+        onCancel={() => setConfirmFinalize(false)} onConfirm={() => handleFinalizeAttempt(true)} />}
 
       <Footer />
     </div>

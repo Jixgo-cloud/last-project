@@ -3,6 +3,10 @@ export function candidateFeedback<T extends Record<string, any>>(attempt: T, ass
   const hidden = Boolean(assessment?.companyId) && (assessment.feedbackVisibility === 'PRIVATE_TO_COMPANY' ||
     (assessment.feedbackVisibility === 'AFTER_REVIEW' && attempt.reviewStatus !== 'HUMAN_REVIEWED'));
   const result: any = { ...attempt };
+  // Progress can be restored without disclosing answers or marking details.
+  if (Array.isArray(attempt.answers)) {
+    result.submittedQuestionIds = [...new Set(attempt.answers.map((answer: any) => answer.questionId).filter((id: unknown) => typeof id === 'string'))];
+  }
   // Snapshots and answer details contain marking keys and hidden test inputs.
   delete result.snapshot;
   delete result.assessmentSnapshot;

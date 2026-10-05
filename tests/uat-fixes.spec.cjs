@@ -17,6 +17,16 @@ const { CompanyService } = require('../apps/api/dist/company/company.service');
 const { AssessmentsService } = require('../apps/api/dist/assessments/assessments.service');
 const { codingAttemptTotals } = require('../apps/api/dist/assessments/coding-attempt-totals');
 
+test('Resuming an attempt exposes submitted question IDs without answers or private grades', () => {
+  const result = candidateFeedback({status:'IN_PROGRESS',reviewStatus:'PENDING_HUMAN_REVIEW',score:25,
+    answers:[{questionId:'first',sourceCode:'private answer',executionResult:{hiddenTests:['secret']}},{questionId:'first'}],
+    snapshot:{markingKey:'secret'}, assessment:{companyId:'qa',feedbackVisibility:'PRIVATE_TO_COMPANY'}});
+  assert.deepEqual(result.submittedQuestionIds,['first']);
+  assert.equal(result.answers,undefined);
+  assert.equal(result.snapshot,undefined);
+  assert.equal(result.score,null);
+});
+
 test('Submitting the last coding question returns whole-exam points, not just that question', async () => {
   const answers=[{questionId:'first',pointsEarned:25,executionResult:{}}];
   const attempt={id:'qa',status:'IN_PROGRESS',startedAt:new Date(),reviewStatus:'NOT_REQUIRED',assessment:{companyId:null,skillId:null,timeLimitMinutes:5,passingScore:70,questions:[{id:'first',points:25},{id:'second',points:25,evaluationMethod:'AUTOMATED_TEST_CASES',testCases:[{input:'2,3',expectedOutput:'5'}]}]}};
