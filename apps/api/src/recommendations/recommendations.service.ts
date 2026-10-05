@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SkillGapItem, SkillCategory, CourseSource } from '@smartcareer/shared';
 import { CAREER_DEFINITIONS } from '../jobs/jobs.service';
+import { courseWithSupportedSkills, mentionsSkill } from './course-skill-evidence';
 
 @Injectable()
 export class RecommendationsService {
@@ -85,7 +86,7 @@ export class RecommendationsService {
               skill ? { skills: { some: { skillId: skill.id } } } : {},
             ],
           },
-          take: 3,
+          include: { skills: { include: { skill: true } } },
         });
 
         gaps.push({
@@ -96,7 +97,9 @@ export class RecommendationsService {
           currentLevel,
           gap,
           priority: gap >= 30 ? 'HIGH' : gap >= 15 ? 'MEDIUM' : 'LOW',
-          recommendedCourses: courses.map((c) => ({
+          recommendedCourses: courses.map(courseWithSupportedSkills).filter((c) =>
+            mentionsSkill(`${c.title} ${c.description || ''}`, skillName) || c.skills.some((link) => link.skillId === skill?.id)
+          ).slice(0, 3).map((c) => ({
             id: c.id,
             title: c.title,
             provider: c.provider as CourseSource,
@@ -172,7 +175,10 @@ export class RecommendationsService {
     });
 
     const seenUrls = new Set<string>();
-    return courses.filter((course) => {
+    return courses.map(courseWithSupportedSkills).filter((course) => {
+      if (filters?.skillId && filters.skillId !== 'ALL' && !course.skills.some((link) => link.skillId === filters.skillId)) return false;
+      const career = filters?.career && CAREER_DEFINITIONS[filters.career];
+      if (career && !course.skills.some((link) => career.categories.includes(link.skill.category as SkillCategory)) && !career.keywords.some((word) => mentionsSkill(course.title, word))) return false;
       let normalizedUrl: string;
       try {
         const parsedUrl = new URL(course.url);

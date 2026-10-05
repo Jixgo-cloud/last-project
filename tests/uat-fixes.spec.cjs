@@ -251,3 +251,32 @@ test('Ingestion feedback never calls failed or partial runs a full success', () 
   assert.equal(empty.severity,'success');
   assert.match(empty.message,/0 สร้างใหม่, 5 รายการเดิม/);
 });
+
+
+test('Course detection requires complete technology names and preserves explicit source tags', () => {
+  const { mentionsSkill, courseWithSupportedSkills } = require('../apps/api/dist/recommendations/course-skill-evidence');
+  assert.equal(mentionsSkill('JavaScript React coding algorithms', 'Java'), false);
+  assert.equal(mentionsSkill('JavaScript React coding algorithms', 'C'), false);
+  assert.equal(mentionsSkill('JavaScript React coding algorithms', 'Go'), false);
+  for (const name of ['C', 'C#', 'C++', '.NET 8', 'Go']) assert.equal(mentionsSkill(`Learn ${name} fundamentals`,name),true);
+  assert.equal(mentionsSkill('ReactJS and NodeJS', 'React'),true);
+  const course={title:'JavaScript Course',description:'Learn JavaScript',skills:[
+    {skillId:'js',skill:{name:'JavaScript'},relevanceScore:0.9},
+    {skillId:'java',skill:{name:'Java'},relevanceScore:0.9},
+    {skillId:'c',skill:{name:'C'},relevanceScore:0.9},
+    {skillId:'explicit',skill:{name:'C'},relevanceScore:0.95},
+  ]};
+  assert.deepEqual(courseWithSupportedSkills(course).skills.map(s=>s.skillId),['js','explicit']);
+  assert.equal(course.skills.length,4);
+});
+
+
+test('Course filters do not recommend JavaScript courses as Java from old inferred tags', async () => {
+  const { RecommendationsService } = require('../apps/api/dist/recommendations/recommendations.service');
+  const course={id:'qa',title:'JavaScript Course',description:'Learn JavaScript',url:'https://example.invalid/qa',skills:[{skillId:'java',skill:{name:'Java',category:'BACKEND'},relevanceScore:0.9},{skillId:'js',skill:{name:'JavaScript',category:'FRONTEND'},relevanceScore:0.9}]};
+  const service=new RecommendationsService({course:{findMany:async()=>[course]}});
+  assert.deepEqual(await service.getAllCourses({skillId:'java'}),[]);
+  const matched=await service.getAllCourses({skillId:'js'});
+  assert.deepEqual(matched[0].skills.map(s=>s.skillId),['js']);
+  assert.equal(course.skills.length,2);
+});

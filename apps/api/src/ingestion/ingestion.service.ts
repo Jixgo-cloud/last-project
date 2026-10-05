@@ -6,6 +6,7 @@ import { execFileSync } from 'child_process';
 import { IngestionStatus, JobSource, CourseSource, JobType } from '@smartcareer/shared';
 import { GeminiExtractorService } from './gemini-extractor.service';
 import { IngestionConfigService } from './ingestion-config.service';
+import { mentionsSkill } from '../recommendations/course-skill-evidence';
 
 @Injectable()
 export class IngestionService {
@@ -277,7 +278,7 @@ export class IngestionService {
             const text = `${course.title} ${course.description || ''}`.toLowerCase();
             for (const s of allSkills) {
               const sName = s.name.toLowerCase();
-              if (text.includes(sName)) {
+              if (mentionsSkill(text, sName)) {
                 await this.prisma.courseSkill.upsert({
                   where: {
                     courseId_skillId: {
@@ -355,13 +356,7 @@ export class IngestionService {
         if (existingSkillIds.has(skill.id)) continue;
 
         const skillNameLower = skill.name.toLowerCase();
-        const isMatched =
-          textToSearch.includes(skillNameLower) ||
-          (skillNameLower === 'react' && (textToSearch.includes('react.js') || textToSearch.includes('reactjs'))) ||
-          (skillNameLower === 'node.js' && (textToSearch.includes('nodejs') || textToSearch.includes('node.js'))) ||
-          (skillNameLower === 'next.js' && (textToSearch.includes('nextjs') || textToSearch.includes('next.js'))) ||
-          (skillNameLower === 'tailwind css' && textToSearch.includes('tailwind')) ||
-          (skillNameLower === 'postgresql' && (textToSearch.includes('postgres') || textToSearch.includes('postgresql')));
+        const isMatched = mentionsSkill(textToSearch, skillNameLower);
 
         if (isMatched) {
           await this.prisma.courseSkill.upsert({
