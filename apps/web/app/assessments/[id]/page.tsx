@@ -390,9 +390,12 @@ export default function AssessmentRunnerPage() {
       if (result.isFinished) {
         setCodingFinalResult(result);
       } else {
-        const earned = result.pointsEarned !== undefined ? result.pointsEarned : (result.score ?? 0);
+        const earned = result.pointsEarned !== undefined ? result.pointsEarned : result.score;
         const max = currentQuestion.points || 10;
-        setSubmissionFeedback(`✅ บันทึกคำตอบข้อที่ ${activeQuestionIndex + 1} เรียบร้อยแล้ว (ได้ ${earned}/${max} คะแนน) สามารถทำข้อถัดไปหรือกดส่งข้อสอบทั้งหมดเมื่อพร้อม`);
+        const grade = result.feedbackHidden || result.reviewStatus === 'EVALUATION_PENDING' || earned == null
+          ? 'รอประเมินผล ยังไม่มีคะแนน'
+          : `ได้ ${earned}/${max} คะแนน`;
+        setSubmissionFeedback(`✅ บันทึกคำตอบข้อที่ ${activeQuestionIndex + 1} เรียบร้อยแล้ว (${grade}) สามารถทำข้อถัดไปหรือกดส่งข้อสอบทั้งหมดเมื่อพร้อม`);
 
         // Auto-advance to next unanswered question if exists
         const nextIdx = assessment?.questions?.findIndex(
@@ -812,7 +815,7 @@ export default function AssessmentRunnerPage() {
                       สถานะ: ระบบกำลังประเมินผลเชิงลึก (Evaluation Pending)
                     </p>
                     <p className="text-xs text-slate-600 mt-3 max-w-lg mx-auto leading-relaxed">
-                      โค้ดที่คุณออกแบบถูกบันทึกไว้อย่างปลอดภัยในระบบแล้ว ระบบกำลังรอคิวประมวลผลการประเมินผล คะแนนจะไม่แสดงเป็น 0% และคุณจะไม่เสียสิทธิ์ คุณสามารถตรวจสอบผลได้อีกครั้งในภายหลัง
+                      บันทึกคำตอบของคุณแล้ว แต่บริการประเมินยังไม่สามารถให้ผลได้ จึงยังไม่มีคะแนนหรือผลผ่าน/ไม่ผ่าน คุณสามารถตรวจสอบผลอีกครั้งเมื่อบริการพร้อมหรือผู้ตรวจประเมินแล้ว
                     </p>
                     <div className="mt-8 flex justify-center">
                       <Link
