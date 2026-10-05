@@ -588,17 +588,6 @@ async function run() {
     await screenshot('candidate-withdrawal-confirmed');
   });
   await check('Admin login and dashboard data', async () => { const token = await login('admin@smartcareer.dev', 'admin123', '/admin/dashboard'); const stats = await request('/admin/dashboard', 'GET', undefined, token); assert(stats && Object.keys(stats).length > 0); await screenshot('admin-dashboard'); });
-  await check('Closed-job cleanup preserves hired applications and status history, including legacy DELETE mode', async () => {
-    const { JobScreeningService } = require('../apps/api/dist/ingestion/job-screening.service');
-    const fixture=await db.job.create({data:{companyId:company.id,companyName:company.name,title:'Closed QA history fixture',slug:'closed-qa-history-fixture',description:'Isolated regression only',isActive:false}});
-    const hired=await db.jobApplication.create({data:{jobId:fixture.id,candidateId:candidate.candidateProfile.id,status:'ACCEPTED',statusHistory:{create:{newStatus:'ACCEPTED',note:'QA retention proof'}}},include:{statusHistory:true}});
-    const service=new JobScreeningService(db);
-    await service.scanAndCleanJobs({source:'INTERNAL',limit:300,deleteMode:'DELETE'});
-    assert(await db.job.findUnique({where:{id:fixture.id}}));
-    assert.deepEqual(await db.jobApplication.findUnique({where:{id:hired.id},include:{statusHistory:true}}),hired);
-    const history=await request('/candidate/applications','GET',undefined,candidateToken);
-    assert(history.some(row=>row.id===hired.id && row.status==='ACCEPTED' && row.job.id===fixture.id));
-  });
   await check('Delete test job through UI', async () => {
     await login('hr@techcorp.co.th', 'password123', '/company/dashboard');
     await goto('/company/jobs');
@@ -612,6 +601,17 @@ async function run() {
     report.deleteConfirmationMode = 'In-app dialog cancellation preserves job; explicit confirmation deletes disposable fixture';
     await page.waitForFunction(() => !document.body.innerText.includes('Regression Backend Engineer'));
     assert.equal(await db.job.count({ where: { id: job.id } }), 0);
+  });
+  await check('Closed-job cleanup preserves hired applications and status history, including legacy DELETE mode', async () => {
+    const { JobScreeningService } = require('../apps/api/dist/ingestion/job-screening.service');
+    const fixture=await db.job.create({data:{companyId:company.id,companyName:company.name,title:'Closed QA history fixture',slug:'closed-qa-history-fixture',description:'Isolated regression only',isActive:false}});
+    const hired=await db.jobApplication.create({data:{jobId:fixture.id,candidateId:candidate.candidateProfile.id,status:'ACCEPTED',statusHistory:{create:{newStatus:'ACCEPTED',note:'QA retention proof'}}},include:{statusHistory:true}});
+    const service=new JobScreeningService(db);
+    await service.scanAndCleanJobs({source:'INTERNAL',limit:300,deleteMode:'DELETE'});
+    assert(await db.job.findUnique({where:{id:fixture.id}}));
+    assert.deepEqual(await db.jobApplication.findUnique({where:{id:hired.id},include:{statusHistory:true}}),hired);
+    const history=await request('/candidate/applications','GET',undefined,candidateToken);
+    assert(history.some(row=>row.id===hired.id && row.status==='ACCEPTED' && row.job.id===fixture.id));
   });
   await check('No browser runtime exceptions', async () => assert.equal(pageErrors.length, 0, pageErrors.join('; ')));
   await check('No failed browser API requests', async () => assert.equal(apiFailures.length, 0, JSON.stringify(apiFailures)));
