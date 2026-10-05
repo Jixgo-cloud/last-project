@@ -503,7 +503,7 @@ export default function AdminIngestionPage() {
                   ) : (
                     <Eye className="h-4 w-4 text-slate-600" />
                   )}
-                  <span>ตรวจสอบงานก่อนลบ (Preview)</span>
+                  <span>ตรวจสอบงานก่อนปิดประกาศ (Preview)</span>
                 </button>
 
                 <button
