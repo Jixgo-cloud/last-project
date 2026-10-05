@@ -633,7 +633,6 @@ async function run() {
   await check('CSV export recovers from a failed request with an authenticated job-scoped download link', async () => {
     const fixture = await db.job.findFirstOrThrow({ where: { slug: 'closed-qa-history-fixture' } });
     await db.job.update({ where: { id: fixture.id }, data: { title: 'งาน CSV QA ทดสอบเท่านั้น' } });
-    await login('hr@techcorp.co.th', 'password123', '/company/dashboard');
     await goto('/company/applications?jobId=' + fixture.id);
     await page.waitForSelector('#export-csv-btn');
     const endpoint = '/api/company/applications/export';
