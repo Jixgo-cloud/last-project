@@ -613,6 +613,50 @@ async function run() {
     const history=await request('/candidate/applications','GET',undefined,candidateToken);
     assert(history.some(row=>row.id===hired.id && row.status==='ACCEPTED' && row.job.id===fixture.id));
   });
+  await check('CSV export recovers from a failed request with an authenticated job-scoped download link', async () => {
+    const fixture = await db.job.findUnique({ where: { slug: 'closed-qa-history-fixture' } });
+    await db.job.update({ where: { id: fixture.id }, data: { title: 'งาน CSV QA ทดสอบเท่านั้น' } });
+    await login('hr@techcorp.co.th', 'password123', '/company/dashboard');
+    await goto('/company/applications?jobId=' + fixture.id);
+    await page.waitForSelector('#export-csv-btn');
+    const endpoint = '/api/company/applications/export';
+    let failExport = true;
+    let dialogs = 0;
+    const countDialog = () => { dialogs++; };
+    const intercept = req => {
+      if (new URL(req.url()).pathname === endpoint && failExport) {
+        void req.respond({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: 'Isolated QA unavailable' }) });
+      } else { void req.continue(); }
+    };
+    await page.setRequestInterception(true);
+    page.on('request', intercept);
+    page.on('dialog', countDialog);
+    expectedApiResponses.set(endpoint, 503);
+    try {
+      await activate('#export-csv-btn');
+      await page.waitForFunction(() => document.querySelector('[role="alert"]')?.textContent.includes('ส่งออก CSV ไม่สำเร็จ'));
+      assert.equal(dialogs, 0, 'Export failure must be visible in the page without a blocking alert');
+      assert.equal(await page.$('a[download][href^="/api/company/applications/export"]'), null);
+      failExport = false;
+      expectedApiResponses.delete(endpoint);
+      await activate('#export-csv-btn');
+      await page.waitForSelector('a[download][href^="/api/company/applications/export"]');
+      const href = await page.$eval('a[download][href^="/api/company/applications/export"]', e => e.getAttribute('href'));
+      assert.equal(href, endpoint + '?jobId=' + fixture.id);
+      const bytes = await page.evaluate(async href => Array.from(new Uint8Array(await (await fetch(href, { credentials: 'same-origin' })).arrayBuffer())), href);
+      assert.deepEqual(bytes.slice(0, 3), [239, 187, 191], 'Excel download must preserve the UTF-8 BOM');
+      const csv = Buffer.from(bytes).toString('utf8');
+      assert(csv.includes('งาน CSV QA ทดสอบเท่านั้น') && csv.includes('"ACCEPTED"'));
+      assert.equal(csv.trim().split('\r\n').length, 2, 'The selected job exports exactly one application');
+      fs.writeFileSync(path.join(evidenceDir, 'job-scoped-export.csv'), Buffer.from(bytes));
+      await screenshot('csv-retry-ready');
+    } finally {
+      expectedApiResponses.delete(endpoint);
+      page.off('request', intercept);
+      page.off('dialog', countDialog);
+      await page.setRequestInterception(false);
+    }
+  });
   await check('No browser runtime exceptions', async () => assert.equal(pageErrors.length, 0, pageErrors.join('; ')));
   await check('No failed browser API requests', async () => assert.equal(apiFailures.length, 0, JSON.stringify(apiFailures)));
   await check('Configured database remains unchanged', async () => assert.deepEqual({ users: await admin.user.count(), jobs: await admin.job.count(), attempts: await admin.assessmentAttempt.count() }, sourceCounts));

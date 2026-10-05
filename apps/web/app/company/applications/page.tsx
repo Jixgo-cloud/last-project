@@ -80,6 +80,13 @@ function CompanyApplicationsContent() {
   const [evalSubmitting, setEvalSubmitting] = useState(false);
   const [evalToast, setEvalToast] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
+  const [exportError, setExportError] = useState('');
+  const [csvRetryJobQuery, setCsvRetryJobQuery] = useState<string | null>(null);
+
+  useEffect(() => {
+    setExportError('');
+    setCsvRetryJobQuery(null);
+  }, [jobQuery]);
 
   // Assessment assignment state
   const [companyAssessments, setCompanyAssessments] = useState<any[]>([]);
@@ -224,6 +231,8 @@ function CompanyApplicationsContent() {
     if (exportingCsv) return;
     try {
       setExportingCsv(true);
+      setExportError('');
+      setCsvRetryJobQuery(null);
       const res = await fetch(`/api/company/applications/export${jobQuery}`, { credentials: 'same-origin', cache: 'no-store' });
 
       if (!res.ok) {
@@ -231,6 +240,7 @@ function CompanyApplicationsContent() {
       }
 
       const blob = await res.blob();
+      setCsvRetryJobQuery(jobQuery);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -240,7 +250,7 @@ function CompanyApplicationsContent() {
       a.remove();
       setTimeout(() => window.URL.revokeObjectURL(url), 30000);
     } catch (err: any) {
-      alert(`Export CSV ล้มเหลว: ${err.message}`);
+      setExportError(`ส่งออก CSV ไม่สำเร็จ: ${err.message} กรุณากด Export CSV เพื่อลองใหม่`);
     } finally {
       setExportingCsv(false);
     }
@@ -358,7 +368,7 @@ function CompanyApplicationsContent() {
                 ตรวจสอบความพร้อมของผู้สมัครด้วยคะแนน 70/20/10 AI Matching, ทักษะที่ยืนยันแล้ว, เลื่อนสถานะกระบวนการ และให้คะแนนประเมินรายบุคคล
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col items-start gap-2">
               <button
                 id="export-csv-btn"
                 onClick={handleExportCsv}
@@ -368,6 +378,18 @@ function CompanyApplicationsContent() {
                 <Download className="h-3.5 w-3.5 text-[#4f46e5]" />
                 <span>{exportingCsv ? 'กำลังเตรียมไฟล์...' : 'Export CSV (ส่งออกข้อมูลผู้สมัคร)'}</span>
               </button>
+              {csvRetryJobQuery === jobQuery && (
+                <a
+                  href={`/api/company/applications/export${jobQuery}`}
+                  download
+                  className="text-sm font-semibold text-indigo-700 underline"
+                >
+                  ไฟล์ไม่เริ่มดาวน์โหลด? ดาวน์โหลด CSV อีกครั้ง
+                </a>
+              )}
+              {exportError && (
+                <p role="alert" className="max-w-sm text-sm text-rose-700">{exportError}</p>
+              )}
             </div>
           </div>
         </div>
