@@ -73,7 +73,7 @@ export class SchedulerService {
 
   /**
    * Run automated Closed Job Cleanup daily at 00:30 ICT
-   * Purges dead links (HTTP 404/410), expired deadlines, and positions that closed on source portals.
+   * Deactivates closed jobs while preserving applications and recruitment history.
    */
   @Cron('30 0 * * *', {
     name: 'daily-closed-job-cleanup',
@@ -85,10 +85,10 @@ export class SchedulerService {
       const summary = await this.jobScreeningService.scanAndCleanJobs({
         source: 'ALL',
         limit: 300,
-        deleteMode: 'DELETE',
+        deleteMode: 'DEACTIVATE',
       });
       this.logger.log(
-        `✅ [Cron Scheduler] Closed Job Cleanup complete. Scanned: ${summary.scannedCount}, Removed: ${summary.deletedCount}`,
+        `✅ [Cron Scheduler] Closed Job Cleanup complete. Scanned: ${summary.scannedCount}, Deactivated: ${summary.deactivatedCount}`,
       );
     } catch (err: any) {
       this.logger.error(`❌ [Cron Scheduler] Error in automated Closed Job Cleanup: ${err.message}`);
