@@ -26,7 +26,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import Link from 'next/link';
-import { AssessmentType, QuestionEvaluationMethod } from '@smartcareer/shared';
+import { AssessmentType, QuestionEvaluationMethod, getAttemptPercentage, getLatestFinishedAttempt } from '@smartcareer/shared';
 
 export default function AssessmentRunnerPage() {
   const { id } = useParams();
@@ -73,7 +73,7 @@ export default function AssessmentRunnerPage() {
   const [codingFinalResult, setCodingFinalResult] = useState<any>(null);
 
   // Load Assessment & Start Attempt
-  const initAssessment = useCallback(async () => {
+  const initAssessment = useCallback(async (retake = false) => {
     if (!id || !user) return;
     setLoading(true);
     setLoadError(null);
@@ -81,6 +81,35 @@ export default function AssessmentRunnerPage() {
     try {
       // Load and validate the assessment before creating a timed attempt.
       const assessData = await apiRequest(`/assessments/${id}`);
+      if (!retake) {
+        const history = await apiRequest('/assessments/my-attempts');
+        const finished = getLatestFinishedAttempt<any>(history, String(id));
+        if (finished) {
+          const result = { ...finished, percentage: getAttemptPercentage(finished) };
+          setAssessment(assessData);
+          setAttempt(finished);
+          setTimeLeftSeconds(null);
+          if (assessData.type === AssessmentType.THEORY) {
+            setTheoryResult({ ...result, feedbackHidden: result.feedbackHidden || result.percentage === null });
+          } else {
+            setCodingFinalResult(result);
+          }
+          return;
+        }
+      }
+      setTheoryResult(null);
+      setCodingFinalResult(null);
+      setHasAutoSubmitted(false);
+      setSubmittedQuestions({});
+      setActiveQuestionIndex(0);
+      setSelectedChoices({});
+      setTestRunResults({});
+      setTabSwitchCount(0);
+      setShowAntiCheatBanner(false);
+      setRateLimitMessage(null);
+      setJudgeUnavailableError(null);
+      setSubmissionFeedback(null);
+      setAutosaveStatus('idle');
       const attemptData = await apiRequest(`/assessments/${id}/start`, { method: 'POST' });
       setAssessment(assessData);
       setAttempt(attemptData);
@@ -678,7 +707,7 @@ export default function AssessmentRunnerPage() {
                     onClick={() => {
                       setTheoryResult(null);
                       setSelectedChoices({});
-                      initAssessment();
+                      initAssessment(true);
                     }}
                     className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-6 py-2.5 rounded-full border border-slate-200/90 bg-white text-slate-700 font-semibold text-xs hover:bg-slate-50 transition"
                   >
@@ -949,7 +978,7 @@ export default function AssessmentRunnerPage() {
                         onClick={() => {
                           setCodingFinalResult(null);
                           setTestRunResults({});
-                          initAssessment();
+                          initAssessment(true);
                         }}
                         className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-6 py-2.5 rounded-full border border-slate-200/90 bg-white text-slate-700 font-semibold text-xs hover:bg-slate-50 transition"
                       >

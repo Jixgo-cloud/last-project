@@ -27,3 +27,12 @@ export function formatAttemptScore(attempt: AttemptScoreInput): string {
   const percentage = getAttemptPercentage(attempt);
   return percentage === null ? 'รอตรวจ' : `${percentage}%`;
 }
+
+/** Reopening an exam shows its latest finished result; an active round must resume. */
+export function getLatestFinishedAttempt<T extends { assessmentId: string; status: string; startedAt: string | Date }>(
+  attempts: T[], assessmentId: string,
+): T | null {
+  const latest = attempts.filter(attempt => attempt.assessmentId === assessmentId)
+    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())[0];
+  return latest && ['COMPLETED', 'EXPIRED'].includes(latest.status) ? latest : null;
+}

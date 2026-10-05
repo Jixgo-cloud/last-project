@@ -175,7 +175,7 @@ export default function AssessmentsPage() {
                       {latestAttempt ? (
                         <>
                           <RotateCcw className="h-3.5 w-3.5" />
-                          สอบใหม่อีกครั้ง (Retake)
+                          ดูผล / สอบใหม่ (Result / Retake)
                         </>
                       ) : (
                         <>

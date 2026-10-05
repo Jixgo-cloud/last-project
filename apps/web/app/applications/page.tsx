@@ -348,7 +348,7 @@ export default function ApplicationsPage() {
                             >
                               {customAttempt ? (
                                 <>
-                                  <span>ทำแบบทดสอบอีกครั้ง</span>
+                                  <span>ดูผล / ทำแบบทดสอบอีกครั้ง</span>
                                   <ArrowRight className="h-3.5 w-3.5" />
                                 </>
                               ) : (

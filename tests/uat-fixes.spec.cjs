@@ -1,11 +1,22 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const axios = require('axios').default;
-const { getAttemptPercentage } = require('@smartcareer/shared');
+const { getAttemptPercentage, getLatestFinishedAttempt } = require('@smartcareer/shared');
 const { candidateFeedback } = require('../apps/api/dist/assessments/candidate-feedback');
 const { GithubService } = require('../apps/api/dist/github/github.service');
 const { CompanyService } = require('../apps/api/dist/company/company.service');
 const { AssessmentsService } = require('../apps/api/dist/assessments/assessments.service');
+
+test('Reopening finished exams preserves reviewed results; newer active rounds resume independently', () => {
+  const completed = { assessmentId:'qa', status:'COMPLETED', startedAt:'2026-10-05T12:00:00Z', humanScore:40, percentage:0 };
+  const other = { assessmentId:'other', status:'COMPLETED', startedAt:'2026-10-05T13:00:00Z' };
+  assert.equal(getLatestFinishedAttempt([other, completed], 'qa'), completed);
+  assert.equal(getAttemptPercentage(getLatestFinishedAttempt([completed], 'qa')), 40);
+  const active = { assessmentId:'qa', status:'IN_PROGRESS', startedAt:'2026-10-05T12:01:00Z' };
+  assert.equal(getLatestFinishedAttempt([completed, active], 'qa'), null);
+  assert.equal(getLatestFinishedAttempt([completed], 'unknown'), null);
+  assert.deepEqual([other, completed].map(x=>x.assessmentId), ['other','qa']);
+});
 
 test('Raw points normalize against their maximum; human zero overrides machine scores', () => {
   for (const [score, maxScore, expected] of [[50,50,100],[25,50,50],[50,200,25],[0,50,0]]) {
