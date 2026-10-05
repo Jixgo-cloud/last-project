@@ -376,6 +376,25 @@ export default function JobDetailPage() {
                   </div>
                 )}
 
+                {job.skills?.length > 0 && (
+                  <section aria-labelledby="job-skill-requirements">
+                    <h3 id="job-skill-requirements" className="text-base sm:text-lg font-bold text-slate-900 mb-3 tracking-tight">
+                      ทักษะที่งานต้องการ
+                    </h3>
+                    <ul className="space-y-2">
+                      {job.skills.map((requirement: { id: string; minimumScore: number; isRequired: boolean; skill: { name: string } }) => (
+                        <li key={requirement.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+                          <span className="font-semibold text-slate-900">{requirement.skill.name}</span>
+                          <span className="text-slate-600">
+                            {requirement.isRequired ? 'ทักษะหลัก (Required)' : 'ทักษะเสริม (Preferred)'}
+                            {' · คะแนนขั้นต่ำ '}{requirement.minimumScore}%
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+
                 {/* 3. สวัสดิการ */}
                 {(
                   <div>
