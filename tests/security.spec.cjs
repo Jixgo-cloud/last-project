@@ -6,6 +6,7 @@ const { plainToInstance } = require('class-transformer');
 const { validate } = require('class-validator');
 const { AuthSecurityService, publicRole, requireJwtSecret, allowedFrontendOrigins } = require('../apps/api/dist/auth/auth-security.service');
 const { AuthService } = require('../apps/api/dist/auth/auth.service');
+const { HealthController } = require('../apps/api/dist/health/health.controller');
 const { RegisterDto } = require('../apps/api/dist/auth/dto/auth.dto');
 const { UpdateCandidateProfileDto } = require('../apps/api/dist/candidate/dto/candidate-profile.dto');
 const { CreateJobDto } = require('../apps/api/dist/company/dto/job.dto');
@@ -15,6 +16,26 @@ const { SubmitCompanyVerificationDto } = require('../apps/api/dist/company/dto/c
 const { validateVerificationDocuments } = require('../apps/api/dist/company/verification-documents');
 const { VerificationQueryDto } = require('../apps/api/dist/admin/dto/verification-query.dto');
 const { VerificationReviewDto } = require('../apps/api/dist/admin/dto/verification-review.dto');
+
+test('Readiness reports the deployed revision and never exposes connection errors or invalid metadata', async () => {
+  const previous = process.env.RAILWAY_GIT_COMMIT_SHA;
+  let status;
+  const response = { status: code => { status = code; return response; }, json: data => data };
+  try {
+    process.env.RAILWAY_GIT_COMMIT_SHA = 'a'.repeat(40);
+    const ready = await new HealthController({ $queryRaw: async () => [{ value: 1 }] }).getHealth(response);
+    assert.equal(status, 200);
+    assert.equal(ready.revision, 'a'.repeat(40));
+    process.env.RAILWAY_GIT_COMMIT_SHA = 'invalid-private-metadata';
+    const down = await new HealthController({ $queryRaw: async () => { throw new Error('private-connection-details'); } }).getHealth(response);
+    assert.equal(status, 503);
+    assert.equal(down.revision, null);
+    assert(!JSON.stringify(down).includes('private'));
+  } finally {
+    if (previous === undefined) delete process.env.RAILWAY_GIT_COMMIT_SHA;
+    else process.env.RAILWAY_GIT_COMMIT_SHA = previous;
+  }
+});
 
 test('Verification review requires a bounded reason for rejection and rejects unknown fields', async () => {
   for (const input of [{ action: 'REJECT' }, { action: 'REJECT', reason: '   ' }, { action: 'REJECT', reason: 42 }, { action: 'REJECT', reason: 'x'.repeat(2001) }, { action: 'INVALID' }, { action: 'APPROVE', companyId: 'other' }]) {
