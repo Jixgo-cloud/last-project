@@ -22,84 +22,6 @@ import {
 import { formatJobItem, formatCourseItem } from '@/lib/home-utils';
 
 
-// Fallback in-memory analysis generator strictly for GitHub analyzer testing if offline
-const createMockAnalysis = (username: string) => {
-  const isBqnkZaa = username.toLowerCase() === 'bqnkzaa';
-  return {
-    profile: {
-      username: username,
-      name: isBqnkZaa ? 'BADREE KAKOK' : username.toUpperCase(),
-      avatarUrl: `https://github.com/${username}.png`,
-      htmlUrl: `https://github.com/${username}`,
-      publicRepos: isBqnkZaa ? 16 : 12,
-      followers: 0,
-      following: 0,
-      isLive: true,
-    },
-    topSkillChips: [
-      { name: 'Frontend', percentage: '90%' },
-      { name: 'Backend', percentage: '80%' },
-      { name: 'Database', percentage: '75%' },
-      { name: 'DevOps', percentage: '70%' },
-    ],
-    radar: [
-      { subject: 'FRONTEND', category: 'FRONTEND', score: 90, fullMark: 100 },
-      { subject: 'BACKEND', category: 'BACKEND', score: 80, fullMark: 100 },
-      { subject: 'DATABASE', category: 'DATABASE', score: 75, fullMark: 100 },
-      { subject: 'DEVOPS', category: 'DEVOPS', score: 70, fullMark: 100 },
-      { subject: 'TESTING', category: 'TESTING', score: 65, fullMark: 100 },
-    ],
-    recommendedRoles: [
-      {
-        role: 'Full-Stack Developer',
-        skills: ['React', 'Node.js', 'TypeScript', 'Next.js'],
-        fitLevel: 'Strong' as const,
-      },
-      {
-        role: 'Frontend Developer',
-        skills: ['React', 'TypeScript', 'Next.js', 'Tailwind CSS'],
-        fitLevel: 'Strong' as const,
-      },
-      {
-        role: 'Backend Developer',
-        skills: ['Node.js', 'Prisma'],
-        fitLevel: 'Good fit' as const,
-      },
-      {
-        role: 'Mobile Developer',
-        skills: ['React'],
-        fitLevel: 'Possible' as const,
-      },
-    ],
-    topRepositories: [
-      {
-        name: isBqnkZaa ? 'energy-dashboard' : `${username}-smart-dashboard`,
-        fullName: `${username}/energy-dashboard`,
-        url: `https://github.com/${username}`,
-        tags: ['JavaScript', 'next-js', 'react'],
-      },
-      {
-        name: isBqnkZaa ? 'energy-monitoring-system' : `${username}-api-server`,
-        fullName: `${username}/energy-monitoring-system`,
-        url: `https://github.com/${username}`,
-        tags: ['JavaScript'],
-      },
-      {
-        name: isBqnkZaa ? 'cloudops-incident-tracker' : `${username}-cloud-tracker`,
-        fullName: `${username}/cloudops-incident-tracker`,
-        url: `https://github.com/${username}`,
-        tags: ['EJS', 'node-js'],
-      },
-      {
-        name: isBqnkZaa ? 'Akarapol-Krachog-Aluminum' : `${username}-client-app`,
-        fullName: `${username}/Akarapol-Krachog-Aluminum`,
-        url: `https://github.com/${username}`,
-        tags: ['TypeScript', 'next-js', 'react'],
-      },
-    ],
-  };
-};
-
 function CompetencyRadarChart({ radarData }: { radarData: Array<{ subject: string; score: number }> }) {
   const competencies = [
     { key: 'frontend', name: 'Frontend', label: 'FRONTEND' },
@@ -117,7 +39,7 @@ function CompetencyRadarChart({ radarData }: { radarData: Array<{ subject: strin
     const item = radarData?.find(
       (d) => d.subject.toLowerCase() === comp.key || d.subject.toLowerCase() === comp.label.toLowerCase()
     );
-    return item ? item.score : 70;
+    return item ? item.score : 0;
   });
 
   const angles = [0, 1, 2, 3, 4].map((i) => (i * 2 * Math.PI) / 5 - Math.PI / 2);
@@ -140,7 +62,7 @@ function CompetencyRadarChart({ radarData }: { radarData: Array<{ subject: strin
 
   const dataPoints = angles
     .map((ang, i) => {
-      const r = (Math.max(15, Math.min(100, scores[i])) / 100) * maxRadius;
+      const r = (Math.max(0, Math.min(100, scores[i])) / 100) * maxRadius;
       const x = cx + r * Math.cos(ang);
       const y = cy + r * Math.sin(ang);
       return `${x.toFixed(1)},${y.toFixed(1)}`;
@@ -194,7 +116,7 @@ function CompetencyRadarChart({ radarData }: { radarData: Array<{ subject: strin
         />
 
         {angles.map((ang, i) => {
-          const r = (Math.max(15, Math.min(100, scores[i])) / 100) * maxRadius;
+          const r = (Math.max(0, Math.min(100, scores[i])) / 100) * maxRadius;
           const x = cx + r * Math.cos(ang);
           const y = cy + r * Math.sin(ang);
           return (
@@ -275,6 +197,7 @@ export default function HomePageClient({ initialJobs = [], initialCourses = [] }
   const [githubInput, setGithubInput] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const analysisRef = useRef<HTMLDivElement>(null);
 
   // Jobs & Courses Live Data — initialized with server-fetched real data
@@ -324,6 +247,8 @@ export default function HomePageClient({ initialJobs = [], initialCourses = [] }
     if (!target) return;
 
     setIsAnalyzing(true);
+    setAnalysisError(null);
+    setAnalysisResult(null);
 
     try {
       const res = await apiRequest(`/github/public/${target}`);
@@ -332,9 +257,8 @@ export default function HomePageClient({ initialJobs = [], initialCourses = [] }
       } else {
         throw new Error('No profile data received');
       }
-    } catch {
-      const mock = createMockAnalysis(target);
-      setAnalysisResult(mock);
+    } catch (error: any) {
+      setAnalysisError(`ไม่สามารถวิเคราะห์ GitHub @${target} ได้ กรุณาตรวจชื่อผู้ใช้หรือลองใหม่อีกครั้ง${error?.message ? ` (${error.message})` : ''}`);
     } finally {
       setIsAnalyzing(false);
       setTimeout(() => {
@@ -429,6 +353,10 @@ export default function HomePageClient({ initialJobs = [], initialCourses = [] }
                 )}
               </button>
             </form>
+
+            {analysisError && (
+              <p role="alert" className="mt-3 text-sm text-red-700">{analysisError}</p>
+            )}
 
             {/* Try Chips */}
             <div className="mt-6 flex flex-wrap items-center gap-2 text-[11px] text-[#667085]">

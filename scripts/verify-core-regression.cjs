@@ -155,6 +155,34 @@ async function run() {
     });
   });
   await check('Home and login pages render', async () => { await goto('/'); await screenshot('home'); await goto('/login'); assert(await page.$('input[type="email"]')); });
+  await check('Public GitHub lookup errors never fabricate a live profile', async () => {
+    const endpoint = '/api/github/public/regression-missing-user';
+    let failureStatus = 404;
+    const intercept = request => {
+      if (new URL(request.url()).pathname === endpoint) {
+        void request.respond({ status: failureStatus, contentType:'application/json', body:JSON.stringify({message:'GitHub lookup unavailable'}) });
+      } else { void request.continue(); }
+    };
+    await page.setRequestInterception(true);
+    page.on('request', intercept);
+    try {
+      await goto('/');
+      for (const status of [404, 503]) {
+        failureStatus = status;
+        expectedApiResponses.set(endpoint, status);
+        await fill('input[aria-label="ชื่อผู้ใช้ GitHub"]', 'regression-missing-user');
+        await clickText('วิเคราะห์');
+        await page.waitForFunction(() => document.querySelector('[role="alert"]')?.textContent.includes('ไม่สามารถวิเคราะห์ GitHub'));
+        assert.equal(await page.$('[aria-label="ผลการวิเคราะห์ GitHub Profile"]'), null);
+        assert(!(await page.$eval('body', el => el.innerText)).includes('Live API'));
+      }
+      await screenshot('github-lookup-error');
+    } finally {
+      page.off('request', intercept);
+      await page.setRequestInterception(false);
+      expectedApiResponses.delete(endpoint);
+    }
+  });
   let companyToken;
   let invalidLegacyAssessment;
   await check('Company login through UI', async () => { companyToken = await login('hr@techcorp.co.th', 'password123', '/company/dashboard'); await screenshot('company-login'); assert.equal((await request('/auth/me', 'GET', undefined, companyToken)).role, 'COMPANY'); });

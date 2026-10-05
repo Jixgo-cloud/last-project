@@ -642,7 +642,7 @@ export default function CompanyAssessmentsPage() {
                       ข้อสอบ: <strong className="text-slate-800">{a._count?.questions || 0} ข้อ</strong>
                     </div>
                     <div>
-                      ผู้ทำแล้ว: <strong className="text-slate-800">{a._count?.attempts || 0} คน</strong>
+                      จำนวนรอบสอบ: <strong className="text-slate-800">{a._count?.attempts || 0} ครั้ง</strong>
                     </div>
                   </div>
 
