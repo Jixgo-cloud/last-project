@@ -1,4 +1,5 @@
 import { candidateFeedback } from './candidate-feedback';
+import { codingAttemptTotals } from './coding-attempt-totals';
 import {
   Injectable,
   NotFoundException,
@@ -609,7 +610,7 @@ export class AssessmentsService {
             where: { id: existingAnswer.id },
             data: {
               submittedCode: sourceCode,
-              executionResult: rawReport as any,
+              executionResult: { ...rawReport, evaluationPending: true } as any,
               isCorrect: false,
               pointsEarned: 0,
             },
@@ -620,7 +621,7 @@ export class AssessmentsService {
               attemptId,
               questionId,
               submittedCode: sourceCode,
-              executionResult: rawReport as any,
+              executionResult: { ...rawReport, evaluationPending: true } as any,
               isCorrect: false,
               pointsEarned: 0,
             },
@@ -684,14 +685,6 @@ export class AssessmentsService {
     const pointsEarned =
       isExpired ? 0 : Math.round((overallScore / 100) * question.points * 10) / 10;
 
-    // Company assessment: Pending human review, finalScore remains null until Tech Lead reviews
-    // Platform assessment: Preliminary AI score becomes final directly
-    const attemptReviewStatus = isCompanyAssessment
-      ? AssessmentReviewStatus.PENDING_HUMAN_REVIEW
-      : AssessmentReviewStatus.NOT_REQUIRED;
-
-    const aiFinalScore = isCompanyAssessment ? null : overallScore;
-
     return this.prisma.$transaction(async (tx) => {
       const existingAnswer = await tx.assessmentAnswer.findFirst({
         where: { attemptId, questionId },
@@ -702,7 +695,7 @@ export class AssessmentsService {
           where: { id: existingAnswer.id },
           data: {
             submittedCode: sourceCode,
-            executionResult: rawReport as any,
+            executionResult: { ...rawReport, evaluationPending: false } as any,
             isCorrect: overallScore >= attempt.assessment.passingScore,
             pointsEarned,
           },
@@ -713,7 +706,7 @@ export class AssessmentsService {
             attemptId,
             questionId,
             submittedCode: sourceCode,
-            executionResult: rawReport as any,
+            executionResult: { ...rawReport, evaluationPending: false } as any,
             isCorrect: overallScore >= attempt.assessment.passingScore,
             pointsEarned,
           },
@@ -731,22 +724,15 @@ export class AssessmentsService {
         ? AttemptStatus.COMPLETED
         : AttemptStatus.IN_PROGRESS;
 
-      const totalPointsEarned = allAnswers.reduce((sum, a) => sum + a.pointsEarned, 0);
-      const maxScore = attempt.assessment.questions.reduce((sum, q) => sum + q.points, 0);
-      const percentage = isExpired ? 0 : maxScore > 0 ? Math.round((totalPointsEarned / maxScore) * 100) : 0;
-      const passed = !isExpired && percentage >= attempt.assessment.passingScore;
+      const totals = codingAttemptTotals(attempt.assessment, allAnswers, isExpired,
+        attempt.reviewStatus, question.evaluationMethod);
 
       await tx.assessmentAttempt.update({
         where: { id: attemptId },
         data: {
           status: currentAttemptStatus,
-          reviewStatus: attemptReviewStatus,
-          aiScore: overallScore,
+          ...totals,
           humanScore: null,
-          finalScore: aiFinalScore,
-          score: isCompanyAssessment ? null : totalPointsEarned,
-          percentage: isCompanyAssessment ? null : percentage,
-          passed: isCompanyAssessment ? null : passed,
           sourceCode,
           evaluationSnapshot: aiEvaluation.result as any,
           evaluatorModel: aiEvaluation.model,
@@ -764,12 +750,8 @@ export class AssessmentsService {
         isFinished: isAttemptFinished,
         totalQuestions: attempt.assessment.questions.length,
         answeredQuestions: allAnswers.length,
-        reviewStatus: attemptReviewStatus,
-        aiScore: overallScore,
-        finalScore: aiFinalScore,
-        score: isCompanyAssessment ? null : totalPointsEarned,
-        percentage: isCompanyAssessment ? null : percentage,
-        passed: isCompanyAssessment ? null : passed,
+        ...totals,
+        totalPointsEarned: totals.score,
         evaluation: aiEvaluation.result,
         timeSpentSeconds,
         isCompanyAssessment,
@@ -835,10 +817,8 @@ export class AssessmentsService {
     const allAnswers = await tx.assessmentAnswer.findMany({
       where: { attemptId },
     });
-    const totalPointsEarned = allAnswers.reduce((sum, a) => sum + a.pointsEarned, 0);
-    const maxScore = attempt.assessment.questions.reduce((sum, q) => sum + q.points, 0);
-    const percentage = isExpired ? 0 : maxScore > 0 ? Math.round((totalPointsEarned / maxScore) * 100) : 0;
-    const passed = !isExpired && percentage >= attempt.assessment.passingScore;
+    const totals = codingAttemptTotals(attempt.assessment, allAnswers, isExpired,
+      attempt.reviewStatus, question.evaluationMethod);
 
     // Check whether ALL questions have answers
     const isAllQuestionsAnswered = attempt.assessment.questions.every((q) =>
@@ -855,13 +835,7 @@ export class AssessmentsService {
       where: { id: attemptId },
       data: {
         status: currentAttemptStatus,
-        score: totalPointsEarned,
-        maxScore,
-        percentage,
-        passed,
-        aiScore: percentage,
-        finalScore: percentage,
-        reviewStatus: AssessmentReviewStatus.NOT_REQUIRED,
+        ...totals,
         sourceCode,
         timeSpentSeconds,
         completedAt: isAttemptFinished ? now : null,
@@ -873,14 +847,14 @@ export class AssessmentsService {
       isAttemptFinished &&
       attempt.assessment.skillId &&
       attempt.assessment.companyId === null &&
-      !isExpired
+      !isExpired && totals.percentage !== null
     ) {
       await this.updateCandidateSkillScoreInTx(
         tx,
         attempt.candidateId,
         attempt.assessment.skillId,
         'codingScore',
-        percentage,
+        totals.percentage,
       );
     }
 
@@ -889,10 +863,12 @@ export class AssessmentsService {
       questionId,
       execution: executionReport,
       isCorrect,
-      score: percentage,
+      ...totals,
+      // Retain the original per-question response's percentage alias.
+      score: totals.percentage,
+      totalPointsEarned: totals.score,
       pointsEarned,
       maxPoints: question.points,
-      passed,
       timeSpentSeconds,
       status: currentAttemptStatus,
       isFinished: isAttemptFinished,
@@ -919,20 +895,14 @@ export class AssessmentsService {
 
     return this.prisma.$transaction(async (tx) => {
       const allAnswers = await tx.assessmentAnswer.findMany({ where: { attemptId } });
-      const totalPointsEarned = isExpired ? 0 : allAnswers.reduce((sum, a) => sum + a.pointsEarned, 0);
-      const maxScore = attempt.assessment.questions.reduce((sum, q) => sum + q.points, 0);
-      const percentage = isExpired ? 0 : maxScore > 0 ? Math.round((totalPointsEarned / maxScore) * 100) : 0;
-      const passed = !isExpired && percentage >= attempt.assessment.passingScore;
+      const totals = codingAttemptTotals(attempt.assessment, allAnswers, isExpired, attempt.reviewStatus);
       const currentAttemptStatus = isExpired ? AttemptStatus.EXPIRED : AttemptStatus.COMPLETED;
 
       const updated = await tx.assessmentAttempt.update({
         where: { id: attemptId },
         data: {
           status: currentAttemptStatus,
-          score: totalPointsEarned,
-          maxScore,
-          percentage,
-          passed,
+          ...totals,
           timeSpentSeconds,
           completedAt: now,
         },
@@ -944,13 +914,13 @@ export class AssessmentsService {
         },
       });
 
-      if (!isExpired && attempt.assessment.skillId && attempt.assessment.companyId === null) {
+      if (!isExpired && totals.percentage !== null && attempt.assessment.skillId && attempt.assessment.companyId === null) {
         await this.updateCandidateSkillScoreInTx(
           tx,
           attempt.candidateId,
           attempt.assessment.skillId,
           'codingScore',
-          percentage,
+          totals.percentage,
         );
       }
 

@@ -13,7 +13,7 @@ export function candidateFeedback<T extends Record<string, any>>(attempt: T, ass
     result.assessment = { ...publicAssessment, ...(company ? { company: { id: company.id, name: company.name } } : {}) };
   }
   if (hidden) {
-    for (const key of ['score', 'percentage', 'finalScore', 'humanScore', 'aiScore', 'passed', 'executionResult', 'aiFeedback', 'reviewReason', 'evaluation', 'evaluationSnapshot', 'execution', 'isCorrect', 'pointsEarned']) result[key] = null;
+    for (const key of ['score', 'totalPointsEarned', 'percentage', 'finalScore', 'humanScore', 'aiScore', 'passed', 'executionResult', 'aiFeedback', 'reviewReason', 'evaluation', 'evaluationSnapshot', 'execution', 'isCorrect', 'pointsEarned']) result[key] = null;
   }
   result.feedbackHidden = hidden;
   return result;

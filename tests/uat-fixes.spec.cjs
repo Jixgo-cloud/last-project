@@ -15,6 +15,42 @@ const { candidateFeedback } = require('../apps/api/dist/assessments/candidate-fe
 const { GithubService } = require('../apps/api/dist/github/github.service');
 const { CompanyService } = require('../apps/api/dist/company/company.service');
 const { AssessmentsService } = require('../apps/api/dist/assessments/assessments.service');
+const { codingAttemptTotals } = require('../apps/api/dist/assessments/coding-attempt-totals');
+
+test('Submitting the last coding question returns whole-exam points, not just that question', async () => {
+  const answers=[{questionId:'first',pointsEarned:25,executionResult:{}}];
+  const attempt={id:'qa',status:'IN_PROGRESS',startedAt:new Date(),reviewStatus:'NOT_REQUIRED',assessment:{companyId:null,skillId:null,timeLimitMinutes:5,passingScore:70,questions:[{id:'first',points:25},{id:'second',points:25,evaluationMethod:'AUTOMATED_TEST_CASES',testCases:[{input:'2,3',expectedOutput:'5'}]}]}};
+  let stored;
+  const tx={assessmentAnswer:{findFirst:async()=>null,create:async({data})=>{answers.push(data);},findMany:async()=>answers},assessmentAttempt:{update:async({data})=>{stored=data;return data;}}};
+  const service=new AssessmentsService({...tx,$transaction:async fn=>fn(tx)}, {execute:async()=>({passedTestCases:0,totalTestCases:1})},{});
+  service.validateAttemptOwnership=async()=>attempt;
+  const result=await service.submitCodingSolution('qa','second','qa-user','function solution(a,b){return 0;}');
+  assert.equal(result.isFinished,true);
+  assert.equal(result.pointsEarned,0);
+  assert.equal(result.totalPointsEarned,25);
+  assert.equal(result.maxScore,50);
+  assert.equal(result.percentage,50);
+  assert.equal(stored.score,25);
+});
+
+test('A later test-case answer cannot turn a pending rubric evaluation into a zero-percent failure', () => {
+  const assessment={companyId:null,passingScore:70,questions:[{id:'ai',points:25,evaluationMethod:'OPEN_ENDED'},{id:'tc',points:25,evaluationMethod:'AUTOMATED_TEST_CASES'}]};
+  const totals=codingAttemptTotals(assessment,[{questionId:'ai',pointsEarned:0,executionResult:{evaluationPending:true}},{questionId:'tc',pointsEarned:25}],false,'EVALUATION_PENDING','AUTOMATED_TEST_CASES');
+  assert.equal(totals.reviewStatus,'EVALUATION_PENDING');
+  for(const field of ['score','percentage','passed','aiScore','finalScore']) assert.equal(totals[field],null);
+  const disclosed=candidateFeedback({...totals,totalPointsEarned:25},{companyId:'qa-company',feedbackVisibility:'PRIVATE_TO_COMPANY'});
+  assert.equal(disclosed.totalPointsEarned,null);
+});
+
+test('Resolved mixed coding results use weighted whole-exam points and retain company human review', () => {
+  const assessment={companyId:'qa-company',passingScore:70,questions:[{id:'ai',points:25,evaluationMethod:'OPEN_ENDED'},{id:'tc',points:25,evaluationMethod:'AUTOMATED_TEST_CASES'}]};
+  const totals=codingAttemptTotals(assessment,[{questionId:'ai',pointsEarned:12.5,executionResult:{evaluationPending:false}},{questionId:'tc',pointsEarned:25}],false,'PENDING_HUMAN_REVIEW','AUTOMATED_TEST_CASES');
+  assert.equal(totals.score,37.5);
+  assert.equal(totals.maxScore,50);
+  assert.equal(totals.percentage,75);
+  assert.equal(totals.reviewStatus,'PENDING_HUMAN_REVIEW');
+  assert.equal(totals.finalScore,null);
+});
 const { honestJobContent } = require('../apps/api/dist/jobs/job-content');
 const { IngestionService } = require('../apps/api/dist/ingestion/ingestion.service');
 const { JobsService } = require('../apps/api/dist/jobs/jobs.service');

@@ -409,11 +409,11 @@ export default function AssessmentRunnerPage() {
   };
 
   // 3. Finalize Multi-Question Attempt (Calculates total and closes attempt)
-  const handleFinalizeAttempt = useCallback(async () => {
+  const handleFinalizeAttempt = useCallback(async (automatic = false) => {
     if (!attempt || finalizingAttempt) return;
     const answeredCount = Object.keys(submittedQuestions).length;
     const totalCount = assessment?.questions?.length || 1;
-    if (answeredCount < totalCount) {
+    if (!automatic && answeredCount < totalCount) {
       const confirmSubmit = window.confirm(
         `คุณเพิ่งส่งคำตอบไปแล้ว ${answeredCount} จาก ${totalCount} ข้อ คุณแน่ใจหรือไม่ว่าต้องการจบการสอบและส่งผลคะแนนทั้งหมดตอนนี้?`,
       );
@@ -438,12 +438,12 @@ export default function AssessmentRunnerPage() {
   const handleTimeExpired = useCallback(() => {
     if (hasAutoSubmitted || theoryResult || codingFinalResult) return;
     setHasAutoSubmitted(true);
-    alert('⏱️ หมดเวลาทำข้อสอบแล้ว! ระบบกำลังบันทึกและส่งผลการสอบของคุณโดยอัตโนมัติ');
+    setSubmissionFeedback('⏱️ หมดเวลาทำข้อสอบแล้ว ระบบกำลังบันทึกและส่งผลการสอบโดยอัตโนมัติ');
 
     if (assessment?.type === AssessmentType.THEORY) {
       void handleSubmitTheory();
     } else if (assessment?.type === AssessmentType.PRACTICAL_CODING) {
-      void handleFinalizeAttempt();
+      void handleFinalizeAttempt(true);
     }
   }, [hasAutoSubmitted, theoryResult, codingFinalResult, assessment, handleSubmitTheory, handleFinalizeAttempt]);
 
@@ -858,13 +858,13 @@ export default function AssessmentRunnerPage() {
                       <span className="font-extrabold text-[#4f46e5] text-2xl">
                         {codingFinalResult.percentage ?? codingFinalResult.score ?? codingFinalResult.aiScore}%
                       </span>
-                      {codingFinalResult.pointsEarned !== undefined && codingFinalResult.maxPoints ? (
+                      {codingFinalResult.maxScore ? (
+                        <span className="text-xs ml-1 text-slate-500">
+                          ({codingFinalResult.totalPointsEarned ?? codingFinalResult.score} / {codingFinalResult.maxScore} คะแนน)
+                        </span>
+                      ) : codingFinalResult.pointsEarned !== undefined && codingFinalResult.maxPoints ? (
                         <span className="text-xs ml-1 text-slate-500">
                           ({codingFinalResult.pointsEarned} / {codingFinalResult.maxPoints} คะแนน)
-                        </span>
-                      ) : codingFinalResult.score !== undefined && codingFinalResult.maxScore ? (
-                        <span className="text-xs ml-1 text-slate-500">
-                          ({codingFinalResult.score} / {codingFinalResult.maxScore} คะแนน)
                         </span>
                       ) : null}
                     </p>
@@ -1030,7 +1030,7 @@ export default function AssessmentRunnerPage() {
                     </div>
 
                     <button
-                      onClick={handleFinalizeAttempt}
+                      onClick={() => void handleFinalizeAttempt()}
                       disabled={finalizingAttempt || Object.keys(submittedQuestions).length === 0}
                       className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-xs transition disabled:opacity-50"
                       title="ส่งชุดข้อสอบทั้งหมดและคำนวณคะแนนรวม"
@@ -1268,6 +1268,8 @@ export default function AssessmentRunnerPage() {
                         value={currentCode}
                         onChange={handleCodeChange}
                         options={{
+                          // Keep the standard textarea input for keyboard and assistive-tool compatibility.
+                          editContext: false,
                           minimap: { enabled: false },
                           fontSize: 13,
                           scrollBeyondLastLine: false,
