@@ -125,12 +125,13 @@ export default function CompanyDashboardPage() {
 
               <div className="rounded-[20px] border border-slate-200/90 bg-white/95 p-6 shadow-[0_12px_32px_rgba(15,23,42,0.04)]">
                 <div className="flex items-center justify-between text-[#667085] text-xs font-bold mb-2">
-                  <span>จำนวนผู้สมัครทั้งหมด (Applicants)</span>
+                  <span>ใบสมัครทั้งหมด (Applications)</span>
                   <Users className="h-4 w-4 text-purple-600" />
                 </div>
                 <div className="text-3xl font-extrabold text-slate-900">
-                  {company?.jobs?.reduce((acc: number, j: any) => acc + (j._count?.applications || 0), 0) || 0}
+                  {company?.jobs?.reduce((acc: number, j: any) => acc + (j._count?.applications || 0), 0) || 0} <span className="text-xs font-normal text-slate-500">รายการ</span>
                 </div>
+                <p className="text-xs text-slate-500 mt-2">รวมการสมัครซ้ำและใบสมัครที่ยกเลิกแล้ว</p>
               </div>
 
               <div className="rounded-[20px] border border-slate-200/90 bg-white/95 p-6 shadow-[0_12px_32px_rgba(15,23,42,0.04)]">
@@ -171,7 +172,7 @@ export default function CompanyDashboardPage() {
                           <span>{job.employmentType}</span>
                           <span>•</span>
                           <span className="font-semibold text-[#4f46e5]">
-                            ผู้สมัคร {job._count?.applications || 0} คน
+                            ใบสมัคร {job._count?.applications || 0} รายการ
                           </span>
                         </div>
                       </div>

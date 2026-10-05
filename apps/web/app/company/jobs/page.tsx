@@ -135,7 +135,7 @@ export default function CompanyJobsManagePage() {
                       {job.location}
                     </span>
                     <span className="bg-[#e8eaff] text-[#4f46e5] px-3 py-1 rounded-full border border-[#dce0ff] font-bold">
-                      ผู้สมัคร {job._count?.applications || 0} คน
+                      ใบสมัคร {job._count?.applications || 0} รายการ
                     </span>
                     {job.acceptedQuota && (
                       <span className="flex items-center gap-1 bg-[#f0fdf4] text-emerald-700 px-3 py-1 rounded-full border border-emerald-200 font-semibold">

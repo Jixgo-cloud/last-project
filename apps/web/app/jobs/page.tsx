@@ -575,7 +575,7 @@ export default function JobsPage() {
                     </a>
                   ) : (
                     <span className="text-[11px] text-slate-400">
-                      ผู้สมัคร {job._count?.applications || 0} คน
+                      ใบสมัคร {job._count?.applications || 0} รายการ
                     </span>
                   )}
 

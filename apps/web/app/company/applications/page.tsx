@@ -375,22 +375,24 @@ function CompanyApplicationsContent() {
         {/* Stats Row */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
           <div className="bg-white/90 border border-slate-200/90 rounded-[20px] p-4 shadow-[0_8px_24px_rgba(15,23,42,0.03)] backdrop-blur-sm">
-            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">ผู้สมัครทั้งหมด</span>
-            <div className="text-2xl font-black text-slate-900 mt-1">{counts.total} <span className="text-xs font-normal text-slate-400">คน</span></div>
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">ใบสมัครทั้งหมด</span>
+            <div className="text-2xl font-black text-slate-900 mt-1">{counts.total} <span className="text-xs font-normal text-slate-400">รายการ</span></div>
           </div>
           <div className="bg-white/90 border border-slate-200/90 rounded-[20px] p-4 shadow-[0_8px_24px_rgba(15,23,42,0.03)] backdrop-blur-sm">
             <span className="text-[11px] font-semibold text-amber-600 uppercase tracking-wider block">กำลังคัดกรอง</span>
-            <div className="text-2xl font-black text-amber-600 mt-1">{counts.reviewing} <span className="text-xs font-normal text-slate-400">คน</span></div>
+            <div className="text-2xl font-black text-amber-600 mt-1">{counts.reviewing} <span className="text-xs font-normal text-slate-400">รายการ</span></div>
           </div>
           <div className="bg-white/90 border border-slate-200/90 rounded-[20px] p-4 shadow-[0_8px_24px_rgba(15,23,42,0.03)] backdrop-blur-sm">
             <span className="text-[11px] font-semibold text-purple-600 uppercase tracking-wider block">รอบสัมภาษณ์</span>
-            <div className="text-2xl font-black text-purple-600 mt-1">{counts.interview} <span className="text-xs font-normal text-slate-400">คน</span></div>
+            <div className="text-2xl font-black text-purple-600 mt-1">{counts.interview} <span className="text-xs font-normal text-slate-400">รายการ</span></div>
           </div>
           <div className="bg-white/90 border border-slate-200/90 rounded-[20px] p-4 shadow-[0_8px_24px_rgba(15,23,42,0.03)] backdrop-blur-sm">
             <span className="text-[11px] font-semibold text-emerald-600 uppercase tracking-wider block">ได้ข้อเสนอ/รับเข้าทำงาน</span>
-            <div className="text-2xl font-black text-emerald-600 mt-1">{counts.offers} <span className="text-xs font-normal text-slate-400">คน</span></div>
+            <div className="text-2xl font-black text-emerald-600 mt-1">{counts.offers} <span className="text-xs font-normal text-slate-400">รายการ</span></div>
           </div>
         </div>
+
+        <p className="text-xs text-slate-500 mb-4">ตัวเลขนับใบสมัครแต่ละรอบ รวมใบสมัครที่ยกเลิกแล้ว ผู้สมัครคนเดียวอาจมีหลายรายการ</p>
 
         {/* Filter & Search Bar */}
         <div className="bg-white/90 border border-slate-200/90 rounded-[24px] p-4 mb-8 shadow-[0_8px_24px_rgba(15,23,42,0.03)] backdrop-blur-sm flex flex-col sm:flex-row gap-3 items-center justify-between">
