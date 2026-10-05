@@ -53,15 +53,19 @@ SmartCareer เป็นแพลตฟอร์มหางาน รวบร�
 
 ---
 
-## 🔑 บัญชีทดสอบระบบ (Demo Credentials)
+## 🔑 ช่องทางสมัครและเข้าสู่ระบบ
 
-| บทบาท (Role) | อีเมล (Email) | รหัสผ่าน (Password) | หน้าหลัก (Landing Route) |
+| บทบาท | สมัครสมาชิก | เข้าสู่ระบบ | หน้าหลัก |
 |---|---|---|---|
-| **Candidate** | `candidate@smartcareer.dev` | `password123` | `/skills` / `/jobs` |
-| **Company (Employer)** | `hr@techcorp.co.th` | `password123` | `/company/dashboard` |
-| **Admin** | `admin@smartcareer.dev` | `admin123` | `/admin/dashboard` |
+| Candidate | GitHub เท่านั้น | GitHub เท่านั้น | `/profile` |
+| Company | Google เท่านั้น | Google เท่านั้น | `/company/dashboard` |
+| Admin | สร้างโดยผู้ดูแลระบบเท่านั้น | อีเมลและรหัสผ่าน | `/admin/dashboard` |
 
-> *หมายเหตุ: บนหน้าเว็บแรก (Home) และหน้า Sign In มีปุ่ม **⚡ Quick 1-Click Interactive Demo Login** ให้เข้าใช้งานได้ทันทีโดยไม่ต้องพิมพ์*
+บัญชีเดิมยังเก็บข้อมูลทั้งหมดไว้ การเชื่อมบัญชีเดิมต้องใช้อีเมลที่ผู้ให้บริการยืนยันตรงกับบัญชีเดิม และชื่อ GitHub ที่ผูกไว้ต้องตรงกัน ไม่รองรับรหัสผ่านของผู้สมัครหรือบริษัทอีกต่อไป
+
+การตรวจอัตโนมัติใช้ตัวจำลองผู้ให้บริการเฉพาะฐานข้อมูลแยกในเครื่อง (`ENABLE_DEV_MOCK_AUTH=true` และ `NODE_ENV=development`) ตัวจำลองปิดใน production เสมอ และไม่ใช้แทนการตรวจ GitHub/Google จริง
+
+ดูขั้นตอนทดสอบนโยบายใหม่ที่ [OAuth-only UAT](docs/uat/AUTH_PROVIDER_POLICY.md)
 
 ---
 

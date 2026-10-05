@@ -19,7 +19,7 @@ const testUrl = new URL(sourceUrl);
 testUrl.pathname = '/' + databaseName;
 const evidenceDir = path.join(root, 'output', 'core-regression', databaseName);
 fs.mkdirSync(evidenceDir, { recursive: true });
-const env = { ...process.env, ...configured, DATABASE_URL: testUrl.href, NODE_ENV: 'development', PORT: '4000', FRONTEND_URL: 'http://localhost:3000', NEXT_PUBLIC_API_URL: 'http://localhost:4000/api', NEXT_TELEMETRY_DISABLED: '1', JWT_EXPIRES_IN: '5m', INGESTION_CONFIG_DIR: path.join(evidenceDir, 'ingestion-config'), API_URL: 'http://localhost:4000/api', JUDGE0_BASE_URL: 'http://127.0.0.1:2359', JUDGE0_API_KEY: '', RAPIDAPI_KEY: '' };
+const env = { ...process.env, ...configured, DATABASE_URL: testUrl.href, NODE_ENV: 'development', ENABLE_DEV_MOCK_AUTH: 'true', PORT: '4000', FRONTEND_URL: 'http://localhost:3000', NEXT_PUBLIC_API_URL: 'http://localhost:4000/api', NEXT_TELEMETRY_DISABLED: '1', JWT_EXPIRES_IN: '5m', INGESTION_CONFIG_DIR: path.join(evidenceDir, 'ingestion-config'), API_URL: 'http://localhost:4000/api', JUDGE0_BASE_URL: 'http://127.0.0.1:2359', JUDGE0_API_KEY: '', RAPIDAPI_KEY: '' };
 const admin = new PrismaClient({ datasources: { db: { url: sourceUrl.href } } });
 const db = new PrismaClient({ datasources: { db: { url: testUrl.href } } });
 const results = [];
@@ -93,18 +93,37 @@ async function fill(selector, value) {
   }
   assert.equal(actual, value, 'The browser did not fill the requested field: ' + selector);
 }
+// Local-only provider fixture; production never enables dev-callback.
+function providerFixture(email) {
+  const candidate = email === 'candidate@smartcareer.dev';
+  return { email, provider: candidate ? 'github' : 'google', role: candidate ? 'CANDIDATE' : 'COMPANY',
+    ...(candidate ? { githubUsername: 'regression-candidate' } : {}) };
+}
+async function sessionToken(email, password) {
+  return (await request(email === 'admin@smartcareer.dev' ? '/auth/login' : '/auth/dev-callback', 'POST',
+    email === 'admin@smartcareer.dev' ? { email, password } : providerFixture(email))).token;
+}
 async function login(email, password, landing) {
   await goto('/login');
   await page.evaluate(() => localStorage.removeItem('smartcareer_token'));
-  await goto('/login');
-  await fill('input[type="email"]', email);
-  await fill('input[type="password"]', password);
-  await Promise.all([page.waitForFunction(route => location.pathname === route, { timeout: 20000 }, landing), activate('button[type="submit"]')]);
+  if (email === 'admin@smartcareer.dev') {
+    await fill('input[type="email"]', email);
+    await fill('input[type="password"]', password);
+    await Promise.all([page.waitForFunction(route => location.pathname === route, { timeout: 20000 }, landing), activate('button[type="submit"]')]);
+  } else {
+    const status = await page.evaluate(async body => {
+      const response = await fetch('/api/auth/dev-callback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      return response.status;
+    }, providerFixture(email));
+    assert.equal(status, 201, 'Local provider fixture must authenticate');
+    await goto('/callback?mock=1');
+    await page.waitForFunction(route => location.pathname === route, { timeout: 20000 }, landing);
+  }
   assert.equal(await page.evaluate(() => localStorage.getItem('smartcareer_token')), null, 'Bearer token must not be stored in localStorage');
   const cookie = (await browser.cookies()).find(c => c.name === 'smartcareer_session');
-  assert(cookie && cookie.httpOnly, 'UI login must persist an HttpOnly session');
+  assert(cookie && cookie.httpOnly, 'Login must persist an HttpOnly session');
   assert(!(await page.evaluate(() => document.cookie)).includes('smartcareer_session'), 'JavaScript must not read the session');
-  const token = (await request('/auth/login', 'POST', { email, password })).token;
+  const token = await sessionToken(email, password);
   const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
   assert.equal(claims.exp - claims.iat, 300, 'JWT_EXPIRES_IN did not control the session lifetime');
   return token;
@@ -116,6 +135,7 @@ async function run() {
   judgeFixture = require('./fixtures/judge0.cjs').createJudgeFixture();
   await new Promise(resolve => judgeFixture.listen(2359, '127.0.0.1', resolve));
   report.interactionMode = 'Browser text input and DOM button activation; manual pointer checks are separate';
+  report.authenticationFixture = 'GitHub/Google identities supplied through development-only dev-callback; real provider UI checked separately';
   report.judgeProvider = 'Deterministic fixture; no applicant code is executed locally';
   const sourceCounts = { users: await admin.user.count(), jobs: await admin.job.count(), attempts: await admin.assessmentAttempt.count() };
   await admin.$executeRawUnsafe(`CREATE DATABASE "${databaseName}"`); created = true;
@@ -180,6 +200,21 @@ async function run() {
     });
   });
   await check('Home and login pages render', async () => { await goto('/'); await screenshot('home'); await goto('/login'); assert(await page.$('input[type="email"]')); });
+  await check('Public signup offers only the matching provider and legacy passwords cannot bypass OAuth', async () => {
+    await goto('/register');
+    assert.equal(await page.$('input[type="email"], input[type="password"], button[type="submit"]'), null);
+    assert((await page.$eval('body', e => e.innerText)).includes('สมัครสมาชิกด้วย GitHub'));
+    await clickText('บริษัท/ผู้ว่าจ้าง');
+    const companyText = await page.$eval('body', e => e.innerText);
+    assert(companyText.includes('สมัครสมาชิกด้วย Google'));
+    assert(!companyText.includes('สมัครสมาชิกด้วย GitHub'));
+    const before = await db.user.count();
+    for (const [role, email] of [['CANDIDATE', candidate.email], ['COMPANY', employer.email]]) {
+      assert.equal((await requestResult('/auth/register', 'POST', { email: 'new-qa@example.test', password: 'password123456', role })).status, 400);
+      assert.equal((await requestResult('/auth/login', 'POST', { email, password: 'password123' })).status, 401);
+    }
+    assert.equal(await db.user.count(), before);
+  });
   await check('Guest job favorites explain sign-in without blocking browser dialogs or saving data', async () => {
     const fixture = await db.job.create({data:{companyId:company.id,companyName:company.name,title:'Guest favorite fixture',slug:'guest-favorite-fixture',description:'Isolated regression only'}});
     let dialogs = 0;
@@ -231,7 +266,7 @@ async function run() {
   });
   let companyToken;
   let invalidLegacyAssessment;
-  await check('Company login through UI', async () => { companyToken = await login('hr@techcorp.co.th', 'password123', '/company/dashboard'); await screenshot('company-login'); assert.equal((await request('/auth/me', 'GET', undefined, companyToken)).role, 'COMPANY'); });
+  await check('Company provider fixture establishes browser session', async () => { companyToken = await login('hr@techcorp.co.th', 'password123', '/company/dashboard'); await screenshot('company-login'); assert.equal((await request('/auth/me', 'GET', undefined, companyToken)).role, 'COMPANY'); });
   await check('Company without a request is not awaiting review', async () => {
     await goto('/company/dashboard');
     await page.waitForFunction(() => document.body.innerText.includes('ยังไม่ส่งเอกสาร'));
@@ -275,7 +310,7 @@ async function run() {
     const colleague = await db.user.create({ data: { email: 'parallel-colleague@smartcareer.dev', passwordHash: hash, role: 'COMPANY' } });
     const inactive = await db.user.create({ data: { email: 'parallel-inactive@smartcareer.dev', passwordHash: hash, role: 'COMPANY', isActive: false } });
     await db.companyMember.createMany({ data: [colleague, inactive].map(user => ({ companyId: parallelCompany.id, userId: user.id })) });
-    const token = (await request('/auth/login', 'POST', { email: owner.email, password: 'password123' })).token;
+    const token = await sessionToken(owner.email, 'password123');
     const content = Buffer.from('%PDF-1.7\nTest-only concurrency fixture');
     const body = { businessRegNo: '1234567890123', documents: { files: [{ name: 'fixture.pdf', type: 'application/pdf', size: content.length, dataUrl: 'data:application/pdf;base64,' + content.toString('base64') }] } };
     const submitted = await Promise.all(Array.from({ length: 4 }, () => requestResult('/company/verify', 'POST', body, token)));
@@ -393,7 +428,7 @@ async function run() {
     const endpoint = '/admin/verifications/' + documentFixture.id + '/documents/0';
     assert.equal((await requestResult(endpoint)).status, 401);
     assert.equal((await requestResult(endpoint, 'GET', undefined, companyToken)).status, 403);
-    const forbiddenCandidate = (await request('/auth/login', 'POST', { email: 'candidate@smartcareer.dev', password: 'password123' })).token;
+    const forbiddenCandidate = await sessionToken('candidate@smartcareer.dev', 'password123');
     assert.equal((await requestResult(endpoint, 'GET', undefined, forbiddenCandidate)).status, 403);
     const downloaded = await fetch('http://localhost:3000/api' + endpoint, { headers: { Cookie: 'smartcareer_session=' + verificationAdminToken } });
     assert.equal(downloaded.status, 200);
@@ -493,7 +528,7 @@ async function run() {
     assert.equal((await db.job.findUnique({ where: { id: job.id } })).isActive, true);
   });
   let candidateToken;
-  await check('Candidate login through UI', async () => { candidateToken = await login('candidate@smartcareer.dev', 'password123', '/profile'); assert.equal((await request('/auth/me', 'GET', undefined, candidateToken)).role, 'CANDIDATE'); await screenshot('candidate-login'); });
+  await check('Candidate provider fixture establishes browser session', async () => { candidateToken = await login('candidate@smartcareer.dev', 'password123', '/profile'); assert.equal((await request('/auth/me', 'GET', undefined, candidateToken)).role, 'CANDIDATE'); await screenshot('candidate-login'); });
   await check('Invalid legacy assessment cannot start a timed attempt', async () => {
     invalidLegacyAssessment = await db.assessment.create({
       data: {
@@ -714,7 +749,7 @@ async function run() {
     if (browser) await browser.close().catch(() => {});
     if (keepManualUi && report.verdict === 'PASS') {
       console.log('Manual UI session is ready at http://localhost:3000');
-      console.log('Local test accounts: hr@techcorp.co.th / password123 and candidate@smartcareer.dev / password123');
+      console.log('Public test accounts require the local provider fixture; only admin accepts an email/password.');
       console.log('Press Ctrl+C when the manual UI checks are complete; this will stop both servers and remove the isolated database.');
       await new Promise(resolve => {
         const timer = setInterval(() => { if (fs.existsSync(path.join(evidenceDir, 'stop-manual-ui'))) { clearInterval(timer); resolve(); } }, 500);

@@ -11,7 +11,6 @@ interface AuthContextType {
   user: SessionUser | null;
   loading: boolean;
   login: (email: string, pass: string) => Promise<SessionUser>;
-  register: (data: any) => Promise<SessionUser>;
   logout: () => void;
   setUser: React.Dispatch<React.SetStateAction<SessionUser | null>>;
 }
@@ -44,16 +43,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return data;
   };
 
-  const register = async (formData: any) => {
-    sessionVersion.current++;
-    const data = await apiRequest<SessionUser>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(formData),
-    });
-    setUser(data);
-    return data;
-  };
-
   const logout = async () => {
     sessionVersion.current++;
     await apiRequest('/auth/logout', { method: 'POST', body: '{}' });
@@ -62,7 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, setUser }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, setUser }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { Controller, Post, Body, Get, Query, Res, Req, UseGuards, Request, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
@@ -201,7 +202,7 @@ export class AuthController {
       const exchangeCode = await this.security.grant(result.id, frontendUrl, state.challenge);
       return res.redirect(frontendUrl + '/callback?code=' + exchangeCode);
     } catch (err: any) {
-      const msg = 'Unable to sign in. Please start again or use email sign-in.';
+      const msg = 'Unable to sign in. Please start again with GitHub for candidates or Google for companies.';
       return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(msg)}`);
     }
   }
@@ -226,7 +227,7 @@ export class AuthController {
     if (role === UserRole.COMPANY) {
       return res.redirect(
         `${frontendUrl}/register?error=${encodeURIComponent(
-          'GitHub sign-in and registration are only permitted for Candidate accounts. Companies must use Google or Email.',
+          'GitHub sign-in and registration are only permitted for Candidate accounts. Companies must use Google.',
         )}`,
       );
     }
@@ -281,7 +282,7 @@ export class AuthController {
       if (state.role === UserRole.COMPANY) {
         return res.redirect(
           `${frontendUrl}/register?error=${encodeURIComponent(
-            'Company accounts cannot sign up with GitHub. Please use Google or Email.',
+            'Company accounts cannot sign up with GitHub. Please use Google.',
           )}`,
         );
       }
@@ -340,7 +341,7 @@ export class AuthController {
       const exchangeCode = await this.security.grant(result.id, frontendUrl, state.challenge);
       return res.redirect(frontendUrl + '/callback?code=' + exchangeCode);
     } catch (err: any) {
-      const msg = 'Unable to sign in. Please start again or use email sign-in.';
+      const msg = 'Unable to sign in. Please start again with GitHub for candidates or Google for companies.';
       return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(msg)}`);
     }
   }
@@ -363,7 +364,7 @@ export class AuthController {
     // Strict constraint checks
     if (providerUpper === 'GITHUB' && body.role === UserRole.COMPANY) {
       throw new BadRequestException(
-        'GitHub sign-in and registration are strictly prohibited for Company accounts. Companies must use Google or Email.',
+        'GitHub sign-in and registration are strictly prohibited for Company accounts. Companies must use Google.',
       );
     }
 
@@ -373,7 +374,7 @@ export class AuthController {
       );
     }
 
-    const providerId = `dev_${body.provider}_${Date.now()}`;
+    const providerId = `dev_${body.provider}_${createHash('sha256').update(body.email.toLowerCase().trim()).digest('hex')}`;
     const result = await this.authService.handleOAuthUser({
       provider: providerUpper,
       providerId,

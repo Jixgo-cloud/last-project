@@ -6,8 +6,7 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useAuth } from '@/lib/auth-context';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Lock, Mail, ArrowRight, AlertCircle, Sparkles, RefreshCw } from 'lucide-react';
-import { UserRole } from '@smartcareer/shared';
+import { Lock, Mail, ArrowRight, AlertCircle, RefreshCw } from 'lucide-react';
 import { beginOAuth } from '@/lib/oauth';
 import { getSafeInternalRedirect } from '@/lib/navigation';
 
@@ -61,7 +60,7 @@ function LoginForm() {
   useEffect(() => {
     const errorParam = searchParams.get('error');
     if (errorParam) {
-      setError(decodeURIComponent(errorParam));
+      setError(errorParam);
     }
   }, [searchParams]);
 
@@ -88,38 +87,15 @@ function LoginForm() {
     setLoading(true);
     setError(null);
     try {
-      const res = await login(email, password);
+      await login(email, password);
       sessionStorage.removeItem(POST_LOGIN_REDIRECT_KEY);
-      if (res.role === UserRole.ADMIN) {
-        router.push('/admin/dashboard');
-      } else if (res.role === UserRole.COMPANY) {
-        router.push('/company/dashboard');
-      } else {
-        router.push(getSafeInternalRedirect(searchParams.get('redirect')) || '/profile');
-      }
+      router.push('/admin/dashboard');
     } catch (err: any) {
       setError(err.message || 'Login failed');
     } finally {
       setLoading(false);
     }
   };
-
-  const setDemoCredentials = (role: 'CANDIDATE' | 'COMPANY' | 'ADMIN') => {
-    if (role === 'CANDIDATE') {
-      setEmail('candidate@smartcareer.dev');
-      setPassword('password123');
-    } else if (role === 'COMPANY') {
-      setEmail('hr@techcorp.co.th');
-      setPassword('password123');
-    } else {
-      setEmail('admin@smartcareer.dev');
-      setPassword('admin123');
-    }
-  };
-
-  const showDemoLogin =
-    process.env.NODE_ENV === 'development' &&
-    process.env.NEXT_PUBLIC_SHOW_DEMO_LOGIN === 'true';
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#f9fbfe] via-[#f3f6fb] to-[#eef2f8] text-[#111827] antialiased">
@@ -139,39 +115,6 @@ function LoginForm() {
               เข้าถึงแดชบอร์ดอาชีพและเรดาร์ทักษะของคุณ
             </p>
           </div>
-
-          {/* Quick Demo Pre-fills (Fail-Closed: Only in local development with explicit flag) */}
-          {showDemoLogin && (
-            <div className="mb-5 p-3.5 rounded-2xl bg-[#f9fafb] border border-slate-200/70 text-xs">
-              <span className="font-bold text-[#667085] block mb-2 flex items-center gap-1.5">
-                <Sparkles className="h-3.5 w-3.5 text-[#4f46e5]" />
-                ทดลองสลับบทบาทอัตโนมัติ (1-Click Demo):
-              </span>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setDemoCredentials('CANDIDATE')}
-                  className="py-1.5 px-2 rounded-full bg-white border border-slate-200/80 text-slate-700 font-semibold hover:border-[#6366f1] hover:text-[#4f46e5] hover:bg-[#e8eaff]/50 transition shadow-xs text-center truncate"
-                >
-                  Candidate
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDemoCredentials('COMPANY')}
-                  className="py-1.5 px-2 rounded-full bg-white border border-slate-200/80 text-slate-700 font-semibold hover:border-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 transition shadow-xs text-center truncate"
-                >
-                  Company
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDemoCredentials('ADMIN')}
-                  className="py-1.5 px-2 rounded-full bg-white border border-slate-200/80 text-slate-700 font-semibold hover:border-purple-500 hover:text-purple-700 hover:bg-purple-50 transition shadow-xs text-center truncate"
-                >
-                  Admin
-                </button>
-              </div>
-            </div>
-          )}
 
           {error && (
             <div className="mb-5 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-start gap-2.5 animate-in fade-in duration-200">
@@ -204,16 +147,18 @@ function LoginForm() {
           <div className="relative flex items-center justify-center mb-5">
             <div className="border-t border-slate-200 w-full" />
             <span className="bg-white px-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider absolute">
-              หรือระบุอีเมล
+              สำหรับผู้ดูแลระบบ (Admin) เท่านั้น
             </span>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form aria-label="เข้าสู่ระบบผู้ดูแล" onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">อีเมล (Email Address)</label>
+              <label htmlFor="admin-email" className="block text-xs font-bold text-slate-700 mb-1.5">อีเมล (Email Address)</label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-3 h-4 w-4 text-[#7a8494]" />
                 <input
+                  id="admin-email"
+                  autoComplete="username"
                   type="email"
                   required
                   value={email}
@@ -225,10 +170,12 @@ function LoginForm() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">รหัสผ่าน (Password)</label>
+              <label htmlFor="admin-password" className="block text-xs font-bold text-slate-700 mb-1.5">รหัสผ่าน (Password)</label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-3 h-4 w-4 text-[#7a8494]" />
                 <input
+                  id="admin-password"
+                  autoComplete="current-password"
                   type="password"
                   required
                   value={password}
@@ -251,7 +198,7 @@ function LoginForm() {
                 </>
               ) : (
                 <>
-                  เข้าสู่ระบบ
+                  เข้าสู่ระบบผู้ดูแล
                   <ArrowRight className="h-4 w-4" />
                 </>
               )}

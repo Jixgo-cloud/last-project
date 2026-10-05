@@ -89,6 +89,67 @@ test('Public signup rejects administrator role at both DTO and service boundarie
   await assert.rejects(new AuthService({}, {}).register({ role: 'ADMIN' }));
   assert((await validate(plainToInstance(RegisterDto, { email: 'test@example.com', password: 'valid-password-123', role: 'ADMIN' }))).some(e => e.property === 'role'));
 });
+test('Email registration is disabled for both public roles without creating accounts', async () => {
+  const service = new AuthService({}, {});
+  for (const role of ['CANDIDATE', 'COMPANY']) {
+    await assert.rejects(service.register({ email: 'qa@example.test', password: 'valid-password-123', role }),
+      error => error.getStatus() === 400 && error.message.includes(role === 'CANDIDATE' ? 'GitHub' : 'Google'));
+  }
+});
+test('New public accounts are created only by their matching OAuth provider', async () => {
+  for (const [role, provider] of [['CANDIDATE', 'GITHUB'], ['COMPANY', 'GOOGLE']]) {
+    let saved;
+    const service = new AuthService({ candidateProfile: { findUnique: async () => null }, user: {
+      findUnique: async () => null, create: async ({ data }) => {
+        saved = data;
+        return { ...data, id: 'new-id', candidateProfile: data.candidateProfile ? { ...data.candidateProfile.create, id: 'new-profile' } : null,
+          companyMembers: data.companyMembers ? [{ company: { ...data.companyMembers.create.company.create, id: 'new-company' } }] : [] };
+      },
+    } }, { sign: () => 'test-token' });
+    const dto = { requestedRole: role, email: 'qa@example.test', providerId: 'new-identity', githubUsername: 'qa-new' };
+    await assert.rejects(service.handleOAuthUser({ ...dto, provider: provider === 'GITHUB' ? 'GOOGLE' : 'GITHUB' }));
+    assert.equal(saved, undefined);
+    assert.equal((await service.handleOAuthUser({ ...dto, provider })).role, role);
+    assert.equal(saved.passwordHash, null);
+    assert.equal(saved.authProvider, provider);
+    assert(role === 'CANDIDATE' ? saved.candidateProfile : saved.companyMembers);
+  }
+});
+test('Legacy public passwords cannot sign in; administrator passwords still work', async () => {
+  const passwordHash = await require('bcryptjs').hash('qa-password-123', 4);
+  for (const role of ['CANDIDATE', 'COMPANY', 'ADMIN']) {
+    let issued = 0;
+    const user = { id: 'qa-id', email: 'qa@example.test', role, isActive: true, passwordHash, candidateProfile: null, companyMembers: [] };
+    const service = new AuthService({ user: { findUnique: async () => user } }, { sign: () => { issued++; return 'test-token'; } });
+    if (role === 'ADMIN') {
+      await assert.rejects(service.login({ email: user.email, password: 'incorrect' }));
+      assert.equal((await service.login({ email: user.email, password: 'qa-password-123' })).role, 'ADMIN');
+      assert.equal(issued, 1);
+    } else {
+      await assert.rejects(service.login({ email: user.email, password: 'qa-password-123' }), error => error.getStatus() === 401);
+      assert.equal(issued, 0);
+    }
+  }
+});
+test('OAuth keeps existing account data and rejects cross-role providers and admin social login', async () => {
+  for (const role of ['CANDIDATE', 'COMPANY', 'ADMIN']) {
+    const user = { id: 'existing-id', email: 'qa@example.test', role, isActive: true, authProvider: 'LOCAL',
+      candidateProfile: role === 'CANDIDATE' ? { id: 'existing-profile', githubUsername: 'qa-existing', fullName: 'QA' } : null,
+      companyMembers: role === 'COMPANY' ? [{ company: { id: 'existing-company', name: 'QA', verificationStatus: 'PENDING' } }] : [] };
+    const service = new AuthService({ user: { findUnique: async () => user,
+      update: async ({ data }) => Object.assign(user, data) } }, { sign: () => 'test-token' });
+    const dto = { email: user.email, providerId: 'provider-id', githubUsername: 'qa-existing' };
+    if (role === 'ADMIN') {
+      await assert.rejects(service.handleOAuthUser({ ...dto, provider: 'GOOGLE' }));
+      continue;
+    }
+    await assert.rejects(service.handleOAuthUser({ ...dto, provider: role === 'CANDIDATE' ? 'GOOGLE' : 'GITHUB' }));
+    const result = await service.handleOAuthUser({ ...dto, provider: role === 'CANDIDATE' ? 'GITHUB' : 'GOOGLE' });
+    assert.equal(result.id, 'existing-id');
+    assert.equal(role === 'CANDIDATE' ? result.candidateProfile.id : result.company.id, role === 'CANDIDATE' ? 'existing-profile' : 'existing-company');
+    await assert.rejects(service.handleOAuthUser({ ...dto, provider: role === 'CANDIDATE' ? 'GITHUB' : 'GOOGLE', providerId: 'different-identity' }));
+  }
+});
 test('Signing key must be configured and cannot use the known placeholder', () => {
   for (const value of [undefined, '', 'short', 'smartcareer_change_in_prod_secret_12345']) assert.throws(() => requireJwtSecret(value));
   assert.equal(requireJwtSecret('a'.repeat(64)).length, 64);

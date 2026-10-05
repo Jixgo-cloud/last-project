@@ -4,9 +4,8 @@ import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
-import { useAuth } from '@/lib/auth-context';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { User, Building2, ArrowRight, AlertCircle, Info, RefreshCw } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { User, Building2, AlertCircle, Info } from 'lucide-react';
 import { UserRole } from '@smartcareer/shared';
 import { beginOAuth } from '@/lib/oauth';
 
@@ -46,23 +45,15 @@ function GithubIcon() {
 }
 
 function RegisterForm() {
-  const { register } = useAuth();
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   const [role, setRole] = useState<UserRole>(UserRole.CANDIDATE);
-  const [fullName, setFullName] = useState('');
-  const [companyName, setCompanyName] = useState('');
-  const [targetCareer, setTargetCareer] = useState('Full Stack Developer');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const errorParam = searchParams.get('error');
     if (errorParam) {
-      setError(decodeURIComponent(errorParam));
+      setError(errorParam);
     }
   }, [searchParams]);
 
@@ -72,32 +63,6 @@ function RegisterForm() {
       await beginOAuth(provider, role, 'register');
     } catch {
       setError('ไม่สามารถเริ่มการเข้าสู่ระบบได้ กรุณาลองอีกครั้ง');
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await register({
-        email,
-        password,
-        role,
-        fullName: role === UserRole.CANDIDATE ? fullName : undefined,
-        companyName: role === UserRole.COMPANY ? companyName : undefined,
-        targetCareer: role === UserRole.CANDIDATE ? targetCareer : undefined,
-      });
-
-      if (res.role === UserRole.COMPANY) {
-        router.push('/company/dashboard');
-      } else {
-        router.push('/profile');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Registration failed');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -177,7 +142,7 @@ function RegisterForm() {
 
                 <div className="p-3 rounded-2xl bg-[#e8eaff]/50 border border-[#dce0ff] flex items-center gap-2 text-[11px] text-[#4f46e5]">
                   <Info className="h-4 w-4 shrink-0 text-[#4f46e5]" />
-                  <span>แนะนำสมัครด้วย GitHub เพื่อนำ Repositories มาคำนวณเรดาร์ทักษะได้ทันที</span>
+                  <span>ผู้สมัครต้องสมัครด้วย GitHub เท่านั้น เพื่อนำ Repositories มาคำนวณเรดาร์ทักษะได้ทันที</span>
                 </div>
               </>
             ) : (
@@ -193,108 +158,11 @@ function RegisterForm() {
 
                 <div className="p-3 rounded-2xl bg-[#f4f5fa] border border-slate-200/70 flex items-center gap-2 text-[11px] text-[#667085]">
                   <Info className="h-4 w-4 shrink-0 text-slate-400" />
-                  <span>บัญชีประเภทบริษัทสามารถลงทะเบียนผ่าน Google หรืออีเมลองค์กร</span>
+                  <span>บริษัทต้องสมัครด้วย Google เท่านั้น สามารถแก้ไขข้อมูลบริษัทหลังเข้าสู่ระบบได้</span>
                 </div>
               </>
             )}
           </div>
-
-          <div className="relative flex items-center justify-center mb-5">
-            <div className="border-t border-slate-200 w-full" />
-            <span className="bg-white px-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider absolute">
-              หรือกรอกข้อมูล
-            </span>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {role === UserRole.CANDIDATE ? (
-              <>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">ชื่อ-นามสกุล (Full Name)</label>
-                  <input
-                    type="text"
-                    required
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="เช่น สมชาย ใจดี"
-                    className="w-full rounded-xl border border-slate-200 bg-[#fbfcfd] px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#6366f1]/20 focus:border-[#6366f1] transition"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">เป้าหมายสายงาน (Target Career)</label>
-                  <select
-                    value={targetCareer}
-                    onChange={(e) => setTargetCareer(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-[#fbfcfd] px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#6366f1]/20 focus:border-[#6366f1] transition cursor-pointer"
-                  >
-                    <option value="Full Stack Developer">Full Stack Developer</option>
-                    <option value="Frontend Developer">Frontend Developer</option>
-                    <option value="Backend Developer">Backend Developer</option>
-                    <option value="DevOps Engineer">DevOps Engineer</option>
-                    <option value="Mobile Developer">Mobile Developer</option>
-                    <option value="Data Engineer">Data Engineer</option>
-                    <option value="AI / ML Engineer">AI / ML Engineer</option>
-                  </select>
-                </div>
-              </>
-            ) : (
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">ชื่อบริษัท / องค์กร (Company Name)</label>
-                <input
-                  type="text"
-                  required
-                  value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
-                  placeholder="เช่น บริษัท สยามเทค อินโนเวชั่น จำกัด"
-                  className="w-full rounded-xl border border-slate-200 bg-[#fbfcfd] px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#6366f1]/20 focus:border-[#6366f1] transition"
-                />
-              </div>
-            )}
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">อีเมล (Email Address)</label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@domain.com"
-                className="w-full rounded-xl border border-slate-200 bg-[#fbfcfd] px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#6366f1]/20 focus:border-[#6366f1] transition"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">รหัสผ่าน (Password)</label>
-              <input
-                type="password"
-                  minLength={12}
-                  maxLength={72}
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="อย่างน้อย 12 ตัวอักษร"
-                className="w-full rounded-xl border border-slate-200 bg-[#fbfcfd] px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#6366f1]/20 focus:border-[#6366f1] transition"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full mt-2 flex items-center justify-center gap-2 rounded-full bg-[#6366f1] py-3 text-xs sm:text-sm font-bold text-white shadow-xs shadow-indigo-500/20 hover:bg-[#4f46e5] disabled:opacity-50 transition"
-            >
-              {loading ? (
-                <>
-                  <RefreshCw className="h-4 w-4 animate-spin" />
-                  กำลังลงทะเบียน...
-                </>
-              ) : (
-                <>
-                  สร้างบัญชีผู้ใช้
-                  <ArrowRight className="h-4 w-4" />
-                </>
-              )}
-            </button>
-          </form>
 
           <div className="mt-6 text-center text-xs text-[#667085]">
             มีบัญชีผู้ใช้อยู่แล้ว?{' '}

@@ -22,52 +22,11 @@ export class AuthService {
     targetCareer?: string;
   }): Promise<AuthUserResponse> {
     publicRole(dto.role);
-    const existing = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase().trim() },
-    });
-    if (existing) {
-      throw new ConflictException('Email is already registered');
-    }
-
-    const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash(dto.password, salt);
-
-    // Account and its profile/organization must be saved as one operation.
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email.toLowerCase().trim(), passwordHash, role: dto.role,
-        ...(dto.role === UserRole.CANDIDATE ? {
-          candidateProfile: { create: {
-            fullName: dto.fullName || dto.email.split('@')[0],
-            targetCareer: dto.targetCareer || 'Full Stack Developer',
-          } },
-        } : {
-          companyMembers: { create: { role: 'OWNER', company: { create: {
-            name: dto.companyName || `${dto.email.split('@')[0]} Tech`,
-            slug: 'company-' + randomUUID(), verificationStatus: VerificationStatus.PENDING,
-          } } } },
-        }),
-      },
-      include: { candidateProfile: true, companyMembers: { include: { company: true } } },
-    });
-    const candidateProfileData = user.candidateProfile ? {
-      id: user.candidateProfile.id, fullName: user.candidateProfile.fullName,
-      targetCareer: user.candidateProfile.targetCareer, githubUsername: user.candidateProfile.githubUsername,
-    } : null;
-    const company = user.companyMembers[0]?.company;
-    const companyData = company ? { id: company.id, name: company.name, verificationStatus: company.verificationStatus as VerificationStatus } : null;
-
-    const token = this.generateToken(user.id, user.email, user.role);
-
-    return {
-      id: user.id,
-      email: user.email,
-      role: user.role as UserRole,
-      avatarUrl: user.avatarUrl,
-      candidateProfile: candidateProfileData,
-      company: companyData,
-      token,
-    };
+    throw new BadRequestException(
+      dto.role === UserRole.CANDIDATE
+        ? 'ผู้สมัครต้องสมัครสมาชิกด้วย GitHub เท่านั้น'
+        : 'บริษัทต้องสมัครสมาชิกด้วย Google เท่านั้น',
+    );
   }
 
   async login(dto: { email: string; password: string }): Promise<AuthUserResponse> {
@@ -85,6 +44,14 @@ export class AuthService {
 
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Invalid email or password');
+    }
+
+    if (user.role !== UserRole.ADMIN) {
+      throw new UnauthorizedException(
+        user.role === UserRole.CANDIDATE
+          ? 'ผู้สมัครต้องเข้าสู่ระบบด้วย GitHub เท่านั้น'
+          : 'บริษัทต้องเข้าสู่ระบบด้วย Google เท่านั้น',
+      );
     }
 
     if (!user.passwordHash) {
@@ -172,7 +139,7 @@ export class AuthService {
         throw new UnauthorizedException('Social account identity does not match.');
       }
       if (user.role === UserRole.COMPANY && dto.provider === 'GITHUB') {
-        throw new BadRequestException('Company accounts cannot sign in with GitHub. Please use Google or Email.');
+        throw new BadRequestException('Company accounts cannot sign in with GitHub. Please use Google.');
       }
 
       if (user.role === UserRole.CANDIDATE && dto.provider === 'GOOGLE') {
