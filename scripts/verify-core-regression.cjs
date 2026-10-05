@@ -131,6 +131,31 @@ async function run() {
   await db.candidateSkill.create({ data: { candidateId: candidate.candidateProfile.id, skillId: skill.id, practicalScore: 80 } });
   const theory = await db.assessment.create({ data: { title: 'Regression Theory', slug: 'regression-theory', type: 'THEORY', skillId: skill.id, questions: { create: { title: 'Regression choice', prompt: 'Choose the correct regression answer.', points: 10, choices: { create: [{ text: 'Correct regression answer', isCorrect: true, order: 0 }, { text: 'Incorrect regression answer', isCorrect: false, order: 1 }] } } } }, include: { questions: { include: { choices: true } } } });
   const coding = await db.assessment.create({ data: { title: 'Regression Coding', slug: 'regression-coding', type: 'PRACTICAL_CODING', skillId: skill.id, questions: { create: { title: 'Add two numbers', prompt: 'Implement function solution(a, b) returning their sum.', points: 100, starterCode: 'function solution(a, b) { return a + b; }', testCases: [{ input: '[2,3]', expectedOutput: '5', isHidden: false }, { input: '[10,20]', expectedOutput: '30', isHidden: true }] } } }, include: { questions: true } });
+  await check('Backend-owned tables deny Supabase client roles while server access and future table grants remain safe', async () => {
+    await db.$executeRawUnsafe(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon NOLOGIN; END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
+    END $$`);
+    await db.$executeRawUnsafe('GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated');
+    await db.$executeRawUnsafe('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated');
+    await db.$executeRawUnsafe(fs.readFileSync(path.join(root, 'supabase/migrations/20261005193431_protect_backend_owned_tables.sql'), 'utf8'));
+    const state = await db.$queryRawUnsafe(`SELECT relname, relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r'`);
+    assert(state.length >= 28 && state.every(row => row.relrowsecurity));
+    for (const role of ['anon', 'authenticated']) {
+      for (const sql of ['SELECT count(*) FROM public.users', 'INSERT INTO public.users (id) SELECT id FROM public.users WHERE false', 'UPDATE public.users SET id=id WHERE false', 'DELETE FROM public.users WHERE false']) {
+        await assert.rejects(db.$transaction(async tx => {
+          await tx.$executeRawUnsafe(`SET LOCAL ROLE ${role}`);
+          await tx.$queryRawUnsafe(sql);
+        }), error => error.meta?.code === '42501');
+      }
+    }
+    assert.equal(await db.user.count(), 3, 'Server connection must retain access');
+    await db.$executeRawUnsafe('CREATE TABLE public.regression_future_access (id integer)');
+    try {
+      const grants = await db.$queryRawUnsafe(`SELECT has_table_privilege('anon','public.regression_future_access','SELECT') AS anon, has_table_privilege('authenticated','public.regression_future_access','SELECT') AS authenticated`);
+      assert.equal(grants[0].anon, false); assert.equal(grants[0].authenticated, false);
+    } finally { await db.$executeRawUnsafe('DROP TABLE public.regression_future_access'); }
+  });
   const apiChild = launch('api', [path.join(root, 'apps/api/dist/main.js')], root);
   await waitReady('http://localhost:4000/api/health', apiChild);
   const webChild = launch('web', [path.join(root, 'node_modules/next/dist/bin/next'), 'start', '-p', '3000'], path.join(root, 'apps/web'), { NODE_ENV: 'production' });

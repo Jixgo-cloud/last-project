@@ -19,6 +19,7 @@ dist/
 
 # Environment files
 .env
+apps/api.env
 .env.production
 .env.local
 .env.development.local

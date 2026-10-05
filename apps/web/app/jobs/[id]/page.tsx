@@ -149,7 +149,7 @@ export default function JobDetailPage() {
       .catch((e) => console.error(e))
       .finally(() => setLoading(false));
 
-    if (user) {
+    if (user?.role === 'CANDIDATE') {
       apiRequest('/candidate/applications')
         .then((apps: any[]) => {
           if (Array.isArray(apps)) {
