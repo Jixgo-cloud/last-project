@@ -7,6 +7,7 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useAuth } from '@/lib/auth-context';
 import { apiRequest } from '@/lib/api';
+import { formatJobSalary } from '@smartcareer/shared';
 import {
   Building2,
   MapPin,
@@ -340,9 +341,9 @@ export default function JobDetailPage() {
                     <Globe className="h-3.5 w-3.5" /> Remote Option
                   </span>
                 )}
-                {job.salaryMin && (
+                {formatJobSalary(job) && (
                   <span className="flex items-center gap-1.5 bg-[#f9fafb] border border-slate-200/70 px-3 py-1.5 rounded-full text-slate-900 font-bold">
-                    ฿{job.salaryMin.toLocaleString()} - {job.salaryMax ? `฿${job.salaryMax.toLocaleString()}` : ''}
+                    {formatJobSalary(job)}
                   </span>
                 )}
                 {job.employmentType && (

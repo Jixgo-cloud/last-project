@@ -2,6 +2,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const axios = require('axios').default;
 const { getAttemptPercentage, getLatestFinishedAttempt } = require('@smartcareer/shared');
+const { formatJobSalary } = require('@smartcareer/shared');
+
+test('Salary labels preserve currency, missing endpoints and a genuine zero', () => {
+  assert.equal(formatJobSalary({}),null);
+  assert.equal(formatJobSalary({salaryMin:0,salaryMax:0}), '฿0');
+  assert.match(formatJobSalary({salaryMin:1000,salaryMax:2000,salaryCurrency:'USD'}),/US\$/);
+  assert.doesNotMatch(formatJobSalary({salaryMin:1000,salaryCurrency:'USD'}),/฿/);
+  assert.match(formatJobSalary({salaryMax:1000}),/^ไม่เกิน/);
+});
 const { candidateFeedback } = require('../apps/api/dist/assessments/candidate-feedback');
 const { GithubService } = require('../apps/api/dist/github/github.service');
 const { CompanyService } = require('../apps/api/dist/company/company.service');
