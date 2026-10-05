@@ -223,7 +223,7 @@ export default function AdminIngestionPage() {
       const res = await apiRequest(
         `/ingestion/preview-closed-jobs?source=${screeningSource}&limit=${screeningLimit}`,
       );
-      setScreeningResult(res);
+      setScreeningResult({ ...res, previewOnly: true });
       setResultType('JOBS');
       setShowResultModal(true);
     } catch (err: any) {
@@ -234,7 +234,7 @@ export default function AdminIngestionPage() {
     }
   };
 
-  // Clean & Delete closed jobs
+  // Deactivate closed jobs while retaining their recruitment history.
   const handleCleanClosedJobs = async () => {
     try {
       setScreeningLoading(true);
@@ -243,14 +243,14 @@ export default function AdminIngestionPage() {
         `/ingestion/cleanup-closed-jobs?source=${screeningSource}&limit=${screeningLimit}`,
         {
           method: 'POST',
-          body: JSON.stringify({ deleteMode: 'DELETE' }),
+          body: JSON.stringify({ deleteMode: 'DEACTIVATE' }),
         },
       );
-      setScreeningResult(res);
+      setScreeningResult({ ...res, previewOnly: false });
       setResultType('JOBS');
       setShowResultModal(true);
       showMessage(
-        `คัดกรองงานเสร็จสิ้น! สแกนทั้งหมด ${res.scannedCount} ตำแหน่ง, ตรวจพบปิดรับสมัคร ${res.closedCount} ตำแหน่ง, ลบออกจากระบบแล้ว ${res.deletedCount} ตำแหน่ง`,
+        `คัดกรองงานเสร็จสิ้น! สแกน ${res.scannedCount} ตำแหน่ง, พบปิดรับ ${res.closedCount} ตำแหน่ง, ปิดประกาศเพิ่ม ${res.deactivatedCount} ตำแหน่ง โดยเก็บใบสมัครและประวัติไว้`,
       );
       fetchLogs();
     } catch (err: any) {
@@ -269,7 +269,7 @@ export default function AdminIngestionPage() {
       const res = await apiRequest(
         `/ingestion/preview-closed-courses?provider=${courseProvider}&limit=${courseLimit}`,
       );
-      setScreeningResult(res);
+      setScreeningResult({ ...res, previewOnly: true });
       setResultType('COURSES');
       setShowResultModal(true);
     } catch (err: any) {
@@ -291,7 +291,7 @@ export default function AdminIngestionPage() {
           method: 'POST',
         },
       );
-      setScreeningResult(res);
+      setScreeningResult({ ...res, previewOnly: false });
       setResultType('COURSES');
       setShowResultModal(true);
       showMessage(
@@ -323,7 +323,7 @@ export default function AdminIngestionPage() {
                 ศูนย์จัดการข้อมูลงาน & แหล่งการเรียนรู้ภายนอก
               </h1>
               <p className="text-slate-600 text-sm mt-1 max-w-3xl">
-                เชื่อมต่อ RapidAPI JSearch, JobsDB, Blognone, JobThai, Remotive, คอร์ส YouTube/Udemy พร้อมระบบสแกนและลบงาน/คอร์สที่ไม่พร้อมใช้งานอัตโนมัติ
+                เชื่อมต่อ RapidAPI JSearch, JobsDB, Blognone, JobThai, Remotive และคอร์ส YouTube/Udemy พร้อมระบบคัดกรองข้อมูลที่ไม่พร้อมใช้งาน
               </p>
             </div>
 
@@ -409,7 +409,7 @@ export default function AdminIngestionPage() {
                     สแกนตำแหน่งงานที่ <strong className="text-rose-700">หมดอายุ (expiresAt)</strong>,{' '}
                     <strong className="text-rose-700">ลิงก์เสีย (HTTP 404/410)</strong>, หรือหน้าเว็บระบุว่า{' '}
                     <strong className="text-rose-700">&quot;ปิดรับสมัครแล้ว / No longer accepting applications&quot;</strong>{' '}
-                    และลบออกจากระบบทันที
+                    และปิดประกาศโดยเก็บใบสมัครและประวัติการคัดเลือกไว้
                   </>
                 ) : (
                   <>
@@ -516,7 +516,7 @@ export default function AdminIngestionPage() {
                   ) : (
                     <Trash2 className="h-4 w-4 text-white" />
                   )}
-                  <span>สแกนและลบงานออกทันที (Scan & Clean)</span>
+                  <span>สแกนและปิดประกาศงาน (เก็บประวัติ)</span>
                 </button>
               </div>
             </div>
@@ -936,7 +936,7 @@ export default function AdminIngestionPage() {
                         <td className="py-3.5 px-4 text-right">
                           {isJobCleanup ? (
                             <span className="text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
-                              ลบออก -{log.duplicateCount} ตำแหน่ง
+                              ปิดประกาศ {log.updatedCount || 0} ตำแหน่ง · ลบ {log.duplicateCount} ตำแหน่ง
                             </span>
                           ) : isCourseCleanup ? (
                             <span className="text-purple-700 font-bold bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200">
@@ -984,7 +984,9 @@ export default function AdminIngestionPage() {
                       : 'รายงานการคัดกรองคอร์สเรียนที่ไม่พร้อมใช้งาน (Course Screening Report)'}
                   </h3>
                   <p className="text-xs text-slate-500">
-                    {screeningResult.deletedCount > 0
+                    {resultType === 'JOBS' && !screeningResult.previewOnly
+                      ? `ปิดประกาศเพิ่ม ${screeningResult.deactivatedCount} ตำแหน่ง โดยเก็บใบสมัครและประวัติไว้`
+                      : screeningResult.deletedCount > 0
                       ? `ดำเนินการลบข้อมูลที่ไม่พร้อมใช้งานออกจากระบบแล้ว ${screeningResult.deletedCount} รายการ`
                       : `ผลการตรวจสอบพรีวิว (ตรวจพบรายการที่เข้าข่าย ${screeningResult.closedCount} รายการ)`}
                   </p>
@@ -1013,8 +1015,8 @@ export default function AdminIngestionPage() {
                   <div className="text-2xl font-black text-amber-700 mt-1">{screeningResult.closedCount}</div>
                 </div>
                 <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200/80">
-                  <div className="text-[11px] font-bold text-rose-700 uppercase">ลบออกจากระบบแล้ว</div>
-                  <div className="text-2xl font-black text-rose-700 mt-1">{screeningResult.deletedCount}</div>
+                  <div className="text-[11px] font-bold text-rose-700 uppercase">{resultType === 'JOBS' ? 'ปิดประกาศเพิ่ม' : 'ลบออกจากระบบแล้ว'}</div>
+                  <div className="text-2xl font-black text-rose-700 mt-1">{resultType === 'JOBS' ? screeningResult.deactivatedCount : screeningResult.deletedCount}</div>
                 </div>
                 <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200/80">
                   <div className="text-[11px] font-bold text-indigo-700 uppercase">อัตราส่วนที่พบปัญหา</div>
@@ -1133,10 +1135,12 @@ export default function AdminIngestionPage() {
                                   <Trash2 className="h-3 w-3" />
                                   <span>ลบแล้ว</span>
                                 </span>
+                              ) : item.actionTaken === 'DEACTIVATED' ? (
+                                <span className="text-xs font-bold text-indigo-700">ปิดประกาศ · เก็บประวัติ</span>
                               ) : (
                                 <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
                                   <Eye className="h-3 w-3" />
-                                  <span>รอการลบ</span>
+                                  <span>{resultType === 'JOBS' ? 'ตรวจพบ · ยังไม่เปลี่ยนข้อมูล' : 'รอการลบ'}</span>
                                 </span>
                               )}
                             </td>
@@ -1158,7 +1162,7 @@ export default function AdminIngestionPage() {
                 ปิดหน้าต่าง
               </button>
 
-              {screeningResult.closedCount > 0 && screeningResult.deletedCount === 0 && (
+              {screeningResult.closedCount > 0 && screeningResult.previewOnly && (
                 <button
                   onClick={() => {
                     setShowResultModal(false);
@@ -1172,7 +1176,7 @@ export default function AdminIngestionPage() {
                 >
                   <Trash2 className="h-4 w-4" />
                   <span>
-                    ยืนยันลบรายการเหล่านี้ทันที ({screeningResult.closedCount}{' '}
+                    {resultType === 'JOBS' ? 'ยืนยันปิดประกาศโดยเก็บประวัติ' : 'ยืนยันลบรายการเหล่านี้ทันที'} ({screeningResult.closedCount}{' '}
                     {resultType === 'JOBS' ? 'ตำแหน่ง' : 'คอร์ส'})
                   </span>
                 </button>

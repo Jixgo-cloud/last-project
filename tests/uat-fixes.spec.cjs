@@ -16,6 +16,26 @@ const { GithubService } = require('../apps/api/dist/github/github.service');
 const { CompanyService } = require('../apps/api/dist/company/company.service');
 const { AssessmentsService } = require('../apps/api/dist/assessments/assessments.service');
 const { codingAttemptTotals } = require('../apps/api/dist/assessments/coding-attempt-totals');
+const { JobScreeningService } = require('../apps/api/dist/ingestion/job-screening.service');
+const { SchedulerService } = require('../apps/api/dist/scheduler/scheduler.service');
+
+test('Job cleanup keeps closed internal jobs and expired external jobs even for legacy DELETE requests', async () => {
+  const jobs=[{id:'hired',source:'INTERNAL',isActive:false},{id:'external',source:'JSEARCH',isActive:true,expiresAt:new Date(0)}];
+  let writes;
+  const service=new JobScreeningService({job:{findMany:async()=>jobs,delete:async()=>assert.fail('Cleanup must never cascade-delete applications'),updateMany:async args=>{writes=args;return{count:1};}},ingestionLog:{create:async()=>{}}});
+  const result=await service.scanAndCleanJobs({deleteMode:'DELETE'});
+  assert.equal(result.deletedCount,0);
+  assert.equal(result.deactivatedCount,1);
+  assert.deepEqual(writes.where,{id:{in:['hired','external']},isActive:true});
+  assert(result.items.every(item=>item.actionTaken==='DEACTIVATED'));
+});
+
+test('Scheduled job cleanup deactivates instead of deleting recruitment records', async () => {
+  let options;
+  const service=new SchedulerService({}, {scanAndCleanJobs:async args=>{options=args;return{scannedCount:1,deactivatedCount:1,deletedCount:0};}}, {}, {});
+  await service.handleDailyClosedJobCleanupCron();
+  assert.equal(options.deleteMode,'DEACTIVATE');
+});
 
 test('Resuming an attempt exposes submitted question IDs without answers or private grades', () => {
   const result = candidateFeedback({status:'IN_PROGRESS',reviewStatus:'PENDING_HUMAN_REVIEW',score:25,

@@ -95,7 +95,7 @@ export class IngestionController {
     return this.jobScreeningService.scanAndCleanJobs({
       source,
       limit: limit ? parseInt(limit, 10) : 200,
-      deleteMode: body?.deleteMode || 'DELETE',
+      deleteMode: body?.deleteMode || 'DEACTIVATE',
     });
   }
 

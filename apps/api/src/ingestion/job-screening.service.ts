@@ -187,14 +187,15 @@ export class JobScreeningService {
   }
 
   /**
-   * Run screening and permanently delete (or deactivate) closed jobs
+   * Close unavailable jobs without deleting their applications, favorites or history.
+   * Legacy DELETE requests are deliberately treated as DEACTIVATE as well.
    */
   async scanAndCleanJobs(options: {
     source?: JobSource | 'ALL';
     limit?: number;
     deleteMode?: 'DELETE' | 'DEACTIVATE';
   }): Promise<ScreeningSummary> {
-    const mode = options.deleteMode || 'DELETE';
+    const mode = 'DEACTIVATE';
     this.logger.log(`[Job Screening Engine] Running scan & cleanup (Source: ${options.source || 'ALL'}, Mode: ${mode})...`);
     return this.runScreeningPipeline({
       source: options.source,
@@ -249,7 +250,6 @@ export class JobScreeningService {
       items: [],
     };
 
-    const closedJobsToDelete: string[] = [];
     const closedJobsToDeactivate: string[] = [];
 
     // Process in batches of 5 to avoid overwhelming network/sites
@@ -277,18 +277,12 @@ export class JobScreeningService {
               reasonCode: evalResult.reasonCode || 'EXPIRED_DATE',
               actionTaken: params.dryRun
                 ? 'PREVIEW_ONLY'
-                : params.deleteMode === 'DELETE'
-                ? 'DELETED'
                 : 'DEACTIVATED',
             };
             summary.items.push(item);
 
             if (!params.dryRun) {
-              if (params.deleteMode === 'DELETE') {
-                closedJobsToDelete.push(job.id);
-              } else {
-                closedJobsToDeactivate.push(job.id);
-              }
+              closedJobsToDeactivate.push(job.id);
             }
           }
         }),
@@ -297,20 +291,9 @@ export class JobScreeningService {
 
     // Execute database changes
     if (!params.dryRun) {
-      if (closedJobsToDelete.length > 0) {
-        for (const jobId of closedJobsToDelete) {
-          try {
-            await this.prisma.job.delete({ where: { id: jobId } });
-            summary.deletedCount++;
-          } catch (err: any) {
-            this.logger.error(`Failed to delete job ${jobId}: ${err.message}`);
-          }
-        }
-      }
-
       if (closedJobsToDeactivate.length > 0) {
         const updateResult = await this.prisma.job.updateMany({
-          where: { id: { in: closedJobsToDeactivate } },
+          where: { id: { in: closedJobsToDeactivate }, isActive: true },
           data: { isActive: false },
         });
         summary.deactivatedCount = updateResult.count;
@@ -340,7 +323,7 @@ export class JobScreeningService {
       });
 
       this.logger.log(
-        `[Job Screening Engine] Complete: Scanned ${summary.scannedCount}, Found Closed ${summary.closedCount}, Removed ${summary.deletedCount} jobs.`,
+        `[Job Screening Engine] Complete: Scanned ${summary.scannedCount}, Found Closed ${summary.closedCount}, Deactivated ${summary.deactivatedCount} jobs; history preserved.`,
       );
     } else {
       this.logger.log(
