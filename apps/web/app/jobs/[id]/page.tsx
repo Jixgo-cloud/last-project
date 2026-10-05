@@ -132,6 +132,8 @@ export default function JobDetailPage() {
   const [applying, setApplying] = useState(false);
   const [applied, setApplied] = useState(false);
   const [userApplication, setUserApplication] = useState<any>(null);
+  const [favoriteError, setFavoriteError] = useState<string | null>(null);
+  const [applyError, setApplyError] = useState<string | null>(null);
 
   const fetchJobDetails = useCallback(() => {
     if (!id) return;
@@ -173,20 +175,22 @@ export default function JobDetailPage() {
   }, [fetchJobDetails]);
 
   const handleToggleFavorite = async () => {
+    setFavoriteError(null);
     if (!user) {
-      alert('กรุณาเข้าสู่ระบบเพื่อบันทึกงานที่คุณสนใจ');
+      setFavoriteError('กรุณาเข้าสู่ระบบเพื่อบันทึกงานที่คุณสนใจ');
       return;
     }
     try {
       const res = await apiRequest(`/jobs/${id}/favorite`, { method: 'POST' });
       setJob((prev: any) => (prev ? { ...prev, isFavorited: res.isFavorited } : prev));
     } catch (err: any) {
-      alert(err.message || 'ไม่สามารถบันทึกตำแหน่งงานได้');
+      setFavoriteError(err.message || 'ไม่สามารถบันทึกตำแหน่งงานได้');
     }
   };
 
   const handleApply = async (e: React.FormEvent) => {
     e.preventDefault();
+    setApplyError(null);
     if (!user) {
       router.push('/login');
       return;
@@ -201,13 +205,14 @@ export default function JobDetailPage() {
       setShowApplyModal(false);
       fetchJobDetails();
     } catch (err: any) {
-      alert(`Application error: ${err.message}`);
+      setApplyError(err.message || 'สมัครงานไม่สำเร็จ กรุณาลองอีกครั้ง');
     } finally {
       setApplying(false);
     }
   };
 
   const handleOpenApplyModal = () => {
+    setApplyError(null);
     if (!user) {
       const returnToJob = `/jobs/${encodeURIComponent(String(id))}`;
       router.push(`/login?redirect=${encodeURIComponent(returnToJob)}`);
@@ -264,6 +269,7 @@ export default function JobDetailPage() {
           <ArrowLeft className="h-3.5 w-3.5" /> ย้อนกลับหน้ารวมงาน (Jobs Marketplace)
         </Link>
 
+        {favoriteError && <div role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{favoriteError}{!user && <Link href={`/login?redirect=${encodeURIComponent(`/jobs/${id}`)}`} className="ml-2 underline">เข้าสู่ระบบเพื่อบันทึกงาน</Link>}</div>}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-7">
           {/* Main Job Details (Left 8 cols) */}
           <div className="lg:col-span-8 space-y-6">
@@ -740,6 +746,7 @@ export default function JobDetailPage() {
               <p className="text-xs text-[#667085] mb-5">{job.companyName}</p>
 
               <form onSubmit={handleApply} className="space-y-4">
+                {applyError && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{applyError}</p>}
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                     ข้อความแนะนำตัว / สรุปความพร้อมถึงผู้ว่าจ้าง (ไม่บังคับ)

@@ -61,6 +61,7 @@ export default function JobsPage() {
   const [selectedCareer, setSelectedCareer] = useState<string>('ALL');
   const [sortBy, setSortBy] = useState<string>('recent'); // 'recent' | 'matchScore' | 'salary'
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [favoriteError, setFavoriteError] = useState<string | null>(null);
 
   const fetchJobs = useCallback(async (filters: {
     keyword: string;
@@ -129,8 +130,9 @@ export default function JobsPage() {
   const handleToggleFavorite = async (e: React.MouseEvent, jobId: string) => {
     e.preventDefault();
     e.stopPropagation();
+    setFavoriteError(null);
     if (!user) {
-      alert('กรุณาเข้าสู่ระบบเพื่อบันทึกงานที่คุณสนใจ');
+      setFavoriteError('กรุณาเข้าสู่ระบบเพื่อบันทึกงานที่คุณสนใจ');
       return;
     }
     try {
@@ -143,7 +145,7 @@ export default function JobsPage() {
         setTotal((t) => Math.max(0, t - 1));
       }
     } catch (err: any) {
-      alert(err.message || 'ไม่สามารถบันทึกตำแหน่งงานได้');
+      setFavoriteError(err.message || 'ไม่สามารถบันทึกตำแหน่งงานได้');
     }
   };
 
@@ -242,6 +244,7 @@ export default function JobsPage() {
           </div>
         </div>
 
+        {favoriteError && <div role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{favoriteError}{!user && <Link href="/login?redirect=%2Fjobs" className="ml-2 underline">เข้าสู่ระบบเพื่อบันทึกงาน</Link>}</div>}
         {/* Unauthenticated notice when Best Match is chosen */}
         {sortBy === 'matchScore' && !user && (
           <div className="mb-6 rounded-[20px] bg-gradient-to-r from-[#e8eaff]/70 to-[#eff1ff]/70 border border-[#dce0ff] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">

@@ -155,6 +155,27 @@ async function run() {
     });
   });
   await check('Home and login pages render', async () => { await goto('/'); await screenshot('home'); await goto('/login'); assert(await page.$('input[type="email"]')); });
+  await check('Guest job favorites explain sign-in without blocking browser dialogs or saving data', async () => {
+    const fixture = await db.job.create({data:{companyId:company.id,companyName:company.name,title:'Guest favorite fixture',slug:'guest-favorite-fixture',description:'Isolated regression only'}});
+    let dialogs = 0;
+    const countDialog = () => { dialogs++; };
+    page.on('dialog', countDialog);
+    try {
+      for (const [route,selector] of [[`/jobs/${fixture.id}`,'#btn-favorite-job-detail'],['/jobs',`#btn-favorite-${fixture.id}`]]) {
+        await goto(route);
+        await page.waitForSelector(selector);
+        await activate(selector);
+        await page.waitForFunction(() => document.querySelector('[role="alert"]')?.textContent.includes('กรุณาเข้าสู่ระบบเพื่อบันทึกงาน'));
+        assert.equal(dialogs,0,'Guest favorites must not block the browser with alert()');
+        assert.equal(await db.jobFavorite.count({where:{jobId:fixture.id}}),0);
+        assert.equal(await page.$eval(selector, el => el.title),'บันทึกงานที่สนใจ');
+      }
+      await screenshot('guest-favorite-sign-in');
+    } finally {
+      page.off('dialog',countDialog);
+      await db.job.delete({where:{id:fixture.id}});
+    }
+  });
   await check('Public GitHub lookup errors never fabricate a live profile', async () => {
     const endpoint = '/api/github/public/regression-missing-user';
     let failureStatus = 404;
