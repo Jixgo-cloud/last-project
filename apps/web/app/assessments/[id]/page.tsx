@@ -657,11 +657,11 @@ export default function AssessmentRunnerPage() {
                   {theoryResult.passed ? '🎉 ยินดีด้วย! คุณผ่านการทดสอบทักษะ' : 'ผลการทำแบบทดสอบ'}
                 </h2>
                 <p className="text-sm text-[#667085] mt-2">
-                  คุณได้คะแนนรอบล่าสุด{' '}
+                  {theoryResult.feedbackHidden ? 'ผลสอบรอบล่าสุด ' : theoryResult.reviewStatus === 'HUMAN_REVIEWED' ? 'คะแนนหลังผู้ตรวจประเมิน ' : 'คุณได้คะแนนรอบล่าสุด '}
                   <span className="font-extrabold text-[#4f46e5] text-xl">
                     {theoryResult.feedbackHidden ? 'บริษัทเป็นผู้แจ้งผลสอบ' : `${theoryResult.percentage}%`}
                   </span>{' '}
-                  {!theoryResult.feedbackHidden && `(${theoryResult.score} / ${theoryResult.maxScore} คะแนน)`}
+                  {!theoryResult.feedbackHidden && theoryResult.reviewStatus !== 'HUMAN_REVIEWED' && `(${theoryResult.score} / ${theoryResult.maxScore} คะแนน)`}
                 </p>
                 <div className="mt-4 flex items-center justify-center gap-4 text-xs text-[#667085]">
                   <span>ใช้เวลา: {Math.round(theoryResult.timeSpentSeconds || 0)} วินาที</span>
@@ -669,7 +669,7 @@ export default function AssessmentRunnerPage() {
                   <span>เกณฑ์ผ่าน: {assessment.passingScore}%</span>
                 </div>
                 <p className="text-xs text-[#667085] mt-2 max-w-md mx-auto">
-                  ระบบได้บันทึกคะแนนรอบล่าสุดและคำนวณเหรียญทักษะในหน้าโปรไฟล์ของคุณเรียบร้อยแล้ว
+                  ระบบได้บันทึกผลการส่งข้อสอบรอบล่าสุดของคุณเรียบร้อยแล้ว
                 </p>
 
                 {theoryResult.passed && (
@@ -683,7 +683,7 @@ export default function AssessmentRunnerPage() {
                           ได้รับเหรียญทักษะเฉพาะ: {assessment.title}
                         </div>
                         <div className="text-[11px] text-indigo-700 mt-0.5">
-                          เหรียญถูกบันทึกลงในโปรไฟล์และคำนวณเป็น Verified Skill ให้คุณแล้ว
+                          ดูเหรียญและหลักฐานทักษะที่ได้รับในหน้าโปรไฟล์
                         </div>
                       </div>
                     </div>

@@ -1020,7 +1020,6 @@ export class AssessmentsService {
       data: {
         humanScore,
         finalScore: humanScore,
-        score: humanScore,
         percentage: humanScore,
         passed,
         reviewStatus: AssessmentReviewStatus.HUMAN_REVIEWED,

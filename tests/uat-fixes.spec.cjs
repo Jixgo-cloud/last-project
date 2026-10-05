@@ -7,6 +7,23 @@ const { GithubService } = require('../apps/api/dist/github/github.service');
 const { CompanyService } = require('../apps/api/dist/company/company.service');
 const { AssessmentsService } = require('../apps/api/dist/assessments/assessments.service');
 
+test('Human review preserves raw points when the maximum is not 100', async () => {
+  for (const humanScore of [0,40,75,100]) {
+    let saved;
+    const original = {id:'qa',score:50,maxScore:50,assessment:{companyId:'qa-company',passingScore:70}};
+    const prisma = {
+      assessmentAttempt:{findUnique:async()=>original,update:async({data})=>{saved={...original,...data};return saved;}},
+      user:{findUnique:async()=>({role:'COMPANY',companyMembers:[{companyId:'qa-company'}]})},
+    };
+    await new AssessmentsService(prisma,{},{}).overrideAttemptScore('qa','qa-reviewer',humanScore,'QA score units');
+    assert.equal(saved.score,50);
+    assert.equal(saved.maxScore,50);
+    assert.equal(getAttemptPercentage(saved),humanScore);
+    assert.equal(saved.passed,humanScore>=70);
+    assert.equal(saved.reviewStatus,'HUMAN_REVIEWED');
+  }
+});
+
 test('Reopening finished exams preserves reviewed results; newer active rounds resume independently', () => {
   const completed = { assessmentId:'qa', status:'COMPLETED', startedAt:'2026-10-05T12:00:00Z', humanScore:40, percentage:0 };
   const other = { assessmentId:'other', status:'COMPLETED', startedAt:'2026-10-05T13:00:00Z' };
