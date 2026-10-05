@@ -236,3 +236,18 @@ test('Public catalog omits incomplete tests and never sends choices or answer ke
   assert.deepEqual(results.map(r=>r.id),['good']);
   assert.equal(results[0].questions,undefined);
 });
+
+
+test('Ingestion feedback never calls failed or partial runs a full success', () => {
+  const { ingestionFeedback } = require('@smartcareer/shared');
+  const failed = ingestionFeedback({status:'FAILED',errorCount:1,errorMessage:'No live jobs returned from JSEARCH'},'JSEARCH','5');
+  assert.equal(failed.severity,'error');
+  assert.match(failed.message,/ไม่สำเร็จ/);
+  assert.match(failed.message,/ไม่เพิ่มข้อมูลตัวอย่าง/);
+  const partial = ingestionFeedback({status:'PARTIAL_SUCCESS',createdCount:2,errorCount:1},'UDEMY','5');
+  assert.equal(partial.severity,'warning');
+  assert.match(partial.message,/สำเร็จบางส่วน/);
+  const empty = ingestionFeedback({status:'SUCCESS',createdCount:0,duplicateCount:5,errorCount:0},'REMOTIVE','5');
+  assert.equal(empty.severity,'success');
+  assert.match(empty.message,/0 สร้างใหม่, 5 รายการเดิม/);
+});

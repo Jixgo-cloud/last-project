@@ -302,3 +302,4 @@ export interface NotificationItem {
   isRead: boolean;
   createdAt: string | Date;
 }
+export { ingestionFeedback } from './ingestion-feedback';

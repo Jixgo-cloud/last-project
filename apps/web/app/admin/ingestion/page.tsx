@@ -34,13 +34,18 @@ import {
   Save,
   RotateCcw,
 } from 'lucide-react';
-import { JobSource, CourseSource } from '@smartcareer/shared';
+import { JobSource, CourseSource, ingestionFeedback } from '@smartcareer/shared';
 
 export default function AdminIngestionPage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncingSource, setSyncingSource] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [msgSeverity, setMsgSeverity] = useState<string>('success');
+  const showMessage = (message: string | null, severity = 'success') => {
+    setMsg(message);
+    setMsgSeverity(severity);
+  };
 
   // Ingestion Quotas States
   const [quotas, setQuotas] = useState<any>(null);
@@ -120,7 +125,7 @@ export default function AdminIngestionPage() {
       });
       setQuotas(res);
       setShowQuotaModal(false);
-      setMsg('บันทึกการตั้งค่าโควต้าสำหรับทุกแหล่งข้อมูลเรียบร้อยแล้ว!');
+      showMessage('บันทึกการตั้งค่าโควต้าสำหรับทุกแหล่งข้อมูลเรียบร้อยแล้ว!');
     } catch (err: any) {
       alert(`บันทึกโควต้าล้มเหลว: ${err.message}`);
     } finally {
@@ -138,7 +143,7 @@ export default function AdminIngestionPage() {
         resetEditing[k] = v.quota;
       }
       setEditingQuotas(resetEditing);
-      setMsg('คืนค่าโควต้ากลับเป็นค่ามาตรฐานเริ่มต้นเรียบร้อยแล้ว!');
+      showMessage('คืนค่าโควต้ากลับเป็นค่ามาตรฐานเริ่มต้นเรียบร้อยแล้ว!');
     } catch (err: any) {
       throw err;
     } finally {
@@ -149,14 +154,16 @@ export default function AdminIngestionPage() {
   const triggerJobSync = async (source: JobSource) => {
     try {
       setSyncingSource(source);
-      setMsg(null);
+      showMessage(null);
       const quota = quotas?.[source]?.quota;
       const queryParam = quota ? `&limit=${quota}` : '';
       const res = await apiRequest(`/ingestion/sync-jobs?source=${source}${queryParam}`, { method: 'POST' });
-      setMsg(`ดึงข้อมูลตำแหน่งงานจาก ${source} สำเร็จ! (+${res.createdCount || 0} สร้างใหม่, ${res.duplicateCount || 0} ข้ามรายการซ้ำ) [โควต้า: ${quota || 'ค่าเริ่มต้น'} ตำแหน่ง]`);
+      const feedback = ingestionFeedback(res, `ตำแหน่งงานจาก ${source}`, `โควต้า: ${quota || 'ค่าเริ่มต้น'} ตำแหน่ง`);
+      showMessage(feedback.message, feedback.severity);
       fetchLogs();
     } catch (err: any) {
-      alert(`Sync failed: ${err.message}`);
+      showMessage(`ดึงข้อมูลไม่สำเร็จ: ${err.message}`, 'error');
+      fetchLogs();
     } finally {
       setSyncingSource(null);
     }
@@ -165,7 +172,7 @@ export default function AdminIngestionPage() {
   const triggerCourseSync = async (provider: CourseSource) => {
     try {
       setSyncingSource(provider);
-      setMsg(null);
+      showMessage(null);
       const quota = quotas?.[provider]?.quota;
       const queryParams = new URLSearchParams();
       queryParams.append('provider', provider);
@@ -181,12 +188,12 @@ export default function AdminIngestionPage() {
         ? ` คำค้นหา: ["${customCourseKeyword.trim()}"]`
         : ' ทุกหมวดหมู่ทักษะ';
 
-      setMsg(
-        `ดึงข้อมูลคอร์สเรียนจาก ${provider}${skillLabel} สำเร็จ! (+${res.createdCount || 0} สร้างใหม่, ${res.duplicateCount || 0} รายการเดิมที่ตรวจพบ) [โควต้า: ${quota || 'ค่าเริ่มต้น'} คอร์ส]`,
-      );
+      const feedback = ingestionFeedback(res, `คอร์สเรียนจาก ${provider}${skillLabel}`, `โควต้า: ${quota || 'ค่าเริ่มต้น'} คอร์ส`);
+      showMessage(feedback.message, feedback.severity);
       fetchLogs();
     } catch (err: any) {
-      alert(`Sync failed: ${err.message}`);
+      showMessage(`ดึงข้อมูลไม่สำเร็จ: ${err.message}`, 'error');
+      fetchLogs();
     } finally {
       setSyncingSource(null);
     }
@@ -195,9 +202,9 @@ export default function AdminIngestionPage() {
   const handleBackfillCourseSkills = async () => {
     try {
       setBackfillingCourses(true);
-      setMsg(null);
+      showMessage(null);
       const res = await apiRequest('/ingestion/backfill-course-skills', { method: 'POST' });
-      setMsg(
+      showMessage(
         `เชื่อมโยง CourseSkills อัตโนมัติสำเร็จ! ประมวลผลคอร์สทั้งหมด ${res.totalCourses} รายการ, เพิ่มการเชื่อมโยงทักษะใหม่ +${res.newConnectionsCreated} จุด`,
       );
       fetchLogs();
@@ -242,7 +249,7 @@ export default function AdminIngestionPage() {
       setScreeningResult(res);
       setResultType('JOBS');
       setShowResultModal(true);
-      setMsg(
+      showMessage(
         `คัดกรองงานเสร็จสิ้น! สแกนทั้งหมด ${res.scannedCount} ตำแหน่ง, ตรวจพบปิดรับสมัคร ${res.closedCount} ตำแหน่ง, ลบออกจากระบบแล้ว ${res.deletedCount} ตำแหน่ง`,
       );
       fetchLogs();
@@ -287,7 +294,7 @@ export default function AdminIngestionPage() {
       setScreeningResult(res);
       setResultType('COURSES');
       setShowResultModal(true);
-      setMsg(
+      showMessage(
         `คัดกรองคอร์สเรียนเสร็จสิ้น! สแกนทั้งหมด ${res.scannedCount} คอร์ส, ตรวจพบไม่พร้อมใช้งาน ${res.closedCount} คอร์ส, ลบออกจากระบบแล้ว ${res.deletedCount} คอร์ส`,
       );
       fetchLogs();
@@ -370,12 +377,12 @@ export default function AdminIngestionPage() {
 
         {/* Sync Feedback Toast */}
         {msg && (
-          <div className="mb-6 p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-semibold flex items-center justify-between gap-3 shadow-xs">
+          <div role="alert" className={`mb-6 p-4 rounded-2xl border text-sm font-semibold flex items-center justify-between gap-3 shadow-xs ${msgSeverity === 'error' ? 'bg-rose-50 border-rose-200 text-rose-800' : msgSeverity === 'warning' ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
             <div className="flex items-center gap-3">
-              <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+              {msgSeverity === 'success' ? <CheckCircle2 className="h-5 w-5 shrink-0" /> : <ShieldAlert className="h-5 w-5 shrink-0" />}
               <span>{msg}</span>
             </div>
-            <button onClick={() => setMsg(null)} className="text-emerald-700 hover:text-emerald-900">
+            <button onClick={() => showMessage(null)} aria-label="ปิดข้อความ" className="hover:opacity-70">
               <X className="h-4 w-4" />
             </button>
           </div>
