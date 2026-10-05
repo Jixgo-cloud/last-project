@@ -87,7 +87,7 @@ export default function CompanyAssessmentsPage() {
 
   // Modal State: Inspect Single Attempt & Human Override
   const [selectedAttemptForReview, setSelectedAttemptForReview] = useState<any | null>(null);
-  const [overrideScore, setOverrideScore] = useState<number>(80);
+  const [overrideScore, setOverrideScore] = useState<number | ''>('');
   const [overrideReason, setOverrideReason] = useState<string>('');
   const [overriding, setOverriding] = useState(false);
 
@@ -448,7 +448,7 @@ export default function CompanyAssessmentsPage() {
     try {
       const reviewDetails = await apiRequest(`/assessments/attempts/${attempt.id}/review`);
       setSelectedAttemptForReview(reviewDetails);
-      setOverrideScore(reviewDetails.humanScore ?? reviewDetails.aiScore ?? 80);
+      setOverrideScore(reviewDetails.humanScore ?? getAttemptPercentage(reviewDetails) ?? '');
       setOverrideReason(reviewDetails.reviewReason || '');
     } catch (err: any) {
       alert(`Failed to load review details: ${err.message}`);
@@ -1641,8 +1641,14 @@ export default function CompanyAssessmentsPage() {
                     <span className="font-bold text-xs">
                       {selectedAttemptForReview.reviewStatus === 'HUMAN_REVIEWED' ? (
                         <span className="text-emerald-600">ตรวจแล้ว (Reviewed)</span>
-                      ) : (
+                      ) : selectedAttemptForReview.reviewStatus === 'PENDING_HUMAN_REVIEW' ? (
                         <span className="text-amber-600">รอ Tech Lead ยืนยัน</span>
+                      ) : selectedAttemptForReview.reviewStatus === 'EVALUATION_PENDING' ? (
+                        <span className="text-amber-600">กำลังประเมินผล</span>
+                      ) : selectedAttemptForReview.reviewStatus === 'EVALUATION_FAILED' ? (
+                        <span className="text-rose-600">ประเมินผลไม่สำเร็จ</span>
+                      ) : (
+                        <span className="text-slate-600">อัตโนมัติ</span>
                       )}
                     </span>
                   </div>
@@ -1800,7 +1806,7 @@ export default function CompanyAssessmentsPage() {
                         max={100}
                         required
                         value={overrideScore}
-                        onChange={(e) => setOverrideScore(Number(e.target.value))}
+                        onChange={(e) => setOverrideScore(e.target.value === '' ? '' : Number(e.target.value))}
                         className="w-full p-2 rounded-xl border border-slate-200 text-xs bg-white font-bold"
                       />
                     </div>

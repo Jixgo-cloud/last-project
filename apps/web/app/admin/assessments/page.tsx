@@ -63,7 +63,7 @@ export default function AdminAssessmentsPage() {
 
   // Review Modal State
   const [selectedAttemptForReview, setSelectedAttemptForReview] = useState<any | null>(null);
-  const [overrideScore, setOverrideScore] = useState<number>(80);
+  const [overrideScore, setOverrideScore] = useState<number | ''>('');
   const [overrideReason, setOverrideReason] = useState<string>('');
   const [overriding, setOverriding] = useState(false);
 
@@ -471,7 +471,7 @@ export default function AdminAssessmentsPage() {
     try {
       const reviewDetails = await apiRequest(`/assessments/attempts/${attempt.id}/review`);
       setSelectedAttemptForReview(reviewDetails);
-      setOverrideScore(reviewDetails.humanScore ?? reviewDetails.aiScore ?? reviewDetails.score ?? 80);
+      setOverrideScore(reviewDetails.humanScore ?? getAttemptPercentage(reviewDetails) ?? '');
       setOverrideReason(reviewDetails.reviewReason || '');
     } catch (err: any) {
       alert(`Failed to load review details: ${err.message}`);
@@ -1844,7 +1844,7 @@ export default function AdminAssessmentsPage() {
                         max={100}
                         required
                         value={overrideScore}
-                        onChange={(e) => setOverrideScore(Number(e.target.value))}
+                        onChange={(e) => setOverrideScore(e.target.value === '' ? '' : Number(e.target.value))}
                         className="w-full p-2 rounded-xl border border-slate-200 text-xs bg-white font-bold"
                       />
                     </div>
