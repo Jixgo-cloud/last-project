@@ -7,6 +7,32 @@ const { GithubService } = require('../apps/api/dist/github/github.service');
 const { CompanyService } = require('../apps/api/dist/company/company.service');
 const { AssessmentsService } = require('../apps/api/dist/assessments/assessments.service');
 const { honestJobContent } = require('../apps/api/dist/jobs/job-content');
+const { IngestionService } = require('../apps/api/dist/ingestion/ingestion.service');
+
+test('Job ingestion preserves missing fields and zero salary rather than fabricating benefits or pay', async () => {
+  const saved=[];
+  const prisma={job:{findFirst:async()=>null,create:async({data})=>{saved.push(data);return {id:'qa-job'};}},ingestionLog:{create:async({data})=>data}};
+  const service=new IngestionService(prisma,{}, {getQuotaForSource:()=>1});
+  service.fetchRemotiveJobs=async()=>[{id:'qa',title:'QA source title',company:'QA source employer',url:'https://example.invalid/qa',salaryMin:0,salaryMax:0}];
+  service.assignSkillsToJob=async()=>{};
+  await service.syncJobs('REMOTIVE',1);
+  assert.equal(saved.length,1);
+  assert.equal(saved[0].requirements,null);
+  assert.equal(saved[0].benefits,null);
+  assert.equal(saved[0].salaryMin,0);
+  assert.equal(saved[0].salaryMax,0);
+  assert.equal(saved[0].location,'ไม่ระบุสถานที่');
+});
+
+test('An empty live job provider records failure and keeps existing jobs without inserting sample data', async () => {
+  let inserted=0;
+  const service=new IngestionService({job:{create:async()=>{inserted++;}},ingestionLog:{create:async({data})=>data}}, {}, {getQuotaForSource:()=>1});
+  service.fetchRemotiveJobs=async()=>[];
+  const result=await service.syncJobs('REMOTIVE',1);
+  assert.equal(inserted,0);
+  assert.equal(result.status,'FAILED');
+  assert.match(result.errorMessage,/No live jobs returned/);
+});
 
 test('External job details suppress exact fabricated ingestion defaults without changing employer content', () => {
   const inserted = {source:'REMOTIVE',requirements:'Proficiency with modern web tech stack, Git, team collaboration, and problem-solving.',benefits:'Flexible working arrangements, competitive compensation, learning budget, and medical insurance.'};

@@ -6,7 +6,6 @@ import { execFileSync } from 'child_process';
 import { IngestionStatus, JobSource, CourseSource, JobType } from '@smartcareer/shared';
 import { GeminiExtractorService } from './gemini-extractor.service';
 import { IngestionConfigService } from './ingestion-config.service';
-import { getFallbackJobsForSource } from './fallback-jobs.data';
 
 @Injectable()
 export class IngestionService {
@@ -70,7 +69,11 @@ export class IngestionService {
       } else if (source === JobSource.JOBSDB) {
         jobsToProcess = await this.scrapeJobsDBJobs('developer', quota);
       } else {
-        jobsToProcess = this.getFallbackExternalJobs(source);
+        throw new Error(`Unsupported job source: ${source}`);
+      }
+
+      if (jobsToProcess.length === 0) {
+        throw new Error(`No live jobs returned from ${source}; existing jobs were kept and no sample jobs were inserted`);
       }
 
       if (jobsToProcess.length > quota) {
@@ -103,15 +106,15 @@ export class IngestionService {
               slug,
               companyName: raw.company,
               companyLogoUrl: raw.logoUrl,
-              description: raw.description || `Software role at ${raw.company}`,
+              description: raw.description || 'ยังไม่มีรายละเอียดจากแหล่งประกาศ กรุณาตรวจที่ต้นทาง',
               requirements: raw.requirements?.trim() || null,
               benefits: raw.benefits?.trim() || null,
-              location: raw.location || 'Bangkok, Thailand',
+              location: raw.location || 'ไม่ระบุสถานที่',
               isRemote: !!raw.isRemote,
               employmentType: raw.employmentType || JobType.FULL_TIME,
-              salaryMin: raw.salaryMin || 55000,
-              salaryMax: raw.salaryMax || 110000,
-              salaryCurrency: 'THB',
+              salaryMin: raw.salaryMin ?? null,
+              salaryMax: raw.salaryMax ?? null,
+              salaryCurrency: raw.salaryCurrency || 'THB',
               source,
               sourceUrl: raw.url,
               externalId,
@@ -426,7 +429,7 @@ export class IngestionService {
               id: String(item.job_id),
               title: item.job_title,
               company: item.employer_name,
-              logoUrl: item.employer_logo || 'https://images.unsplash.com/photo-1549923746-c502d488b3ea?w=128&h=128&fit=crop',
+              logoUrl: item.employer_logo || null,
               description: item.job_description
                 ? item.job_description
                     .replace(/\r\n/g, '\n')
@@ -440,30 +443,21 @@ export class IngestionService {
                     .replace(/\n{3,}/g, '\n\n')
                     .trim()
                 : item.job_title,
-              location: item.job_city ? `${item.job_city}, ${item.job_country || 'Thailand'}` : (item.job_country || 'Bangkok, Thailand'),
+              location: [item.job_city, item.job_country].filter(Boolean).join(', ') || 'ไม่ระบุสถานที่',
               isRemote: !!item.job_is_remote,
               employmentType: item.job_employment_type === 'CONTRACTOR' ? JobType.CONTRACT : JobType.FULL_TIME,
-              salaryMin: item.job_min_salary || 65000,
-              salaryMax: item.job_max_salary || 120000,
+              salaryMin: item.job_min_salary ?? null,
+              salaryMax: item.job_max_salary ?? null,
+              salaryCurrency: item.job_salary_currency || 'THB',
               url: item.job_apply_link || item.job_google_link,
             });
           }
         }
       } catch (err: any) {
-        this.logger.warn(`[JSearch API] Live call returned error: ${err.message}. Using structured Thai tech jobs fallback.`);
+        this.logger.warn(`[JSearch API] Live call returned error: ${err.message}; no sample jobs will be inserted.`);
       }
     } else {
-      this.logger.warn(`[JSearch API] RAPIDAPI_KEY is not defined in environment variables. Falling back to normalized Thai tech jobs.`);
-    }
-
-    if (jobs.length < limit) {
-      const fallbacks = this.getFallbackExternalJobs(JobSource.JSEARCH);
-      for (const fb of fallbacks) {
-        if (jobs.length >= limit) break;
-        if (!jobs.some((j) => j.id === fb.id || j.title.toLowerCase() === fb.title.toLowerCase())) {
-          jobs.push(fb);
-        }
-      }
+      this.logger.warn(`[JSearch API] RAPIDAPI_KEY is not defined in environment variables. No sample jobs will be inserted.`);
     }
 
     return jobs.slice(0, limit);
@@ -489,29 +483,19 @@ export class IngestionService {
             id: String(j.id),
             title: j.title,
             company: j.company_name,
-            logoUrl: j.company_logo || 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=128&h=128&fit=crop',
+            logoUrl: j.company_logo || null,
             description: j.description?.replace(/<[^>]*>?/gm, '').slice(0, 1000),
             location: j.candidate_required_location || 'Remote (Worldwide)',
             isRemote: true,
             employmentType: JobType.FULL_TIME,
-            salaryMin: 70000,
-            salaryMax: 140000,
+            salaryMin: null,
+            salaryMax: null,
             url: j.url,
           });
         }
       }
     } catch (e: any) {
       this.logger.warn(`[Remotive API] Unreachable: ${e.message}`);
-    }
-
-    if (jobs.length < limit) {
-      const fallbacks = this.getFallbackExternalJobs(JobSource.REMOTIVE);
-      for (const fb of fallbacks) {
-        if (jobs.length >= limit) break;
-        if (!jobs.some((j) => j.id === fb.id || j.title.toLowerCase() === fb.title.toLowerCase())) {
-          jobs.push(fb);
-        }
-      }
     }
 
     return jobs.slice(0, limit);
@@ -535,11 +519,11 @@ export class IngestionService {
 
         // Parse salary range if present e.g. ฿40,000-฿70,000
         const salaryMatch = rawText.match(/฿([\d,]+)-฿([\d,]+)/);
-        let salaryMin = 50000;
-        let salaryMax = 95000;
+        let salaryMin: number | null = null;
+        let salaryMax: number | null = null;
         if (salaryMatch) {
-          salaryMin = parseInt(salaryMatch[1].replace(/,/g, ''), 10) || 50000;
-          salaryMax = parseInt(salaryMatch[2].replace(/,/g, ''), 10) || 95000;
+          salaryMin = parseInt(salaryMatch[1].replace(/,/g, ''), 10) || null;
+          salaryMax = parseInt(salaryMatch[2].replace(/,/g, ''), 10) || null;
         }
 
         // Clean job title
@@ -550,7 +534,7 @@ export class IngestionService {
           .trim();
 
         // Extract company if present
-        let company = 'Blognone Partner Tech';
+        let company = 'ไม่ระบุบริษัท';
         const compMatch = rawText.match(/([A-Z0-9\s.,]+(?:CO\.,\s*LTD|Co\.,\s*Ltd|Company|Inc|Corp))/i);
         if (compMatch && compMatch[1]) {
           company = compMatch[1].trim();
@@ -560,9 +544,9 @@ export class IngestionService {
           id: href.replace(/^\/.*\/job\//, '').replace(/\//g, '-'),
           title: cleanedTitle.slice(0, 100) || 'Software Engineer',
           company,
-          logoUrl: 'https://images.unsplash.com/photo-1549923746-c502d488b3ea?w=128&h=128&fit=crop',
-          description: `Software engineering role listed on Blognone: ${cleanedTitle}. Core tech stack: TypeScript, React, Node.js, Cloud Services.`,
-          location: rawText.includes('กรุงเทพ') || rawText.includes('Bangkok') ? 'Bangkok, Thailand' : 'Bangkok, Thailand',
+          logoUrl: null,
+          description: cleanedTitle,
+          location: rawText.includes('กรุงเทพ') || rawText.includes('Bangkok') ? 'Bangkok, Thailand' : 'ไม่ระบุสถานที่',
           isRemote: rawText.toLowerCase().includes('remote') || rawText.includes('wfh'),
           employmentType: JobType.FULL_TIME,
           salaryMin,
@@ -575,17 +559,7 @@ export class IngestionService {
         this.logger.log(`[Blognone Scraper] Successfully extracted ${jobs.length} real live jobs from Blognone!`);
       }
     } catch (err: any) {
-      this.logger.warn(`[Blognone Scraper] Scraper encountered error: ${err.message}. Using structured Thai tech jobs fallback.`);
-    }
-
-    if (jobs.length < limit) {
-      const fallbacks = this.getFallbackExternalJobs(JobSource.BLOGNONE);
-      for (const fb of fallbacks) {
-        if (jobs.length >= limit) break;
-        if (!jobs.some((j) => j.id === fb.id || j.title.toLowerCase() === fb.title.toLowerCase())) {
-          jobs.push(fb);
-        }
-      }
+      this.logger.warn(`[Blognone Scraper] Scraper encountered error: ${err.message}; no sample jobs will be inserted.`);
     }
 
     return jobs.slice(0, limit);
@@ -632,14 +606,14 @@ export class IngestionService {
                   jobs.push({
                     id: jobId,
                     title: j.title,
-                    company: j.advertiser?.description || 'Top Enterprise in Thailand',
-                    logoUrl: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=128&h=128&fit=crop',
-                    description: j.teaser || `Modern tech position with ${j.advertiser?.description || 'Thailand Enterprise'}. Apply via JobsDB Thailand.`,
-                    location: j.location || 'Bangkok, Thailand',
+                    company: j.advertiser?.description || 'ไม่ระบุบริษัท',
+                    logoUrl: null,
+                    description: j.teaser || j.title,
+                    location: j.location || 'ไม่ระบุสถานที่',
                     isRemote,
                     employmentType: JobType.FULL_TIME,
-                    salaryMin: 70000,
-                    salaryMax: 135000,
+                    salaryMin: null,
+                    salaryMax: null,
                     url: `https://th.jobsdb.com/job/${j.id}`,
                   });
                 }
@@ -656,16 +630,6 @@ export class IngestionService {
 
     if (jobs.length > 0) {
       this.logger.log(`[JobsDB Scraper] Successfully extracted ${jobs.length} real live tech jobs from JobsDB Thailand (SEEK)!`);
-    }
-
-    if (jobs.length < limit) {
-      const fallbacks = this.getFallbackExternalJobs(JobSource.JOBSDB);
-      for (const fb of fallbacks) {
-        if (jobs.length >= limit) break;
-        if (!jobs.some((j) => j.id === fb.id || j.title.toLowerCase() === fb.title.toLowerCase())) {
-          jobs.push(fb);
-        }
-      }
     }
 
     return jobs.slice(0, limit);
@@ -694,7 +658,7 @@ export class IngestionService {
           if (jobs.length >= limit) return;
           const href = $(el).attr('href');
           const title = $(el).find('h2, .title, strong').first().text().trim() || $(el).text().trim();
-          const company = $(el).find('h2:nth-of-type(2), .company-name').text().trim() || 'Central Group Tech Partner';
+          const company = $(el).find('h2:nth-of-type(2), .company-name').text().trim() || 'ไม่ระบุบริษัท';
           const invalidTitles = ['มุมมองแผนที่', 'แผนที่', 'กลับสู่ด้านบน', 'สมัครงาน'];
           if (
             href &&
@@ -707,13 +671,13 @@ export class IngestionService {
               id: href.replace(/[^0-9]/g, '') || `jobthai-${jobs.length + 1}`,
               title: title.slice(0, 100),
               company,
-              logoUrl: 'https://images.unsplash.com/photo-1551434678-e076c223a692?w=128&h=128&fit=crop',
-              description: `Software position on JobThai: ${title}. High impact engineering role with modern workflows.`,
-              location: 'Bangkok, Thailand',
+              logoUrl: null,
+              description: title,
+              location: 'ไม่ระบุสถานที่',
               isRemote: false,
               employmentType: JobType.FULL_TIME,
-              salaryMin: 55000,
-              salaryMax: 100000,
+              salaryMin: null,
+              salaryMax: null,
               url: href.startsWith('http') ? href : `https://www.jobthai.com${href}`,
             });
           }
@@ -725,16 +689,6 @@ export class IngestionService {
 
     if (jobs.length > 0) {
       this.logger.log(`[JobThai Scraper] Successfully extracted ${jobs.length} live jobs from JobThai!`);
-    }
-
-    if (jobs.length < limit) {
-      const fallbacks = this.getFallbackExternalJobs(JobSource.JOBTHAI);
-      for (const fb of fallbacks) {
-        if (jobs.length >= limit) break;
-        if (!jobs.some((j) => j.id === fb.id || j.title.toLowerCase() === fb.title.toLowerCase())) {
-          jobs.push(fb);
-        }
-      }
     }
 
     return jobs.slice(0, limit);
@@ -852,10 +806,6 @@ export class IngestionService {
   // =========================================================================
   // Fallbacks and Curated Course Registry
   // =========================================================================
-  private getFallbackExternalJobs(source: JobSource) {
-    return getFallbackJobsForSource(source);
-  }
-
   private getCuratedCourses(provider: CourseSource) {
     if (provider === CourseSource.YOUTUBE) {
       return [

@@ -59,7 +59,7 @@ export default function AdminIngestionPage() {
 
   // Course Screening States
   const [courseProvider, setCourseProvider] = useState<string>('ALL');
-  const [courseLimit, setCourseLimit] = useState<number>(20);
+  const [courseLimit, setCourseLimit] = useState<number>(10);
 
   // Common Modal States
   const [screeningResult, setScreeningResult] = useState<any>(null);
