@@ -51,6 +51,8 @@ jobs:
       - run: npm run test:uat
       - name: Initialize empty local source database
         run: npx prisma db push --skip-generate
+      - name: Verify durable import runs on isolated Postgres
+        run: node scripts/verify-ingestion-runs.cjs
       - name: Install virtual display and Thai fonts
         run: |
           sudo apt-get update -qq
