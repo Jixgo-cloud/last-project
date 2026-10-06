@@ -8,6 +8,7 @@ import { GeminiExtractorService } from './gemini-extractor.service';
 import { IngestionConfigService } from './ingestion-config.service';
 import { mentionsSkill } from '../recommendations/course-skill-evidence';
 import { fetchRenderedJobHtml } from './rendered-job-html';
+import { fetchPublicJobHttp2 } from './public-job-http2';
 import { validateLocalJobBatch } from './local-job-batch';
 import { honestJobContent } from '../jobs/job-content';
 
@@ -53,6 +54,18 @@ export class IngestionService {
       if (ready) return html;
     } catch (error: any) {
       if (!/^SOURCE_HTTP_403:/.test(error?.message || '')) throw error;
+      try {
+        const html = await fetchPublicJobHttp2(url);
+        const $ = cheerio.load(html);
+        const ready = new URL(url).hostname === 'th.jobsdb.com'
+          ? $('[data-testid="job-card"]').length > 0
+          : $('a[href*="/job/"] h3').length > 0;
+        if (ready) return html;
+      } catch (http2Error: any) {
+        // Only an ordinary denied page or unsupported transport can fall back
+        // to a fresh browser. Rate limits, redirects and malformed pages stop.
+        if (!/^SOURCE_HTTP_403:|^SOURCE_HTTP2_CONNECTION_FAILED:|^SOURCE_HTTP2_ENCODING_UNSUPPORTED:/.test(http2Error?.message || '')) throw http2Error;
+      }
     }
     this.logger.log('[Job Scraper] Reading the public listing with a fresh browser');
     return fetchRenderedJobHtml(url);

@@ -4,6 +4,7 @@ const sourceHosts = new Set(['th.jobsdb.com', 'jobs.blognone.com']);
 const assetHosts = new Set([
   ...sourceHosts,
   'jobs-static-prod.blognone.com',
+  'jobs-api.blognone.com',
   'cdn.seeklearning.com.au',
 ]);
 let queue: Promise<void> = Promise.resolve();
@@ -58,15 +59,19 @@ export async function fetchRenderedJobHtml(
     });
     const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     if (!allowedJobPage(page.url())) throw new Error('SOURCE_BROWSER_URL_DENIED: ต้นทางเปลี่ยนไปยังที่อยู่ที่ไม่รองรับ');
-    if (!response || response.status() >= 400) {
+    // A 403 document can be an intermediate JavaScript loading page. Wait for
+    // real job cards once; never interact with challenges or retry rate limits.
+    if (!response || (response.status() >= 400 && response.status() !== 403)) {
       throw new Error(`SOURCE_HTTP_${response?.status() || 'UNAVAILABLE'}: ต้นทางยังไม่พร้อมให้เบราว์เซอร์อ่านข้อมูล`);
     }
     const selector = new URL(url).hostname === 'th.jobsdb.com'
       ? '[data-testid="job-card"] a[data-automation="jobTitle"]'
       : 'a[href*="/job/"] h3';
     try { await page.waitForSelector(selector); } catch {
+      if (response.status() === 403) throw new Error('SOURCE_HTTP_403: ต้นทางยังไม่อนุญาตให้อ่านประกาศงาน');
       throw new Error('SOURCE_BROWSER_NO_JOBS: หน้าเว็บยังไม่แสดงประกาศงาน หรือมีขั้นตอนตรวจสอบก่อนเข้า');
     }
+    if (!allowedJobPage(page.url())) throw new Error('SOURCE_BROWSER_URL_DENIED: ต้นทางเปลี่ยนไปยังที่อยู่ที่ไม่รองรับ');
     const html = await page.content();
     if (Buffer.byteLength(html) > 25 * 1024 * 1024) throw new Error('SOURCE_BROWSER_PAGE_TOO_LARGE: หน้าแหล่งงานใหญ่เกินขอบเขต');
     return html;

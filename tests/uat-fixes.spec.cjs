@@ -292,7 +292,7 @@ test('Rendered job pages reject foreign destinations, isolate credentials and cl
   const launch=async(options)=>{
     launches++;assert.equal(options.env.JWT_SECRET,undefined);
     return {newPage:async()=>({setDefaultTimeout:()=>{},setRequestInterception:async()=>{},on:(_event,callback)=>{handler=callback;},
-      goto:async()=>({status:()=>403}),url:()=> 'https://jobs.blognone.com/search'}),close:async()=>{closed++;}};
+      goto:async()=>({status:()=>403}),url:()=> 'https://jobs.blognone.com/search',waitForSelector:async()=>{throw new Error('not ready');}}),close:async()=>{closed++;}};
   };
   try {
     for(const url of ['http://jobs.blognone.com/search','https://jobs.blognone.com.evil.test/search','https://127.0.0.1/','file:///tmp/private','https://user:secret@th.jobsdb.com/jobs']) {
@@ -305,9 +305,27 @@ test('Rendered job pages reject foreign destinations, isolate credentials and cl
     await handler({isNavigationRequest:()=>true,url:()=> 'http://169.254.169.254/latest/meta-data/',abort:async()=>{aborted++;},continue:async()=>{continued++;}});
     assert.equal(aborted,1);assert.equal(continued,0);
     assert.equal(allowedJobAsset('https://jobs-static-prod.blognone.com/app.js'),true);
+    assert.equal(allowedJobAsset('https://jobs-api.blognone.com/search'),true);
     assert.equal(allowedJobAsset('https://unapproved.example/app.js'),false);
     await assert.rejects(fetchRenderedJobHtml('https://th.jobsdb.com/jobs',async()=>{throw new Error('secret runtime details');}),/SOURCE_BROWSER_UNAVAILABLE/);
   } finally {if(previous===undefined)delete process.env.JWT_SECRET;else process.env.JWT_SECRET=previous;}
+});
+
+test('Rendered jobs wait for real cards after an intermediate 403, reject rate limits and recheck the final destination', async () => {
+  const {fetchRenderedJobHtml}=require('../apps/api/dist/ingestion/rendered-job-html');
+  let status=403,waits=0,closed=0,finalUrl='https://jobs.blognone.com/search';
+  const launch=async()=>({newPage:async()=>({setDefaultTimeout:()=>{},setRequestInterception:async()=>{},on:()=>{},
+    goto:async()=>({status:()=>status}),url:()=>finalUrl,
+    waitForSelector:async selector=>{waits++;assert.equal(selector,'a[href*="/job/"] h3');},
+    content:async()=>'<a href="/company/qa/job/1"><h3>QA Developer</h3></a>'}),close:async()=>{closed++;}});
+  assert.match(await fetchRenderedJobHtml(finalUrl,launch),/QA Developer/);
+  assert.equal(waits,1);
+  status=429;
+  await assert.rejects(fetchRenderedJobHtml(finalUrl,launch),/SOURCE_HTTP_429/);
+  assert.equal(waits,1);
+  status=200;finalUrl='https://unapproved.example/search';
+  await assert.rejects(fetchRenderedJobHtml('https://jobs.blognone.com/search',launch),/SOURCE_BROWSER_URL_DENIED/);
+  assert.equal(closed,3);
 });
 
 test('JobsDB parses visible cards and deduplicates legacy data while preserving actual job type and arrangement', async () => {
@@ -328,10 +346,13 @@ test('Blognone preserves contract work and skips links without actual job titles
 
 test('Job HTML uses the authorized browser for 403 or unrendered pages, but does not retry rate limits', async () => {
   const rendered=require('../apps/api/dist/ingestion/rendered-job-html');
+  const transport=require('../apps/api/dist/ingestion/public-job-http2');
   const original=rendered.fetchRenderedJobHtml;
+  const originalHttp2=transport.fetchPublicJobHttp2;
   const service=new IngestionService({}, {}, {});
   let calls=0;
   try {
+    transport.fetchPublicJobHttp2=async()=>{throw new Error('SOURCE_HTTP_403: unavailable');};
     rendered.fetchRenderedJobHtml=async()=>{calls++;return '<a href="/company/qa/job/1"><h3>QA</h3></a>';};
     service.fetchNativeHtml=async()=>{throw new Error('SOURCE_HTTP_403: unavailable');};
     assert.match(await service.fetchJobSourceHtml('https://jobs.blognone.com/search'),/QA/);
@@ -344,7 +365,63 @@ test('Job HTML uses the authorized browser for 403 or unrendered pages, but does
     service.fetchNativeHtml=async()=>{throw new Error('SOURCE_HTTP_429: rate limit');};
     await assert.rejects(service.fetchJobSourceHtml('https://jobs.blognone.com/search'),/SOURCE_HTTP_429/);
     assert.equal(calls,2);
-  } finally {rendered.fetchRenderedJobHtml=original;}
+  } finally {rendered.fetchRenderedJobHtml=original;transport.fetchPublicJobHttp2=originalHttp2;}
+});
+
+test('Anonymous HTTP/2 follows only bounded same-source redirects, closes sessions and sanitizes incomplete responses', async () => {
+  const {EventEmitter}=require('events');
+  const {fetchPublicJobHttp2}=require('../apps/api/dist/ingestion/public-job-http2');
+  let responses=[],opened=0,closed=0;
+  const open=origin=>{
+    assert.equal(origin,'https://th.jobsdb.com');opened++;
+    const session=new EventEmitter();let destroyed=false;
+    session.destroy=()=>{destroyed=true;closed++;};
+    session.request=headers=>{
+      assert.equal(headers['user-agent'],'SmartCareer/1.0');
+      assert.equal(headers.authorization,undefined);assert.equal(headers.cookie,undefined);
+      const request=new EventEmitter();const response=responses.shift();
+      request.end=()=>queueMicrotask(()=>{
+        request.emit('response',{':status':response.status,location:response.location});
+        if(destroyed)return;
+        if(response.incomplete){request.emit('close');return;}
+        request.emit('data',Buffer.from(response.body||''));request.emit('end');
+      });
+      return request;
+    };return session;
+  };
+  responses=[{status:301,location:'/developer-jobs'},{status:200,body:'<article>Actual public job</article>'}];
+  assert.match(await fetchPublicJobHttp2('https://th.jobsdb.com/jobs',open),/Actual public job/);
+  assert.equal(opened,2);assert.equal(closed,2);
+  for(const location of ['http://127.0.0.1/','https://jobs.blognone.com/search','https://user:secret@th.jobsdb.com/jobs']){
+    responses=[{status:302,location}];
+    await assert.rejects(fetchPublicJobHttp2('https://th.jobsdb.com/jobs',open),/SOURCE_HTTP2_URL_DENIED/);
+  }
+  responses=[{status:429}];
+  await assert.rejects(fetchPublicJobHttp2('https://th.jobsdb.com/jobs',open),/SOURCE_HTTP_429/);
+  responses=Array.from({length:4},()=>({status:302,location:'/jobs'}));
+  await assert.rejects(fetchPublicJobHttp2('https://th.jobsdb.com/jobs',open),/SOURCE_HTTP2_REDIRECT_LIMIT/);
+  responses=[{status:200,incomplete:true}];
+  await assert.rejects(fetchPublicJobHttp2('https://th.jobsdb.com/jobs',open),/SOURCE_HTTP2_CONNECTION_FAILED/);
+  responses=[{status:200,body:'x'.repeat(25*1024*1024+1)}];
+  await assert.rejects(fetchPublicJobHttp2('https://th.jobsdb.com/jobs',open),/SOURCE_HTTP2_PAGE_TOO_LARGE/);
+  assert.equal(opened,closed);
+});
+
+test('HTTP/2 real job cards satisfy a denied native listing without a browser; transport rate limits stop further work', async () => {
+  const transport=require('../apps/api/dist/ingestion/public-job-http2');
+  const rendered=require('../apps/api/dist/ingestion/rendered-job-html');
+  const originals=[transport.fetchPublicJobHttp2,rendered.fetchRenderedJobHtml];
+  const service=new IngestionService({}, {}, {});let calls=0;
+  try {
+    service.fetchNativeHtml=async()=>{throw new Error('SOURCE_HTTP_403: unavailable');};
+    rendered.fetchRenderedJobHtml=async()=>{calls++;throw new Error('Unexpected browser');};
+    transport.fetchPublicJobHttp2=async()=>'<a href="/company/qa/job/1"><h3>Actual QA job</h3></a>';
+    assert.match(await service.fetchJobSourceHtml('https://jobs.blognone.com/search'),/Actual QA job/);
+    assert.equal(calls,0);
+    transport.fetchPublicJobHttp2=async()=>{throw new Error('SOURCE_HTTP_429: limit');};
+    await assert.rejects(service.fetchJobSourceHtml('https://jobs.blognone.com/search'),/SOURCE_HTTP_429/);
+    assert.equal(calls,0);
+  } finally {[transport.fetchPublicJobHttp2,rendered.fetchRenderedJobHtml]=originals;}
 });
 
 test('JobThai uses the explicit employer element rather than duplicate mobile headings or a missing sibling', async () => {
