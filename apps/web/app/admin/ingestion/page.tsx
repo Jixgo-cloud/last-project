@@ -112,11 +112,16 @@ export default function AdminIngestionPage() {
     }
   }, []);
 
-  const rememberJobRun = useCallback((run: JobRunTracking | null) => {
+  const rememberJobRun = useCallback((run: JobRunTracking | null, completedRequestKey?: string) => {
     setJobRun(run);
     try {
       if (run) localStorage.setItem(JOB_RUN_STORAGE, JSON.stringify(run));
-      else localStorage.removeItem(JOB_RUN_STORAGE);
+      else {
+        // Another tab may already be tracking a newer run. Finishing this tab's
+        // older run must not erase that newer run's recovery information.
+        const stored = JSON.parse(localStorage.getItem(JOB_RUN_STORAGE) || 'null');
+        if (stored?.requestKey === completedRequestKey) localStorage.removeItem(JOB_RUN_STORAGE);
+      }
     } catch { /* Server-side active runs still protect against duplicate starts. */ }
   }, []);
 
@@ -127,7 +132,7 @@ export default function AdminIngestionPage() {
       showMessage(`กำลังนำเข้าจาก ${run.source} · รอบ ${run.id} โหลดหน้าใหม่ได้ ระบบจะติดตามรอบเดิมต่อ`, 'warning');
       return;
     }
-    rememberJobRun(null);
+    rememberJobRun(null, run.requestKey);
     setSyncingSource(null);
     if (run.state === 'COMPLETED' && run.result) {
       const feedback = ingestionFeedback(run.result, `ตำแหน่งงานจาก ${run.source}`, `โควต้า: ${run.quota} ตำแหน่ง`);
