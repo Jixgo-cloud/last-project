@@ -27,8 +27,8 @@ function runHarness() {
     findUnique: async ({where}) => rows.find(row => matches(row,where)) || null,
     findMany: async ({where}) => rows.filter(row => matches(row,where)),
     create: async ({data}) => {
-      if (rows.some(row => row.requestKey === data.requestKey || row.activeKey === data.activeKey)) throw {code:'P2002'};
-      const row = {...data,id:require('crypto').randomUUID(),state:'RUNNING',startedAt:new Date(),heartbeatAt:new Date()};
+      if (rows.some(row => row.requestKey === data.requestKey || (data.activeKey && row.activeKey === data.activeKey))) throw {code:'P2002'};
+      const row = {id:require('crypto').randomUUID(),state:'RUNNING',startedAt:new Date(),heartbeatAt:new Date(),...data};
       rows.push(row);return {...row};
     },
     updateMany: async ({where,data}) => {const found=rows.filter(row=>matches(row,where));found.forEach(row=>Object.assign(row,data));return {count:found.length};},
@@ -42,9 +42,9 @@ test('Long imports return a durable run immediately and concurrent/retried start
   const {service,rows}=runHarness();let finish;let calls=0;
   const gate=new Promise(resolve=>{finish=resolve;});
   service.performJobsSync=async()=>{calls++;await gate;return {id:'audit-1',status:'SUCCESS',createdCount:10,errorCount:0};};
-  const key=require('crypto').randomUUID();
+  const key=require('crypto').randomUUID();const competingKey=require('crypto').randomUUID();
   try {
-    const [a,b]=await Promise.all([service.startJobsRun('JOBTHAI',10,key),service.startJobsRun('JOBTHAI',10,require('crypto').randomUUID())]);
+    const [a,b]=await Promise.all([service.startJobsRun('JOBTHAI',10,key),service.startJobsRun('JOBTHAI',10,competingKey)]);
     assert.equal(a.id,b.id);assert.equal(a.state,'RUNNING');assert.equal(calls,1);
     assert.equal((await service.startJobsRun('JOBTHAI',10,key)).id,a.id);
     assert.equal((await service.getJobsRun(a.id)).state,'RUNNING');
@@ -54,6 +54,7 @@ test('Long imports return a durable run immediately and concurrent/retried start
     assert.equal(completed.state,'COMPLETED');assert.equal(completed.result.createdCount,10);
     assert.equal(rows[0].activeKey,null);
     assert.equal((await service.startJobsRun('JOBTHAI',10,key)).id,a.id);assert.equal(calls,1);
+    assert.equal((await service.startJobsRun('JOBTHAI',10,competingKey)).id,a.id);assert.equal(calls,1);
     await assert.rejects(service.startJobsRun('JOBTHAI',11,key),/คำขออื่น/);
   } finally {finish();await new Promise(resolve=>setImmediate(resolve));}
 });

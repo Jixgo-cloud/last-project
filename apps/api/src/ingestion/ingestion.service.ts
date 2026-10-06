@@ -56,7 +56,7 @@ export class IngestionService {
     const previous = await this.prisma.ingestionRun.findUnique({ where: { requestKey } });
     if (previous) {
       if (previous.source !== source || previous.quota !== quota) throw new BadRequestException('รหัสรอบนี้ใช้กับคำขออื่นแล้ว');
-      return previous;
+      return this.resolveJobsRun(previous);
     }
     let run;
     try {
@@ -67,7 +67,20 @@ export class IngestionService {
       const active = sameRequest || await this.prisma.ingestionRun.findUnique({ where: { activeKey: source } });
       if (!active) throw error;
       if (sameRequest && (active.source !== source || active.quota !== quota)) throw new BadRequestException('รหัสรอบนี้ใช้กับคำขออื่นแล้ว');
-      return active;
+      if (sameRequest) return this.resolveJobsRun(sameRequest);
+      // Persist an alias too: if the HTTP response is lost, replaying this request
+      // must still follow the existing run even after that run has completed.
+      try {
+        await this.prisma.ingestionRun.create({ data: {
+          requestKey, source, quota, activeKey: null, parentId: active.id, state: 'FOLLOWING',
+        } });
+      } catch (aliasError: any) {
+        if (aliasError.code !== 'P2002') throw aliasError;
+        const alias = await this.prisma.ingestionRun.findUnique({ where: { requestKey } });
+        if (!alias || alias.source !== source || alias.quota !== quota) throw new BadRequestException('รหัสรอบนี้ใช้กับคำขออื่นแล้ว');
+        return this.resolveJobsRun(alias);
+      }
+      return this.resolveJobsRun(active);
     }
     // Keep the HTTP request short. State and results live in Postgres, not a process-local map.
     void this.executeJobsRun(run.id, source, quota);
@@ -83,16 +96,24 @@ export class IngestionService {
 
   async listJobsRuns(requestKey?: string) {
     await this.expireInterruptedRuns();
-    return this.prisma.ingestionRun.findMany({
+    const runs = await this.prisma.ingestionRun.findMany({
       where: requestKey ? { requestKey } : { state: 'RUNNING' }, orderBy: { startedAt: 'asc' }, take: 10,
     });
+    return Promise.all(runs.map(run => this.resolveJobsRun(run)));
+  }
+
+  private async resolveJobsRun(run: any) {
+    if (!run.parentId) return run;
+    const parent = await this.prisma.ingestionRun.findUnique({ where: { id: run.parentId } });
+    if (!parent) throw new NotFoundException('ไม่พบรอบนำเข้าที่คำขอนี้ติดตาม');
+    return parent;
   }
 
   async getJobsRun(id: string) {
     await this.expireInterruptedRuns();
     const run = await this.prisma.ingestionRun.findUnique({ where: { id } });
     if (!run) throw new NotFoundException('ไม่พบรอบนำเข้า');
-    return run;
+    return this.resolveJobsRun(run);
   }
 
   private async assertRunActive(id: string) {

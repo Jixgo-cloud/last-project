@@ -16,8 +16,9 @@ async function main() {
   const b = new IngestionService(prisma,{},config);
   for (const service of [a,b]) service.performJobsSync=async()=>{calls++;await gate;return {id:'isolated-audit',status:'SUCCESS',createdCount:5,errorCount:0};};
   const key=randomUUID();
+  const competingKey=randomUUID();
   try {
-    const runs = await Promise.all([a.startJobsRun('REMOTIVE',5,key),b.startJobsRun('REMOTIVE',5,randomUUID())]);
+    const runs = await Promise.all([a.startJobsRun('REMOTIVE',5,key),b.startJobsRun('REMOTIVE',5,competingKey)]);
     ids.push(runs[0].id);
     assert.equal(runs[0].id,runs[1].id);assert.equal(calls,1);
     const reloaded = await b.getJobsRun(runs[0].id);
@@ -27,12 +28,13 @@ async function main() {
     for(let i=0;i<100;i++) {final=await b.getJobsRun(runs[0].id);if(final.state!=='RUNNING')break;await new Promise(resolve=>setTimeout(resolve,50));}
     assert.equal(final.state,'COMPLETED');assert.equal(final.result.createdCount,5);
     assert.equal((await b.startJobsRun('REMOTIVE',5,key)).id,final.id);assert.equal(calls,1);
+    assert.equal((await b.startJobsRun('REMOTIVE',5,competingKey)).id,final.id);assert.equal(calls,1);
     assert.equal(await prisma.ingestionRun.count({where:{activeKey:'REMOTIVE'}}),0);
     console.log('PASS: ingestion run uniqueness across API instances, reload, final result and request replay');
   } finally {
     release();
     await new Promise(resolve=>setTimeout(resolve,100));
-    await prisma.ingestionRun.deleteMany({where:{id:{in:ids}}});
+    await prisma.ingestionRun.deleteMany({where:{requestKey:{in:[key,competingKey]}}});
     await prisma.$disconnect();
   }
 }

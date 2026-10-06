@@ -645,6 +645,7 @@ model IngestionRun {
   source      String
   quota       Int
   activeKey   String?  @unique
+  parentId    String?
   state       String   @default("RUNNING")
   startedAt   DateTime @default(now())
   heartbeatAt DateTime @default(now())

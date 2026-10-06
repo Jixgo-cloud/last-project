@@ -6,12 +6,14 @@ CREATE TABLE IF NOT EXISTS public.ingestion_runs (
   "source" TEXT NOT NULL,
   "quota" INTEGER NOT NULL,
   "activeKey" TEXT,
+  "parentId" TEXT,
   "state" TEXT NOT NULL DEFAULT 'RUNNING',
   "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "heartbeatAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "finishedAt" TIMESTAMP(3),
   "result" JSONB
 );
+ALTER TABLE public.ingestion_runs ADD COLUMN IF NOT EXISTS "parentId" TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS "ingestion_runs_requestKey_key" ON public.ingestion_runs("requestKey");
 CREATE UNIQUE INDEX IF NOT EXISTS "ingestion_runs_activeKey_key" ON public.ingestion_runs("activeKey");
 CREATE INDEX IF NOT EXISTS "ingestion_runs_state_heartbeatAt_idx" ON public.ingestion_runs("state", "heartbeatAt");
