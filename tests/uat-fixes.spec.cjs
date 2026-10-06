@@ -14,6 +14,18 @@ test('Salary labels preserve currency, missing endpoints and a genuine zero', ()
 const { candidateFeedback } = require('../apps/api/dist/assessments/candidate-feedback');
 const { GithubService } = require('../apps/api/dist/github/github.service');
 const { CompanyService } = require('../apps/api/dist/company/company.service');
+const { CourseScreeningService } = require('../apps/api/dist/ingestion/course-screening.service');
+
+test('Confirmed course cleanup never expands selected IDs, rechecks availability and preserves live courses', async () => {
+  const deleted=[];let query;
+  const service=new CourseScreeningService({course:{findMany:async args=>{
+    query=args;return [{id:'selected-closed',title:'QA closed',provider:'UDEMY',url:'qa:closed'},{id:'selected-recovered',title:'QA recovered',provider:'UDEMY',url:'qa:live'}];
+  },delete:async({where})=>{deleted.push(where.id);}},ingestionLog:{create:async()=>{}}});
+  service.evaluateCourse=async course=>({isClosed:course.id==='selected-closed',reason:'QA 404',reasonCode:'HTTP_404_NOT_FOUND'});
+  const result=await service.scanAndCleanCourses({provider:'UDEMY',limit:1,courseIds:['selected-closed','selected-recovered']});
+  assert.deepEqual(query.where,{id:{in:['selected-closed','selected-recovered']},provider:'UDEMY'});
+  assert.equal(query.take,2);assert.deepEqual(deleted,['selected-closed']);assert.equal(result.deletedCount,1);
+});
 const { AssessmentsService } = require('../apps/api/dist/assessments/assessments.service');
 const { codingAttemptTotals } = require('../apps/api/dist/assessments/coding-attempt-totals');
 const { JobScreeningService } = require('../apps/api/dist/ingestion/job-screening.service');

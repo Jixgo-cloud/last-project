@@ -77,6 +77,7 @@ export default function AdminIngestionPage() {
   const [screeningResult, setScreeningResult] = useState<any>(null);
   const [resultType, setResultType] = useState<'JOBS' | 'COURSES'>('JOBS');
   const [showResultModal, setShowResultModal] = useState<boolean>(false);
+  const [selectedCourseIds, setSelectedCourseIds] = useState<string[]>([]);
 
   // Course Skill Filtering States
   const [skillsList, setSkillsList] = useState<any[]>([]);
@@ -345,6 +346,7 @@ export default function AdminIngestionPage() {
     try {
       setScreeningLoading(true);
       setScreeningAction('preview');
+      setSelectedCourseIds([]);
       const res = await apiRequest(
         `/ingestion/preview-closed-courses?provider=${courseProvider}&limit=${courseLimit}`,
       );
@@ -361,6 +363,7 @@ export default function AdminIngestionPage() {
 
   // Clean & Delete closed/unavailable courses
   const handleCleanClosedCourses = async () => {
+    if (!selectedCourseIds.length) return;
     try {
       setScreeningLoading(true);
       setScreeningAction('clean');
@@ -368,6 +371,7 @@ export default function AdminIngestionPage() {
         `/ingestion/cleanup-closed-courses?provider=${courseProvider}&limit=${courseLimit}`,
         {
           method: 'POST',
+          body: JSON.stringify({ courseIds: selectedCourseIds }),
         },
       );
       setScreeningResult({ ...res, previewOnly: false });
@@ -664,7 +668,7 @@ export default function AdminIngestionPage() {
                 </button>
 
                 <button
-                  onClick={handleCleanClosedCourses}
+                  onClick={handlePreviewClosedCourses}
                   disabled={screeningLoading}
                   className="flex-1 md:flex-initial inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border border-rose-600 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition disabled:opacity-50 shadow-xs shadow-rose-600/20"
                 >
@@ -673,7 +677,7 @@ export default function AdminIngestionPage() {
                   ) : (
                     <Trash2 className="h-4 w-4 text-white" />
                   )}
-                  <span>สแกนและลบคอร์สออกทันที (Scan & Clean)</span>
+                  <span>ตรวจรายการและเลือกลบคอร์ส (Scan & Clean)</span>
                 </button>
               </div>
             </div>
@@ -1219,6 +1223,12 @@ export default function AdminIngestionPage() {
                               {item.reason}
                             </td>
                             <td className="py-3 px-3 text-right">
+                              {resultType === 'COURSES' && screeningResult.previewOnly && (
+                                <label className="mb-2 flex items-center justify-end gap-2 text-xs font-semibold text-slate-700">
+                                  <input type="checkbox" aria-label={`เลือกลบ ${item.title}`} checked={selectedCourseIds.includes(item.id)} disabled={screeningLoading} onChange={event => setSelectedCourseIds(current => event.target.checked ? [...current, item.id] : current.filter(id => id !== item.id))} />
+                                  เลือกลบรายการนี้
+                                </label>
+                              )}
                               {item.actionTaken === 'DELETED' ? (
                                 <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full">
                                   <Trash2 className="h-3 w-3" />
@@ -1253,6 +1263,7 @@ export default function AdminIngestionPage() {
 
               {screeningResult.closedCount > 0 && screeningResult.previewOnly && (
                 <button
+                  disabled={screeningLoading || (resultType === 'COURSES' && selectedCourseIds.length === 0)}
                   onClick={() => {
                     setShowResultModal(false);
                     if (resultType === 'JOBS') {
@@ -1261,11 +1272,11 @@ export default function AdminIngestionPage() {
                       handleCleanClosedCourses();
                     }
                   }}
-                  className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition shadow-xs shadow-rose-600/20"
+                  className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition shadow-xs shadow-rose-600/20 disabled:opacity-50"
                 >
                   <Trash2 className="h-4 w-4" />
                   <span>
-                    {resultType === 'JOBS' ? 'ยืนยันปิดประกาศโดยเก็บประวัติ' : 'ยืนยันลบรายการเหล่านี้ทันที'} ({screeningResult.closedCount}{' '}
+                    {resultType === 'JOBS' ? 'ยืนยันปิดประกาศโดยเก็บประวัติ' : 'ยืนยันลบรายการที่เลือก'} ({resultType === 'JOBS' ? screeningResult.closedCount : selectedCourseIds.length}{' '}
                     {resultType === 'JOBS' ? 'ตำแหน่ง' : 'คอร์ส'})
                   </span>
                 </button>

@@ -17,6 +17,15 @@ const { validateVerificationDocuments } = require('../apps/api/dist/company/veri
 const { VerificationQueryDto } = require('../apps/api/dist/admin/dto/verification-query.dto');
 const { VerificationReviewDto } = require('../apps/api/dist/admin/dto/verification-review.dto');
 const { CompanyService } = require('../apps/api/dist/company/company.service');
+const { CleanupCoursesDto } = require('../apps/api/dist/ingestion/dto/cleanup-courses.dto');
+
+test('Manual course cleanup requires explicit bounded unique IDs and rejects extra fields', async () => {
+  const id='2e53cc30-73a1-4cf4-a22b-77e747c7531d';
+  for(const input of [{},{courseIds:[]},{courseIds:['invalid']},{courseIds:[id,id]},{courseIds:Array(201).fill(id)},{courseIds:[id],deleteAll:true}]){
+    assert((await validate(plainToInstance(CleanupCoursesDto,input),{whitelist:true,forbidNonWhitelisted:true})).length);
+  }
+  assert.equal((await validate(plainToInstance(CleanupCoursesDto,{courseIds:[id]}))).length,0);
+});
 
 test('Company document downloads select only owned requests and preserve bytes and safe filenames', async () => {
   const bytes = Buffer.from('%PDF-QA test file');

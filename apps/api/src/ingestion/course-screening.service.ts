@@ -163,12 +163,14 @@ export class CourseScreeningService {
     provider?: CourseSource | 'ALL';
     limit?: number;
     deleteMode?: 'DELETE';
+    courseIds?: string[];
   }): Promise<CourseScreeningSummary> {
     this.logger.log(`[Course Screening Engine] Running scan & cleanup (Provider: ${options.provider || 'ALL'})...`);
     return this.runCourseScreeningPipeline({
       provider: options.provider,
       limit: options.limit || 200,
       dryRun: false,
+      courseIds: options.courseIds,
     });
   }
 
@@ -179,9 +181,11 @@ export class CourseScreeningService {
     provider?: CourseSource | 'ALL';
     limit?: number;
     dryRun: boolean;
+    courseIds?: string[];
   }): Promise<CourseScreeningSummary> {
     const startedAt = new Date();
     const where: any = {};
+    if (params.courseIds) where.id = { in: params.courseIds };
 
     if (params.provider && params.provider !== 'ALL') {
       where.provider = params.provider;
@@ -190,7 +194,7 @@ export class CourseScreeningService {
     const courses = await this.prisma.course.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      take: params.limit || 200,
+      take: params.courseIds ? params.courseIds.length : params.limit || 200,
       select: {
         id: true,
         title: true,

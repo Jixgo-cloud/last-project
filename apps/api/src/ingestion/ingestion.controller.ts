@@ -7,6 +7,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UserRole, JobSource, CourseSource } from '@smartcareer/shared';
+import { CleanupCoursesDto } from './dto/cleanup-courses.dto';
 
 @Controller('ingestion')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -140,11 +141,14 @@ export class IngestionController {
   async cleanupClosedCourses(
     @Query('provider') provider?: CourseSource | 'ALL',
     @Query('limit') limit?: string,
+    @Body() body?: CleanupCoursesDto,
   ) {
+    if (!body?.courseIds?.length) throw new BadRequestException('กรุณาเลือกรายการคอร์สจากรายงานก่อนยืนยันการลบ');
     return this.courseScreeningService.scanAndCleanCourses({
       provider,
       limit: limit ? parseInt(limit, 10) : 200,
       deleteMode: 'DELETE',
+      courseIds: body.courseIds,
     });
   }
 }
