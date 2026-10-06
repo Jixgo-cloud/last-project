@@ -2,7 +2,7 @@
 
 Date: 2026-10-06 (Asia/Bangkok).
 
-Latest result at 18:49 ICT: JobsDB now passes direct Railway ingestion and repeat checks after the HTTP/2 update and moving the API to Singapore. Blognone still returns HTTP 403 on both its listing and public homepage. UAT is 155 passed / 30 blocked / 1 failed. See [current Railway report](DIRECT_RAILWAY_SCRAPING_20261006.md). The results below retain the earlier browser-only failures as historical evidence.
+Latest result at 20:48 ICT on API 988223a: both JobsDB and Blognone pass direct Railway ingestion. Blognone added 8 real jobs, found 5 existing jobs and had 0 errors; the repeat added 0, found 13 existing jobs and had 0 errors. UAT is 156 passed / 29 blocked / 1 failed. See [current Railway report](DIRECT_RAILWAY_SCRAPING_20261006.md). The results below retain the earlier browser-only failures as historical evidence.
 
 The project owner reports approval for scraping these sources for this educational project. This records the owner's instruction; it does not independently certify a provider agreement.
 
