@@ -808,7 +808,7 @@ async function run() {
           ...(type === 'THEORY' ? { selectedChoiceId: exam.questions[0].choices[0].id } : { submittedCode: code }),
         } },
       } });
-      await login('hr@techcorp.co.th', 'password123');
+      await login('hr@techcorp.co.th', 'password123', '/company/dashboard');
       await goto('/company/assessments');
       await fill('input[placeholder="ค้นหาชื่อแบบทดสอบของบริษัท..."]', exam.title);
       await clickText('ตรวจผลและให้คะแนนผู้สมัคร');
