@@ -209,6 +209,69 @@ test('Blognone parses separate job, employer and salary elements without styles 
   assert.equal(rows[0].url,'https://jobs.blognone.com/company/qa/job/engineer-1');
 });
 
+test('Rendered job pages reject foreign destinations, isolate credentials and close the browser after failures', async () => {
+  const {fetchRenderedJobHtml,allowedJobAsset}=require('../apps/api/dist/ingestion/rendered-job-html');
+  let launches=0,closed=0,handler;
+  const previous=process.env.JWT_SECRET;
+  process.env.JWT_SECRET='isolated-browser-secret';
+  const launch=async(options)=>{
+    launches++;assert.equal(options.env.JWT_SECRET,undefined);
+    return {newPage:async()=>({setDefaultTimeout:()=>{},setRequestInterception:async()=>{},on:(_event,callback)=>{handler=callback;},
+      goto:async()=>({status:()=>403}),url:()=> 'https://jobs.blognone.com/search'}),close:async()=>{closed++;}};
+  };
+  try {
+    for(const url of ['http://jobs.blognone.com/search','https://jobs.blognone.com.evil.test/search','https://127.0.0.1/','file:///tmp/private','https://user:secret@th.jobsdb.com/jobs']) {
+      await assert.rejects(fetchRenderedJobHtml(url,launch),/SOURCE_BROWSER_URL_DENIED/);
+    }
+    assert.equal(launches,0);
+    await assert.rejects(fetchRenderedJobHtml('https://jobs.blognone.com/search',launch),/SOURCE_HTTP_403/);
+    assert.equal(closed,1);
+    let aborted=0,continued=0;
+    await handler({isNavigationRequest:()=>true,url:()=> 'http://169.254.169.254/latest/meta-data/',abort:async()=>{aborted++;},continue:async()=>{continued++;}});
+    assert.equal(aborted,1);assert.equal(continued,0);
+    assert.equal(allowedJobAsset('https://jobs-static-prod.blognone.com/app.js'),true);
+    assert.equal(allowedJobAsset('https://unapproved.example/app.js'),false);
+    await assert.rejects(fetchRenderedJobHtml('https://th.jobsdb.com/jobs',async()=>{throw new Error('secret runtime details');}),/SOURCE_BROWSER_UNAVAILABLE/);
+  } finally {if(previous===undefined)delete process.env.JWT_SECRET;else process.env.JWT_SECRET=previous;}
+});
+
+test('JobsDB parses visible cards and deduplicates legacy data while preserving actual job type and arrangement', async () => {
+  const service=new IngestionService({}, {}, {});
+  service.fetchNativeHtml=async()=>`<article data-testid="job-card"><a data-automation="jobTitle" href="/job/12345?ref=search">QA Developer</a><a data-automation="jobCompany">QA Company</a><a data-automation="jobLocation">Bangkok</a><span data-automation="jobShortDescription">Build QA tools</span><span data-testid="work-arrangement">Hybrid</span><p>This is a Contract/Temp job</p></article><script>window.SEEK_REDUX_DATA = {"results":{"results":{"jobs":[{"id":12345,"title":"QA Developer"}]}}};</script>`;
+  const rows=await service.scrapeJobsDBJobs('QA',5);
+  assert.equal(rows.length,1);assert.equal(rows[0].company,'QA Company');assert.equal(rows[0].isRemote,false);assert.equal(rows[0].employmentType,'CONTRACT');assert.equal(rows[0].url,'https://th.jobsdb.com/job/12345');
+});
+
+test('Blognone preserves contract work and skips links without actual job titles', async () => {
+  const service=new IngestionService({}, {}, {}, {});
+  service.fetchJobSourceHtml=async()=>'<a href="/company/qa/job/contract"><h3>QA Developer</h3><h4>Middle-Level, Contract</h4><span>QA Company</span></a><a href="/company/qa/job/missing">navigation only</a>';
+  const jobs=await service.scrapeBlognoneJobs(5);
+  assert.equal(jobs.length,1);
+  assert.equal(jobs[0].employmentType,'CONTRACT');
+  assert.equal(jobs[0].company,'QA Company');
+});
+
+test('Job HTML uses the authorized browser for 403 or unrendered pages, but does not retry rate limits', async () => {
+  const rendered=require('../apps/api/dist/ingestion/rendered-job-html');
+  const original=rendered.fetchRenderedJobHtml;
+  const service=new IngestionService({}, {}, {});
+  let calls=0;
+  try {
+    rendered.fetchRenderedJobHtml=async()=>{calls++;return '<a href="/company/qa/job/1"><h3>QA</h3></a>';};
+    service.fetchNativeHtml=async()=>{throw new Error('SOURCE_HTTP_403: unavailable');};
+    assert.match(await service.fetchJobSourceHtml('https://jobs.blognone.com/search'),/QA/);
+    service.fetchNativeHtml=async()=> '<div id="root"></div>';
+    await service.fetchJobSourceHtml('https://jobs.blognone.com/search');
+    assert.equal(calls,2);
+    service.fetchNativeHtml=async()=> '<a href="/company/qa/job/1"><h3>QA</h3></a>';
+    await service.fetchJobSourceHtml('https://jobs.blognone.com/search');
+    assert.equal(calls,2);
+    service.fetchNativeHtml=async()=>{throw new Error('SOURCE_HTTP_429: rate limit');};
+    await assert.rejects(service.fetchJobSourceHtml('https://jobs.blognone.com/search'),/SOURCE_HTTP_429/);
+    assert.equal(calls,2);
+  } finally {rendered.fetchRenderedJobHtml=original;}
+});
+
 test('JobThai uses the explicit employer element rather than duplicate mobile headings or a missing sibling', async () => {
   const service=new IngestionService({}, {}, {});
   service.fetchNativeHtml=async()=>`<a href="/th/company/job/123"><div><h2>QA Developer</h2></div><div><span id="job-list-company-name-9"><h2>QA Company</h2></span><h2>QA Company</h2></div></a>`;

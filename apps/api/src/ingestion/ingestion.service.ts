@@ -7,6 +7,7 @@ import { IngestionStatus, JobSource, CourseSource, JobType } from '@smartcareer/
 import { GeminiExtractorService } from './gemini-extractor.service';
 import { IngestionConfigService } from './ingestion-config.service';
 import { mentionsSkill } from '../recommendations/course-skill-evidence';
+import { fetchRenderedJobHtml } from './rendered-job-html';
 
 @Injectable()
 export class IngestionService {
@@ -38,6 +39,21 @@ export class IngestionService {
         ? `SOURCE_HTTP_${status}: ต้นทางปฏิเสธหรือไม่พร้อมให้ดึงข้อมูล รักษางานเดิมไว้`
         : 'SOURCE_CONNECTION_FAILED: ติดต่อแหล่งงานไม่ได้หรือหมดเวลารอ รักษางานเดิมไว้');
     }
+  }
+
+  private async fetchJobSourceHtml(url: string): Promise<string> {
+    try {
+      const html = await this.fetchNativeHtml(url);
+      const $ = cheerio.load(html);
+      const ready = new URL(url).hostname === 'th.jobsdb.com'
+        ? $('[data-testid="job-card"], script').toArray().some(el => $(el).is('[data-testid="job-card"]') || ($(el).html() || '').includes('window.SEEK_REDUX_DATA'))
+        : $('a[href*="/job/"] h3').length > 0;
+      if (ready) return html;
+    } catch (error: any) {
+      if (!/^SOURCE_HTTP_403:/.test(error?.message || '')) throw error;
+    }
+    this.logger.log('[Job Scraper] Reading the public listing with a fresh browser');
+    return fetchRenderedJobHtml(url);
   }
 
   // =========================================================================
@@ -632,7 +648,7 @@ export class IngestionService {
     this.logger.log(`[Blognone Scraper] Fetching live jobs from https://jobs.blognone.com/search (quota: ${limit})...`);
     const jobs: any[] = [];
     try {
-      const html = await this.fetchNativeHtml('https://jobs.blognone.com/search');
+      const html = await this.fetchJobSourceHtml('https://jobs.blognone.com/search');
       const $ = cheerio.load(html);
       $('style, script').remove();
 
@@ -640,7 +656,7 @@ export class IngestionService {
         if (jobs.length >= limit) return;
         const href = $(el).attr('href');
         const rawText = $(el).text().trim().replace(/\s+/g, ' ');
-        if (!href || !rawText || jobs.some((j) => j.url.includes(href))) return;
+        if (!href || !rawText || !$(el).find('h3').first().text().trim() || jobs.some((j) => j.url.includes(href))) return;
 
         // Parse salary range if present e.g. ฿40,000-฿70,000
         const salaryMatch = rawText.match(/฿([\d,]+)-฿([\d,]+)/);
@@ -664,13 +680,15 @@ export class IngestionService {
 
         jobs.push({
           id: href.replace(/^\/.*\/job\//, '').replace(/\//g, '-'),
-          title: cleanedTitle.slice(0, 100) || 'Software Engineer',
+          title: cleanedTitle.slice(0, 100),
           company,
           logoUrl: null,
           description: cleanedTitle,
           location: rawText.includes('กรุงเทพ') || rawText.includes('Bangkok') ? 'Bangkok, Thailand' : 'ไม่ระบุสถานที่',
           isRemote: rawText.toLowerCase().includes('remote') || rawText.includes('wfh'),
-          employmentType: JobType.FULL_TIME,
+          employmentType: /contract/i.test($(el).find('h4').first().text()) ? JobType.CONTRACT
+            : /part[ -]?time/i.test($(el).find('h4').first().text()) ? JobType.PART_TIME
+            : /intern/i.test($(el).find('h4').first().text()) ? JobType.INTERNSHIP : JobType.FULL_TIME,
           salaryMin,
           salaryMax,
           url: new URL(href, 'https://jobs.blognone.com').href,
@@ -703,8 +721,29 @@ export class IngestionService {
             ? `https://th.jobsdb.com/jobs?keywords=${encodeURIComponent(keyword)}`
             : `https://th.jobsdb.com/jobs?keywords=${encodeURIComponent(keyword)}&page=${page}`;
 
-        const html = await this.fetchNativeHtml(pageUrl);
+        const html = await this.fetchJobSourceHtml(pageUrl);
         const $ = cheerio.load(html);
+
+        $('[data-testid="job-card"]').each((_, el) => {
+          if (jobs.length >= limit) return;
+          const card = $(el);
+          const title = card.find('[data-automation="jobTitle"]').first().text().trim();
+          const href = card.find('[data-automation="jobTitle"]').first().attr('href');
+          const jobNumber = href?.match(/^\/job\/(\d+)(?:[?#]|$)/)?.[1];
+          const company = card.find('[data-automation="jobCompany"]').first().text().trim();
+          if (!title || !jobNumber || !company || jobs.some(job => job.id === `jobsdb-${jobNumber}`)) return;
+          const description = card.find('[data-automation="jobShortDescription"]').first().text().trim();
+          const arrangement = card.find('[data-testid="work-arrangement"]').first().text().trim();
+          jobs.push({
+            id: `jobsdb-${jobNumber}`, title, company, logoUrl: null,
+            description: description || title,
+            location: card.find('[data-automation="jobLocation"]').first().text().trim() || 'ไม่ระบุสถานที่',
+            isRemote: /remote|work from home|wfh/i.test(arrangement),
+            employmentType: /Contract\/Temp/.test(card.text()) ? JobType.CONTRACT : /Part time/.test(card.text()) ? JobType.PART_TIME : JobType.FULL_TIME,
+            salaryMin: null, salaryMax: null,
+            url: `https://th.jobsdb.com/job/${jobNumber}`,
+          });
+        });
 
         $('script').each((_, el) => {
           if (jobs.length >= limit) return;
@@ -722,8 +761,7 @@ export class IngestionService {
 
                   const isRemote =
                     (j.title + ' ' + (j.teaser || '')).toLowerCase().includes('remote') ||
-                    (j.title + ' ' + (j.teaser || '')).includes('wfh') ||
-                    (j.title + ' ' + (j.teaser || '')).includes('hybrid');
+                    (j.title + ' ' + (j.teaser || '')).toLowerCase().includes('wfh');
 
                   jobs.push({
                     id: jobId,
