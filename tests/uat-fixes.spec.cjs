@@ -18,6 +18,31 @@ const { AssessmentsService } = require('../apps/api/dist/assessments/assessments
 const { codingAttemptTotals } = require('../apps/api/dist/assessments/coding-attempt-totals');
 const { JobScreeningService } = require('../apps/api/dist/ingestion/job-screening.service');
 const { SchedulerService } = require('../apps/api/dist/scheduler/scheduler.service');
+const {validateLocalJobBatch}=require('../apps/api/dist/ingestion/local-job-batch');
+
+const localBatch=()=>({version:1,source:'JOBSDB',collectedAt:new Date().toISOString(),jobs:[{id:'jobsdb-12345678',title:'QA Engineer',company:'QA Company',logoUrl:null,description:'QA listing',location:'Bangkok',isRemote:false,employmentType:'CONTRACT',salaryMin:0,salaryMax:null,url:'https://th.jobsdb.com/job/12345678'}]});
+
+test('Local imports reject arbitrary destinations, forged IDs, stale files and injected ownership fields before saving',()=>{
+  const valid=localBatch();assert.equal(validateLocalJobBatch(valid).jobs[0].salaryMin,0);
+  for(const patch of [{url:'http://th.jobsdb.com/job/12345678'},{url:'https://th.jobsdb.com.evil.test/job/12345678'},{url:'https://user:password@th.jobsdb.com/job/12345678'},{id:'other-id'},{companyId:'victim'},{salaryMin:-1},{salaryMin:20,salaryMax:10},{logoUrl:'http://localhost/secret'}]){
+    assert.throws(()=>validateLocalJobBatch({...valid,jobs:[{...valid.jobs[0],...patch}]}));
+  }
+  assert.throws(()=>validateLocalJobBatch({...valid,jobs:[valid.jobs[0],valid.jobs[0]]}));
+  assert.throws(()=>validateLocalJobBatch({...valid,collectedAt:new Date(Date.now()-8*86400000).toISOString()}));
+  assert.throws(()=>validateLocalJobBatch({...valid,source:'INTERNAL'}));
+  assert.throws(()=>validateLocalJobBatch({...valid,secret:'must not be uploaded'}));
+});
+
+test('Local import preview is read-only, saves actual jobs through the shared path and skips repeated jobs',async()=>{
+  const jobs=[];let logs=0;let fetched=0;
+  const service=new (require('../apps/api/dist/ingestion/ingestion.service').IngestionService)({job:{findFirst:async()=>jobs[0]||null,create:async({data})=>{const j={id:'qa',...data};jobs.push(j);return j;}},ingestionLog:{create:async({data})=>({id:String(++logs),...data})}}, {}, {});
+  service.fetchJSearchJobs=async()=>{fetched++;};service.assignSkillsToJob=async()=>{};
+  const batch=localBatch();assert.equal((await service.previewLocalJobs(batch)).newCount,1);assert.equal(jobs.length,0);assert.equal(logs,0);
+  const first=await service.performJobsSync('JOBSDB',10,undefined,batch.jobs);
+  const second=await service.performJobsSync('JOBSDB',10,undefined,batch.jobs);
+  assert.equal(first.createdCount,1);assert.equal(second.createdCount,0);assert.equal(second.duplicateCount,1);
+  assert.equal(jobs[0].sourceUrl,batch.jobs[0].url);assert.equal(jobs[0].source,'JOBSDB');assert.equal(fetched,0);
+});
 
 function runHarness() {
   const rows = [];
@@ -34,9 +59,23 @@ function runHarness() {
     updateMany: async ({where,data}) => {const found=rows.filter(row=>matches(row,where));found.forEach(row=>Object.assign(row,data));return {count:found.length};},
   }};
   const service=new (require('../apps/api/dist/ingestion/ingestion.service').IngestionService)(prisma,{},
-    {getQuotas:()=>({JOBTHAI:{category:'JOB',min:10,max:50,quota:25}})});
+    {getQuotas:()=>({JOBTHAI:{category:'JOB',min:10,max:50,quota:25},JOBSDB:{category:'JOB',min:10,max:60,quota:30}})});
   return {rows,service};
 }
+
+test('Local file retries share a durable run, reject different content and never silently join another import',async()=>{
+  const {service}=runHarness();let finish;const gate=new Promise(resolve=>{finish=resolve;});let calls=0;
+  service.performJobsSync=async(_s,_q,_check,rows)=>{assert.equal(rows[0].id,'jobsdb-12345678');calls++;await gate;return{status:'SUCCESS',createdCount:1};};
+  const key=require('crypto').randomUUID();const batch=localBatch();
+  try {
+    const first=await service.startLocalJobs(batch,key);
+    assert.equal((await service.startLocalJobs(batch,key)).id,first.id);
+    await assert.rejects(service.startLocalJobs(batch,require('crypto').randomUUID()),/รอบนำเข้า/);
+    await assert.rejects(service.startLocalJobs({...batch,jobs:[{...batch.jobs[0],title:'Changed'}]},key),/คำขออื่น/);
+    finish();await new Promise(resolve=>setImmediate(resolve));
+    assert.equal((await service.startLocalJobs(batch,key)).state,'COMPLETED');assert.equal(calls,1);
+  } finally {finish();await new Promise(resolve=>setImmediate(resolve));}
+});
 
 test('Long imports return a durable run immediately and concurrent/retried starts share one worker', async () => {
   const {service,rows}=runHarness();let finish;let calls=0;

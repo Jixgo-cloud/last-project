@@ -27,7 +27,7 @@ export async function apiRequest<T = any>(endpoint: string, options: RequestInit
       const data = await res.json();
       message = Array.isArray(data.message) ? data.message.join(', ') : data.message || message;
     } catch { /* keep generic message */ }
-    throw new Error(message);
+    throw Object.assign(new Error(message), { status: res.status });
   }
   return res.json();
 }

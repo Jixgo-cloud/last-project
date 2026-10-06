@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import DeleteConfirmation from '@/components/DeleteConfirmation';
+import LocalJobImport from '@/components/LocalJobImport';
 import { apiRequest } from '@/lib/api';
 import Link from 'next/link';
 import {
@@ -135,7 +136,7 @@ export default function AdminIngestionPage() {
     rememberJobRun(null, run.requestKey);
     setSyncingSource(null);
     if (run.state === 'COMPLETED' && run.result) {
-      const feedback = ingestionFeedback(run.result, `ตำแหน่งงานจาก ${run.source}`, `โควต้า: ${run.quota} ตำแหน่ง`);
+      const feedback = ingestionFeedback(run.result, `${run.requestKey.startsWith('local-') ? 'ไฟล์ที่ดึงจากเครื่อง ' : 'ตำแหน่งงานจาก '}${run.source}`, `โควต้า: ${run.quota} ตำแหน่ง`);
       showMessage(feedback.message, feedback.severity);
     } else {
       showMessage(`รอบ ${run.id} ถูกขัดจังหวะ อาจมีงานที่บันทึกแล้ว กรุณาตรวจประวัติก่อนเริ่มรอบใหม่`, 'warning');
@@ -147,7 +148,7 @@ export default function AdminIngestionPage() {
     try {
       let saved: JobRunTracking | null = null;
       try { saved = JSON.parse(localStorage.getItem(JOB_RUN_STORAGE) || 'null'); } catch { /* check server below */ }
-      if (saved && /^[a-f0-9-]{36}$/i.test(saved.requestKey)) {
+      if (saved && /^(?:local-)?[a-f0-9-]{36}$/i.test(saved.requestKey)) {
         rememberJobRun(saved);
         setSyncingSource(saved.source);
         return;
@@ -454,11 +455,15 @@ export default function AdminIngestionPage() {
         </div>
 
         {/* Sync Feedback Toast */}
+        <LocalJobImport busy={!!syncingSource} pending={jobRun}
+          onRequest={tracking => { rememberJobRun(tracking); setSyncingSource(tracking.source); showMessage('กำลังนำเข้าไฟล์จากเครื่อง โหลดหน้าใหม่เพื่อติดตามรอบเดิมได้', 'warning'); }}
+          onRun={displayJobRun}
+          onRejected={requestKey => { rememberJobRun(null, requestKey); setSyncingSource(null); }} />
         {syncingSource === 'CHECKING' && (
           <button onClick={restoreJobRun} className="mb-4 rounded-lg border px-4 py-2">ตรวจสถานะรอบนำเข้าอีกครั้ง</button>
         )}
         {jobRun && !jobRun.id && (
-          <button onClick={() => triggerJobSync(jobRun.source)} className="mb-4 rounded-lg border px-4 py-2">ส่งคำขอเดิมอีกครั้ง (ป้องกันรอบซ้ำ)</button>
+          !jobRun.requestKey.startsWith('local-') && <button onClick={() => triggerJobSync(jobRun.source)} className="mb-4 rounded-lg border px-4 py-2">ส่งคำขอเดิมอีกครั้ง (ป้องกันรอบซ้ำ)</button>
         )}
         {msg && (
           <div role="alert" className={`mb-6 p-4 rounded-2xl border text-sm font-semibold flex items-center justify-between gap-3 shadow-xs ${msgSeverity === 'error' ? 'bg-rose-50 border-rose-200 text-rose-800' : msgSeverity === 'warning' ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>

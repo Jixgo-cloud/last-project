@@ -1,5 +1,5 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { randomUUID } from 'crypto';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
@@ -8,6 +8,7 @@ import { GeminiExtractorService } from './gemini-extractor.service';
 import { IngestionConfigService } from './ingestion-config.service';
 import { mentionsSkill } from '../recommendations/course-skill-evidence';
 import { fetchRenderedJobHtml } from './rendered-job-html';
+import { validateLocalJobBatch } from './local-job-batch';
 
 @Injectable()
 export class IngestionService {
@@ -59,9 +60,34 @@ export class IngestionService {
   // =========================================================================
   // Main Synchronizers
   // =========================================================================
-  async startJobsRun(source: JobSource = JobSource.REMOTIVE, limit?: number, requestKey: string = randomUUID()) {
+  async collectLocalJobs(source: JobSource, limit: number) {
+    if (![JobSource.JOBSDB, JobSource.BLOGNONE].includes(source) || !Number.isInteger(limit) || limit < 1 || limit > 60) throw new BadRequestException('แหล่งงานหรือจำนวนไม่ถูกต้อง');
+    const jobs = source === JobSource.JOBSDB ? await this.scrapeJobsDBJobs('developer', limit) : await this.scrapeBlognoneJobs(limit);
+    return validateLocalJobBatch({ version: 1, source, collectedAt: new Date().toISOString(), jobs });
+  }
+
+  async previewLocalJobs(input: unknown) {
+    const batch = validateLocalJobBatch(input);
+    let duplicateCount = 0;
+    for (const job of batch.jobs) {
+      if (await this.prisma.job.findFirst({ where: { OR: [{ source: batch.source, externalId: job.id }, { title: job.title, companyName: job.company }] } })) duplicateCount++;
+    }
+    return { source: batch.source, count: batch.jobs.length, duplicateCount, newCount: batch.jobs.length - duplicateCount,
+      collectedAt: batch.collectedAt, jobs: batch.jobs.map(job => ({ title: job.title, company: job.company, url: job.url })) };
+  }
+
+  async startLocalJobs(input: unknown, requestKey: string) {
+    const batch = validateLocalJobBatch(input);
+    if (!/^[a-f0-9-]{36}$/i.test(requestKey || '')) throw new BadRequestException('รหัสรอบไม่ถูกต้อง');
+    const config = this.configService.getQuotas()[batch.source];
+    if (batch.jobs.length > config.max) throw new BadRequestException(`ไฟล์ต้องมีไม่เกิน ${config.max} งานสำหรับแหล่งนี้`);
+    return this.startJobsRun(batch.source, Math.max(config.min, batch.jobs.length), `local-${requestKey}`, batch.jobs);
+  }
+
+  async startJobsRun(source: JobSource = JobSource.REMOTIVE, limit?: number, requestKey: string = randomUUID(), localJobs?: any[]) {
+    const importDigest = localJobs ? createHash('sha256').update(JSON.stringify(localJobs)).digest('hex') : undefined;
     const config = this.configService.getQuotas()[source];
-    if (!config || config.category !== 'JOB' || !/^[a-f0-9-]{36}$/i.test(requestKey)) {
+    if (!config || config.category !== 'JOB' || !(localJobs ? /^local-[a-f0-9-]{36}$/i : /^[a-f0-9-]{36}$/i).test(requestKey)) {
       throw new BadRequestException('แหล่งงานหรือรหัสรอบไม่ถูกต้อง');
     }
     const quota = limit ?? config.quota;
@@ -71,17 +97,19 @@ export class IngestionService {
     await this.expireInterruptedRuns();
     const previous = await this.prisma.ingestionRun.findUnique({ where: { requestKey } });
     if (previous) {
-      if (previous.source !== source || previous.quota !== quota) throw new BadRequestException('รหัสรอบนี้ใช้กับคำขออื่นแล้ว');
+      if (previous.source !== source || previous.quota !== quota || (importDigest && (previous.result as any)?.importDigest !== importDigest)) throw new BadRequestException('รหัสรอบนี้ใช้กับคำขออื่นแล้ว');
       return this.resolveJobsRun(previous);
     }
     let run;
     try {
-      run = await this.prisma.ingestionRun.create({ data: { requestKey, source, quota, activeKey: source } });
+      run = await this.prisma.ingestionRun.create({ data: { requestKey, source, quota, activeKey: source, ...(importDigest ? { result: { importDigest } } : {}) } });
     } catch (error: any) {
       if (error.code !== 'P2002') throw error;
       const sameRequest = await this.prisma.ingestionRun.findUnique({ where: { requestKey } });
       const active = sameRequest || await this.prisma.ingestionRun.findUnique({ where: { activeKey: source } });
       if (!active) throw error;
+      if (localJobs && !sameRequest) throw new ConflictException('แหล่งนี้มีรอบนำเข้าอยู่แล้ว รอให้จบแล้วนำเข้าไฟล์เดิมอีกครั้ง');
+      if (sameRequest && importDigest && (sameRequest.result as any)?.importDigest !== importDigest) throw new BadRequestException('รหัสรอบนี้ใช้กับไฟล์อื่นแล้ว');
       if (sameRequest && (active.source !== source || active.quota !== quota)) throw new BadRequestException('รหัสรอบนี้ใช้กับคำขออื่นแล้ว');
       if (sameRequest) return this.resolveJobsRun(sameRequest);
       // Persist an alias too: if the HTTP response is lost, replaying this request
@@ -99,7 +127,7 @@ export class IngestionService {
       return this.resolveJobsRun(active);
     }
     // Keep the HTTP request short. State and results live in Postgres, not a process-local map.
-    void this.executeJobsRun(run.id, source, quota);
+    void this.executeJobsRun(run.id, source, quota, localJobs, importDigest);
     return run;
   }
 
@@ -137,7 +165,7 @@ export class IngestionService {
     if (run?.state !== 'RUNNING') throw new Error('INGESTION_INTERRUPTED');
   }
 
-  private async executeJobsRun(id: string, source: JobSource, quota: number) {
+  private async executeJobsRun(id: string, source: JobSource, quota: number, localJobs?: any[], importDigest?: string) {
     let heartbeatBusy = false;
     const heartbeat = setInterval(async () => {
       if (heartbeatBusy) return;
@@ -148,10 +176,10 @@ export class IngestionService {
       finally { heartbeatBusy = false; }
     }, 15_000);
     try {
-      const result = await this.performJobsSync(source, quota, () => this.assertRunActive(id));
+      const result = await this.performJobsSync(source, quota, () => this.assertRunActive(id), localJobs);
       await this.prisma.ingestionRun.updateMany({
         where: { id, state: 'RUNNING' },
-        data: { state: 'COMPLETED', activeKey: null, finishedAt: new Date(), result: JSON.parse(JSON.stringify(result)) },
+        data: { state: 'COMPLETED', activeKey: null, finishedAt: new Date(), result: JSON.parse(JSON.stringify({ ...result, ...(importDigest ? { importDigest } : {}) })) },
       });
     } catch {
       this.logger.error('Job import interrupted before its result could be recorded');
@@ -172,7 +200,7 @@ export class IngestionService {
     return run.result as any;
   }
 
-  private async performJobsSync(source: JobSource = JobSource.REMOTIVE, limit?: number, assertActive?: () => Promise<void>) {
+  private async performJobsSync(source: JobSource = JobSource.REMOTIVE, limit?: number, assertActive?: () => Promise<void>, localJobs?: any[]) {
     const startedAt = new Date();
     let createdCount = 0;
     let duplicateCount = 0;
@@ -184,7 +212,9 @@ export class IngestionService {
       this.logger.log(`Starting Job Ingestion for source: ${source} (Target Quota: ${quota})`);
       let jobsToProcess: any[] = [];
 
-      if (source === JobSource.JSEARCH) {
+      if (localJobs) {
+        jobsToProcess = localJobs;
+      } else if (source === JobSource.JSEARCH) {
         jobsToProcess = await this.fetchJSearchJobs('React developer', quota);
       } else if (source === JobSource.REMOTIVE) {
         jobsToProcess = await this.fetchRemotiveJobs(quota);
@@ -275,7 +305,7 @@ export class IngestionService {
     if (assertActive) await assertActive();
     const log = await this.prisma.ingestionLog.create({
       data: {
-        source,
+        source: localJobs ? `${source}_LOCAL_FILE` : source,
         status,
         startedAt,
         finishedAt,

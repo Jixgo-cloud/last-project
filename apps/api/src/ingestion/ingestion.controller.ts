@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Query, Body, Param, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Post, Put, Query, Body, Param, UseGuards } from '@nestjs/common';
 import { IngestionService } from './ingestion.service';
 import { IngestionConfigService } from './ingestion-config.service';
 import { JobScreeningService } from './job-screening.service';
@@ -22,6 +22,17 @@ export class IngestionController {
   @Get('quotas')
   async getQuotas() {
     return this.configService.getQuotas();
+  }
+
+  @Post('local-jobs/preview')
+  async previewLocalJobs(@Body() body: unknown) {
+    return this.ingestionService.previewLocalJobs(body);
+  }
+
+  @Post('local-jobs')
+  async importLocalJobs(@Body() body: { batch: unknown; requestKey: string }) {
+    if (!body || Array.isArray(body) || Object.keys(body).some(key => !['batch', 'requestKey'].includes(key))) throw new BadRequestException('คำขอนำเข้าไฟล์ไม่ถูกต้อง');
+    return this.ingestionService.startLocalJobs(body?.batch, body?.requestKey);
   }
 
   @Put('quotas')
