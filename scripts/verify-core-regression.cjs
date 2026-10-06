@@ -810,6 +810,9 @@ async function run() {
       } });
       await login('hr@techcorp.co.th', 'password123', '/company/dashboard');
       await goto('/company/assessments');
+      await clickText('สร้างแบบทดสอบคัดกรองใหม่');
+      await page.waitForFunction(() => Array.from(document.querySelectorAll('select option')).some(option => option.textContent.includes('JavaScript')));
+      await clickText('ยกเลิก');
       await fill('input[placeholder="ค้นหาชื่อแบบทดสอบของบริษัท..."]', exam.title);
       await clickText('ตรวจผลและให้คะแนนผู้สมัคร');
       await clickText(type === 'THEORY' ? 'ตรวจคำตอบและผลสอบ' : 'ตรวจโค้ดและผลสอบ');

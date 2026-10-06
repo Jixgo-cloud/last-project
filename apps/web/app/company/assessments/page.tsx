@@ -98,7 +98,7 @@ export default function CompanyAssessmentsPage() {
     setLoading(true);
     Promise.all([
       apiRequest('/company/assessments'),
-      apiRequest('/admin/skills').catch(() => []),
+      apiRequest('/skills').catch(() => []),
     ])
       .then(([assessData, skillsData]) => {
         setAssessments(assessData || []);
