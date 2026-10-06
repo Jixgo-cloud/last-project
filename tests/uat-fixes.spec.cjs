@@ -129,6 +129,64 @@ const { IngestionService } = require('../apps/api/dist/ingestion/ingestion.servi
 const { JobsService } = require('../apps/api/dist/jobs/jobs.service');
 const { legacySampleJobIds } = require('../apps/api/dist/jobs/legacy-sample-jobs');
 
+test('HTML job fetch works through Node HTTP without an installed curl and sanitizes source failures', async () => {
+  const original=axios.get;
+  const service=new IngestionService({}, {}, {});
+  try {
+    axios.get=async(url,options)=>{assert.equal(url,'https://example.invalid/jobs');assert.equal(options.responseType,'text');assert.equal(options.timeout,12000);return {data:'<html>Live listings</html>'};};
+    assert.equal(await service.fetchNativeHtml('https://example.invalid/jobs'),'<html>Live listings</html>');
+    axios.get=async()=>{throw {response:{status:403},message:'private provider response and credentials'};};
+    await assert.rejects(service.fetchNativeHtml('https://example.invalid/jobs'),error=>error.message.includes('SOURCE_HTTP_403')&&!error.message.includes('private'));
+  } finally {axios.get=original;}
+});
+
+test('Blognone parses separate job, employer and salary elements without styles or salary becoming the employer', async () => {
+  const service=new IngestionService({}, {}, {});
+  service.fetchNativeHtml=async()=>`<a href="/company/qa/job/engineer-1"><style>.css-x{color:red}</style><h3>QA Engineer</h3><h4>Full time</h4><span itemtype="http://schema.org/MonetaryAmount">฿20,000-฿40,000</span><span>QA Employer</span><span class="text-muted">Bangkok</span></a>`;
+  const rows=await service.scrapeBlognoneJobs(5);
+  assert.equal(rows.length,1);assert.equal(rows[0].title,'QA Engineer');assert.equal(rows[0].company,'QA Employer');assert.equal(rows[0].salaryMin,20000);assert.equal(rows[0].salaryMax,40000);
+  assert.equal(rows[0].url,'https://jobs.blognone.com/company/qa/job/engineer-1');
+});
+
+test('JobThai uses the explicit employer element rather than duplicate mobile headings or a missing sibling', async () => {
+  const service=new IngestionService({}, {}, {});
+  service.fetchNativeHtml=async()=>`<a href="/th/company/job/123"><div><h2>QA Developer</h2></div><div><span id="job-list-company-name-9"><h2>QA Company</h2></span><h2>QA Company</h2></div></a>`;
+  const rows=await service.scrapeJobThaiJobs(10);
+  assert.equal(rows.length,1);assert.equal(rows[0].title,'QA Developer');assert.equal(rows[0].company,'QA Company');assert.equal(rows[0].url,'https://www.jobthai.com/th/company/job/123');
+});
+
+test('JSearch distinguishes missing key, access failure and quota without storing raw provider errors or fake jobs', async () => {
+  const previous={rapid:process.env.RAPIDAPI_KEY,jsearch:process.env.JSEARCH_API_KEY};
+  const original=axios.get;
+  let writes=0;
+  const service=new IngestionService({job:{create:async()=>{writes++;}},ingestionLog:{create:async({data})=>data}}, {}, {getQuotaForSource:()=>5});
+  try {
+    delete process.env.RAPIDAPI_KEY;delete process.env.JSEARCH_API_KEY;
+    assert.match((await service.syncJobs('JSEARCH',5)).errorMessage,/JSEARCH_MISSING_KEY/);
+    process.env.JSEARCH_API_KEY='isolated-qa-key';
+    for(const status of [401,403,429]) {
+      axios.get=async()=>{throw {response:{status},message:'private provider body with isolated-qa-key'};};
+      const result=await service.syncJobs('JSEARCH',5);
+      assert.equal(result.status,'FAILED');assert.equal(result.createdCount,0);assert.match(result.errorMessage,new RegExp(`JSEARCH_${status}`));assert(!result.errorMessage.includes('isolated-qa-key'));
+    }
+    axios.get=async()=>({data:{data:[{job_id:'broken'}]}});
+    assert.match((await service.syncJobs('JSEARCH',5)).errorMessage,/JSEARCH_EMPTY_RESPONSE/);
+    assert.equal(writes,0);
+  } finally {
+    axios.get=original;
+    for(const [key,value] of [['RAPIDAPI_KEY',previous.rapid],['JSEARCH_API_KEY',previous.jsearch]]) {if(value===undefined) delete process.env[key];else process.env[key]=value;}
+  }
+});
+
+test('Unavailable HTML sources report the actual HTTP reason while preserving existing jobs', async () => {
+  for(const source of ['BLOGNONE','JOBSDB','JOBTHAI']) {
+    const service=new IngestionService({job:{create:async()=>assert.fail('Unavailable sources must not insert')},ingestionLog:{create:async({data})=>data}}, {}, {getQuotaForSource:()=>5});
+    service.fetchNativeHtml=async()=>{throw new Error('SOURCE_HTTP_429: upstream rate limit');};
+    const result=await service.syncJobs(source,5);
+    assert.equal(result.status,'FAILED');assert.match(result.errorMessage,/SOURCE_HTTP_429/);assert.equal(result.createdCount,0);
+  }
+});
+
 test('Public vacancies quarantine exact legacy sample IDs without deleting any stored job', async () => {
   const sample={source:'BLOGNONE',externalId:legacySampleJobIds[0]};
   await assert.rejects(new JobsService({job:{findUnique:async()=>sample}},{}).findOne('qa'),/ข้อมูลตัวอย่างเดิม/);

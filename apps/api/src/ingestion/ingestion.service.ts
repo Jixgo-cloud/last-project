@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { execFileSync } from 'child_process';
 import { IngestionStatus, JobSource, CourseSource, JobType } from '@smartcareer/shared';
 import { GeminiExtractorService } from './gemini-extractor.service';
 import { IngestionConfigService } from './ingestion-config.service';
@@ -19,28 +18,24 @@ export class IngestionService {
   ) {}
 
   // =========================================================================
-  // Native HTTP Fetcher (Bypasses Cloudflare JA3 / TLS Bot Traps via curl.exe)
+  // Fetch public HTML using the same Node HTTP runtime as the API.
   // =========================================================================
-  private fetchNativeHtml(url: string, timeoutSec = 12): string {
-    const curlBin = process.platform === 'win32' ? 'curl.exe' : 'curl';
+  private async fetchNativeHtml(url: string, timeoutSec = 12): Promise<string> {
     try {
-      const output = execFileSync(
-        curlBin,
-        [
-          '-s',
-          '-L',
-          '--max-time', String(timeoutSec),
-          '-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          '-H', 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-          '-H', 'Accept-Language: th-TH,th;q=0.9,en-US;q=0.8,en;q=0.7',
-          url,
-        ],
-        { maxBuffer: 25 * 1024 * 1024, encoding: 'utf-8' },
-      );
-      return output;
+      const response = await axios.get<string>(url, {
+        timeout: timeoutSec * 1000,
+        maxContentLength: 25 * 1024 * 1024,
+        responseType: 'text',
+        headers: { 'User-Agent': 'SmartCareer/1.0', Accept: 'text/html', 'Accept-Language': 'th-TH,th;q=0.9,en;q=0.7' },
+      });
+      if (!response.data?.trim()) throw new Error('SOURCE_EMPTY_RESPONSE: ต้นทางส่งหน้าว่าง');
+      return response.data;
     } catch (err: any) {
-      this.logger.warn(`[Native Fetcher] curl failed for ${url}: ${err.message}`);
-      throw err;
+      if (err.message?.startsWith('SOURCE_')) throw err;
+      const status = err.response?.status;
+      throw new Error(status
+        ? `SOURCE_HTTP_${status}: ต้นทางปฏิเสธหรือไม่พร้อมให้ดึงข้อมูล รักษางานเดิมไว้`
+        : 'SOURCE_CONNECTION_FAILED: ติดต่อแหล่งงานไม่ได้หรือหมดเวลารอ รักษางานเดิมไว้');
     }
   }
 
@@ -398,7 +393,7 @@ export class IngestionService {
     const apiKey = process.env.RAPIDAPI_KEY || process.env.JSEARCH_API_KEY;
     const apiUrl = process.env.JSEARCH_API_URL || 'https://jsearch.p.rapidapi.com';
 
-    this.logger.log(`[JSearch API] Connecting to RapidAPI JSearch (${apiUrl}) with query: "${query}" (limit: ${limit})...`);
+    this.logger.log(`[JSearch API] Requesting live jobs (limit: ${limit})`);
 
     if (apiKey && apiKey.trim().length > 0) {
       try {
@@ -420,6 +415,9 @@ export class IngestionService {
           this.logger.log(`[JSearch API] Successfully fetched ${response.data.data.length} real live jobs from Google Jobs/JSearch!`);
           for (const item of response.data.data) {
             if (jobs.length >= limit) break;
+            if (!item?.job_id || typeof item.job_title !== 'string' || !item.job_title.trim()
+              || typeof item.employer_name !== 'string' || !item.employer_name.trim()
+              || !(item.job_apply_link || item.job_google_link)) continue;
             jobs.push({
               id: String(item.job_id),
               title: item.job_title,
@@ -448,11 +446,18 @@ export class IngestionService {
             });
           }
         }
+        if (!jobs.length) throw new Error('JSEARCH_EMPTY_RESPONSE: JSearch ไม่ส่งรายการงานที่ใช้งานได้ รักษางานเดิมไว้');
       } catch (err: any) {
-        this.logger.warn(`[JSearch API] Live call returned error: ${err.message}; no sample jobs will be inserted.`);
+        if (err.message?.startsWith('JSEARCH_')) throw err;
+        const status = err.response?.status;
+        const reason = status === 401 || status === 403
+          ? 'คีย์หรือสิทธิ์ใช้บริการ JSearch ไม่พร้อม ตรวจการสมัครบริการที่ RapidAPI'
+          : status === 429 ? 'เกินโควตาหรืออัตราการเรียก JSearch ให้ตรวจแพ็กเกจและลองภายหลัง'
+          : 'ติดต่อ JSearch ไม่สำเร็จหรือหมดเวลารอ';
+        throw new Error(`JSEARCH_${status || 'CONNECTION_FAILED'}: ${reason} รักษางานเดิมไว้`);
       }
     } else {
-      this.logger.warn(`[JSearch API] RAPIDAPI_KEY is not defined in environment variables. No sample jobs will be inserted.`);
+      throw new Error('JSEARCH_MISSING_KEY: ยังไม่ได้ตั้งค่าคีย์ JSearch ของบริการ API รักษางานเดิมไว้');
     }
 
     return jobs.slice(0, limit);
@@ -497,14 +502,15 @@ export class IngestionService {
   }
 
   // =========================================================================
-  // 3. BLOGNONE JOBS SCRAPER (Live Scraper with Native TLS Bypass)
+  // 3. BLOGNONE JOBS SCRAPER
   // =========================================================================
   private async scrapeBlognoneJobs(limit = 15): Promise<any[]> {
     this.logger.log(`[Blognone Scraper] Fetching live jobs from https://jobs.blognone.com/search (quota: ${limit})...`);
     const jobs: any[] = [];
     try {
-      const html = this.fetchNativeHtml('https://jobs.blognone.com/search');
+      const html = await this.fetchNativeHtml('https://jobs.blognone.com/search');
       const $ = cheerio.load(html);
+      $('style, script').remove();
 
       $('a[href*="/job/"]').each((_, el) => {
         if (jobs.length >= limit) return;
@@ -522,18 +528,15 @@ export class IngestionService {
         }
 
         // Clean job title
-        const cleanedTitle = rawText
+        const cleanedTitle = ($(el).find('h3').first().text().trim() || rawText)
           .replace(/฿[\d,]+-฿[\d,]+.*$/, '')
           .replace(/^[0-9]+ (hours|days|mins|day) ago/i, '')
           .replace(/\.css-[a-z0-9]+/gi, '')
           .trim();
 
         // Extract company if present
-        let company = 'ไม่ระบุบริษัท';
-        const compMatch = rawText.match(/([A-Z0-9\s.,]+(?:CO\.,\s*LTD|Co\.,\s*Ltd|Company|Inc|Corp))/i);
-        if (compMatch && compMatch[1]) {
-          company = compMatch[1].trim();
-        }
+        const company = $(el).find('h4').first().nextAll('span')
+          .not('[itemtype], .text-muted').first().text().trim() || 'ไม่ระบุบริษัท';
 
         jobs.push({
           id: href.replace(/^\/.*\/job\//, '').replace(/\//g, '-'),
@@ -546,7 +549,7 @@ export class IngestionService {
           employmentType: JobType.FULL_TIME,
           salaryMin,
           salaryMax,
-          url: `https://jobs.blognone.com${href}`,
+          url: new URL(href, 'https://jobs.blognone.com').href,
         });
       });
 
@@ -554,7 +557,7 @@ export class IngestionService {
         this.logger.log(`[Blognone Scraper] Successfully extracted ${jobs.length} real live jobs from Blognone!`);
       }
     } catch (err: any) {
-      this.logger.warn(`[Blognone Scraper] Scraper encountered error: ${err.message}; no sample jobs will be inserted.`);
+      throw new Error(`BLOGNONE: ${err.message?.startsWith('SOURCE_') ? err.message : 'SOURCE_PARSE_FAILED: อ่านรายการงานจากต้นทางไม่ได้'}`);
     }
 
     return jobs.slice(0, limit);
@@ -576,7 +579,7 @@ export class IngestionService {
             ? `https://th.jobsdb.com/jobs?keywords=${encodeURIComponent(keyword)}`
             : `https://th.jobsdb.com/jobs?keywords=${encodeURIComponent(keyword)}&page=${page}`;
 
-        const html = this.fetchNativeHtml(pageUrl);
+        const html = await this.fetchNativeHtml(pageUrl);
         const $ = cheerio.load(html);
 
         $('script').each((_, el) => {
@@ -619,7 +622,8 @@ export class IngestionService {
           }
         });
       } catch (err: any) {
-        this.logger.warn(`[JobsDB Scraper] Live scrape returned error on page ${page}: ${err.message}.`);
+        if (!jobs.length) throw new Error(`JOBSDB: ${err.message?.startsWith('SOURCE_') ? err.message : 'SOURCE_PARSE_FAILED: อ่านรายการงานจากต้นทางไม่ได้'}`);
+        this.logger.warn(`[JobsDB Scraper] Could not fetch additional page ${page}; retaining ${jobs.length} fetched jobs`);
       }
     }
 
@@ -646,14 +650,15 @@ export class IngestionService {
             ? 'https://www.jobthai.com/th/jobs?keyword=software'
             : `https://www.jobthai.com/th/jobs?keyword=software&page=${page}`;
 
-        const html = this.fetchNativeHtml(pageUrl);
+        const html = await this.fetchNativeHtml(pageUrl);
         const $ = cheerio.load(html);
 
         $('a[href*="/company/job/"], a[id^="job-list-job-"]').each((_, el) => {
           if (jobs.length >= limit) return;
           const href = $(el).attr('href');
           const title = $(el).find('h2, .title, strong').first().text().trim() || $(el).text().trim();
-          const company = $(el).find('h2:nth-of-type(2), .company-name').text().trim() || 'ไม่ระบุบริษัท';
+          const company = $(el).find('[id^="job-list-company-name-"]').first().text().trim()
+            || $(el).find('.company-name').first().text().trim() || 'ไม่ระบุบริษัท';
           const invalidTitles = ['มุมมองแผนที่', 'แผนที่', 'กลับสู่ด้านบน', 'สมัครงาน'];
           if (
             href &&
@@ -678,7 +683,8 @@ export class IngestionService {
           }
         });
       } catch (err: any) {
-        this.logger.warn(`[JobThai Scraper] Live scrape returned error on page ${page}: ${err.message}.`);
+        if (!jobs.length) throw new Error(`JOBTHAI: ${err.message?.startsWith('SOURCE_') ? err.message : 'SOURCE_PARSE_FAILED: อ่านรายการงานจากต้นทางไม่ได้'}`);
+        this.logger.warn(`[JobThai Scraper] Could not fetch additional page ${page}; retaining ${jobs.length} fetched jobs`);
       }
     }
 
