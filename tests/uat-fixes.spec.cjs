@@ -239,6 +239,33 @@ test('JSearch distinguishes missing key, access failure and quota without storin
   }
 });
 
+test('JSearch prioritizes its trimmed dedicated key and falls back only when it is blank', async () => {
+  const previous={rapid:process.env.RAPIDAPI_KEY,jsearch:process.env.JSEARCH_API_KEY};
+  const original=axios.get;
+  const service=new IngestionService({}, {}, {});
+  const requested=[];
+  try {
+    axios.get=async(_url,options)=>{
+      requested.push(options.headers['X-RapidAPI-Key']);
+      return {data:{data:[{job_id:'qa-key-selection',job_title:'QA Developer',employer_name:'QA Employer',job_apply_link:'https://example.com/qa-job'}]}};
+    };
+    process.env.RAPIDAPI_KEY='  legacy-qa-key  ';
+    process.env.JSEARCH_API_KEY='  dedicated-qa-key  ';
+    assert.equal((await service.fetchJSearchJobs('QA',1)).length,1);
+    process.env.JSEARCH_API_KEY='   ';
+    assert.equal((await service.fetchJSearchJobs('QA',1)).length,1);
+    delete process.env.JSEARCH_API_KEY;
+    assert.equal((await service.fetchJSearchJobs('QA',1)).length,1);
+    assert.deepEqual(requested,['dedicated-qa-key','legacy-qa-key','legacy-qa-key']);
+    process.env.RAPIDAPI_KEY='   ';
+    await assert.rejects(service.fetchJSearchJobs('QA',1),/JSEARCH_MISSING_KEY/);
+    assert.equal(requested.length,3);
+  } finally {
+    axios.get=original;
+    for(const [key,value] of [['RAPIDAPI_KEY',previous.rapid],['JSEARCH_API_KEY',previous.jsearch]]) {if(value===undefined) delete process.env[key];else process.env[key]=value;}
+  }
+});
+
 test('Unavailable HTML sources report the actual HTTP reason while preserving existing jobs', async () => {
   for(const source of ['BLOGNONE','JOBSDB','JOBTHAI']) {
     const service=new IngestionService({job:{create:async()=>assert.fail('Unavailable sources must not insert')},ingestionLog:{create:async({data})=>data}}, {}, {getQuotaForSource:()=>5});

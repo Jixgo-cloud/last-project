@@ -507,7 +507,7 @@ export class IngestionService {
   // =========================================================================
   private async fetchJSearchJobs(query = 'React developer', limit = 15): Promise<any[]> {
     const jobs: any[] = [];
-    const apiKey = process.env.RAPIDAPI_KEY || process.env.JSEARCH_API_KEY;
+    const apiKey = process.env.JSEARCH_API_KEY?.trim() || process.env.RAPIDAPI_KEY?.trim();
     const apiUrl = process.env.JSEARCH_API_URL || 'https://jsearch.p.rapidapi.com';
 
     this.logger.log(`[JSearch API] Requesting live jobs (limit: ${limit})`);
