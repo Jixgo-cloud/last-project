@@ -22,6 +22,13 @@ function passed(name){checks.push({name,passed:true});}
 async function run(){
   const a=await admin('manual-admin@smartcareer.dev');const b=await admin('manual-admin2@smartcareer.dev');
   const first=await company(1);const second=await company(2);const empty=await company(13);
+  phase='course-confirmation';
+  for(const body of [{},{courseIds:[]},{courseIds:['invalid']},{courseIds:['00000000-0000-4000-8000-000000000000'],deleteAll:true}]) {
+    assert.equal((await call('/ingestion/cleanup-closed-courses?provider=UDEMY&limit=10',a,'POST',body)).status,400);
+  }
+  const preview=await(await call('/ingestion/preview-closed-courses?provider=UDEMY&limit=10',a)).json();
+  assert.equal(preview.scannedCount,2);assert.equal(preview.closedCount,1);assert.equal(preview.deletedCount,0);
+  passed('Course preview keeps data and manual cleanup rejects omitted, empty, invalid or expanded selections');
   const raw=fs.readFileSync(seed.documentPath);
   const body={businessRegNo:'0000000000000',documents:{files:[{name:'qa-not-a-legal-document.png',type:'image/png',size:raw.length,dataUrl:'data:image/png;base64,'+raw.toString('base64')}]}};
   phase='ownership';
