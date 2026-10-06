@@ -328,6 +328,33 @@ test('Rendered jobs wait for real cards after an intermediate 403, reject rate l
   assert.equal(closed,3);
 });
 
+test('Blognone ordinary headful Chrome has its own temporary display and releases it on success or browser failure', async () => {
+  const {fetchRenderedJobHtml}=require('../apps/api/dist/ingestion/rendered-job-html');
+  const previous=process.env.JOB_SCRAPER_BROWSER_MODE;process.env.JOB_SCRAPER_BROWSER_MODE='headful';
+  let displays=0,closed=0,browsersClosed=0,fail=false;
+  const display=async env=>{displays++;assert.equal(env.JWT_SECRET,undefined);assert.equal(env.DISPLAY,undefined);return {display:':83',close:async()=>{closed++;}};};
+  const launch=async options=>{assert.equal(options.headless,false);assert.equal(options.env.DISPLAY,':83');return {newPage:async()=>({setDefaultTimeout:()=>{},setRequestInterception:async()=>{},on:()=>{},goto:async()=>({status:()=>403}),url:()=> 'https://jobs.blognone.com/search',waitForSelector:async()=>{if(fail)throw new Error('not ready');},content:async()=>'<a href="/company/qa/job/1"><h3>Real QA job</h3></a>'}),close:async()=>{browsersClosed++;}};};
+  try{
+    assert.match(await fetchRenderedJobHtml('https://jobs.blognone.com/search',launch,display),/Real QA job/);
+    fail=true;await assert.rejects(fetchRenderedJobHtml('https://jobs.blognone.com/search',launch,display),/SOURCE_HTTP_403/);
+    assert.equal(displays,2);assert.equal(closed,2);assert.equal(browsersClosed,2);
+    await assert.rejects(fetchRenderedJobHtml('https://jobs.blognone.com/search',async()=>{throw new Error('failed launch');},display),/SOURCE_BROWSER_UNAVAILABLE/);assert.equal(closed,3);
+    const jobDbLaunch=async options=>{assert.equal(options.headless,true);assert.equal(options.env.DISPLAY,undefined);throw new Error('launch test');};
+    await assert.rejects(fetchRenderedJobHtml('https://th.jobsdb.com/jobs',jobDbLaunch,display),/SOURCE_BROWSER_UNAVAILABLE/);assert.equal(displays,3);
+  }finally{if(previous===undefined)delete process.env.JOB_SCRAPER_BROWSER_MODE;else process.env.JOB_SCRAPER_BROWSER_MODE=previous;}
+});
+
+test('Virtual job displays do not listen on TCP and clean up failed startup without exposing system errors', async () => {
+  const {EventEmitter}=require('node:events');const {openJobVirtualDisplay}=require('../apps/api/dist/ingestion/job-virtual-display');let output='83\n',exitEarly=false,killed=0;
+  const start=(command,args,options)=>{assert.equal(command,'Xvfb');assert.deepEqual(args.slice(-2),['-nolisten','tcp']);assert.equal(options.env.JWT_SECRET,undefined);assert.equal(options.windowsHide,true);assert.deepEqual(options.stdio,['ignore','ignore','ignore','pipe']);
+    const child=new EventEmitter();const pipe=new EventEmitter();child.stdio=[null,null,null,pipe];child.pid=99;child.exitCode=null;child.signalCode=null;child.kill=signal=>{killed++;child.signalCode=signal;child.emit('exit');return true;};
+    queueMicrotask(()=>exitEarly?child.emit('error',new Error('private system paths')):pipe.emit('data',Buffer.from(output)));return child;
+  };
+  const display=await openJobVirtualDisplay({PATH:'isolated-test'},start);assert.equal(display.display,':83');await display.close();await display.close();assert.equal(killed,1);
+  for(const invalid of ['\n','999999\n','private path','x'.repeat(17)]){output=invalid;await assert.rejects(openJobVirtualDisplay({},start),error=>/SOURCE_DISPLAY_UNAVAILABLE/.test(error.message)&&!error.message.includes('private'))}
+  exitEarly=true;await assert.rejects(openJobVirtualDisplay({},start),/SOURCE_DISPLAY_UNAVAILABLE/);assert.equal(killed,6);
+});
+
 test('JobsDB parses visible cards and deduplicates legacy data while preserving actual job type and arrangement', async () => {
   const service=new IngestionService({}, {}, {});
   service.fetchNativeHtml=async()=>`<article data-testid="job-card"><a data-automation="jobTitle" href="/job/12345?ref=search">QA Developer</a><a data-automation="jobCompany">QA Company</a><a data-automation="jobLocation">Bangkok</a><span data-automation="jobShortDescription">Build QA tools</span><span data-testid="work-arrangement">Hybrid</span><p>This is a Contract/Temp job</p></article><script>window.SEEK_REDUX_DATA = {"results":{"results":{"jobs":[{"id":12345,"title":"QA Developer"}]}}};</script>`;

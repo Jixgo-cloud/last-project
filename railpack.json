@@ -1,0 +1,9 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "deploy": {
+    "aptPackages": ["...", "xvfb"],
+    "variables": {
+      "JOB_SCRAPER_BROWSER_MODE": "headful"
+    }
+  }
+}

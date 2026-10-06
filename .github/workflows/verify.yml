@@ -57,6 +57,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y xvfb fonts-thai-tlwg
+      - name: Verify isolated temporary headful job browser
+        run: node scripts/verify-job-browser-display.cjs
       - run: xvfb-run --auto-servernum npm run test:regression
       - uses: actions/upload-artifact@v4
         if: always()

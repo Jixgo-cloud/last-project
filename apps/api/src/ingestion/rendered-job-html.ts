@@ -1,4 +1,5 @@
 import puppeteer, { Browser, LaunchOptions } from 'puppeteer';
+import { openJobVirtualDisplay } from './job-virtual-display';
 
 const sourceHosts = new Set(['th.jobsdb.com', 'jobs.blognone.com']);
 const assetHosts = new Set([
@@ -29,6 +30,7 @@ export function allowedJobAsset(url: string): boolean {
 export async function fetchRenderedJobHtml(
   url: string,
   launch: (options: LaunchOptions) => Promise<Browser> = options => puppeteer.launch(options),
+  openDisplay = openJobVirtualDisplay,
 ): Promise<string> {
   if (!allowedJobPage(url)) throw new Error('SOURCE_BROWSER_URL_DENIED: ที่อยู่แหล่งงานไม่รองรับ');
   const previous = queue;
@@ -36,6 +38,7 @@ export async function fetchRenderedJobHtml(
   queue = new Promise<void>(resolve => { release = resolve; });
   await previous;
   let browser: Browser | undefined;
+  let display: Awaited<ReturnType<typeof openJobVirtualDisplay>> | undefined;
   try {
     // Railway's root container needs Chrome's container mode. Workstations keep the default sandbox.
     const args = ['--disable-dev-shm-usage'];
@@ -44,8 +47,14 @@ export async function fetchRenderedJobHtml(
     for (const name of ['PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'SYSTEMROOT', 'WINDIR']) {
       if (process.env[name]) browserEnv[name] = process.env[name]!;
     }
+    // Ordinary Chrome on a private temporary display, with default automation
+    // signals intact. Never reuse a desktop/account session or click challenges.
+    if (new URL(url).hostname === 'jobs.blognone.com' && process.env.JOB_SCRAPER_BROWSER_MODE === 'headful') {
+      display = await openDisplay(browserEnv);
+      browserEnv.DISPLAY = display.display;
+    }
     browser = await launch({
-      headless: true, args, env: browserEnv, timeout: 30000,
+      headless: !display, args, env: browserEnv, timeout: 30000,
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     });
     const page = await browser.newPage();
@@ -82,6 +91,7 @@ export async function fetchRenderedJobHtml(
       : 'SOURCE_BROWSER_UNAVAILABLE: เปิดเบราว์เซอร์อ่านแหล่งงานไม่ได้ ให้ตรวจบริการ');
   } finally {
     try { await browser?.close(); } catch { /* Do not disclose runtime paths or provider responses. */ }
+    try { await display?.close(); } catch { /* Release remains mandatory after cleanup errors. */ }
     release();
   }
 }
