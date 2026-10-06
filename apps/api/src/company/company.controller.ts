@@ -9,6 +9,8 @@ import {
   Param,
   Query,
   ParseUUIDPipe,
+  ParseIntPipe,
+  Header,
   UseGuards,
   Request,
   Res,
@@ -34,7 +36,14 @@ export class CompanyController {
 
   @Get('profile')
   async getProfile(@Request() req: any) {
-    return this.companyService.getCompanyByUserId(req.user.id);
+    return this.companyService.getProfile(req.user.id);
+  }
+
+  @Get('verifications/:id/documents/:index')
+  @Header('Cache-Control', 'private, no-store')
+  @Header('X-Content-Type-Options', 'nosniff')
+  async downloadVerificationDocument(@Request() req: any, @Param('id', ParseUUIDPipe) id: string, @Param('index', ParseIntPipe) index: number) {
+    return this.companyService.downloadVerificationDocument(req.user.id, id, index);
   }
 
   @Put('profile')

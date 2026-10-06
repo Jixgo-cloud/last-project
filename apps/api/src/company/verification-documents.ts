@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, StreamableFile } from '@nestjs/common';
 import { VERIFICATION_MAX_BYTES } from '@smartcareer/shared';
 import { VerificationDocumentsDto, VerificationFileDto } from './dto/company-profile.dto';
 
@@ -28,4 +28,20 @@ export function decodeVerificationFile(file: VerificationFileDto): Buffer {
         : bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]));
     if (!validHeader) throw new BadRequestException('เนื้อหาไฟล์ไม่ตรงกับชนิด PDF, JPG หรือ PNG');
     return bytes;
+}
+
+export function streamVerificationDocument(documents: any, index: number): StreamableFile {
+  if (!Number.isSafeInteger(index) || index < 0) throw new BadRequestException('Invalid document index');
+  const file = Array.isArray(documents?.files) ? documents.files[index] : undefined;
+  if (!file || typeof file.dataUrl !== 'string' || typeof file.name !== 'string' || typeof file.type !== 'string' || !Number.isSafeInteger(file.size)) {
+    throw new NotFoundException('ไม่พบเอกสารนี้');
+  }
+  if (file.dataUrl.length > 14 * 1024 * 1024) throw new BadRequestException('ไฟล์เอกสารมีขนาดใหญ่เกินกว่าที่ระบบรองรับ');
+  const bytes = decodeVerificationFile(file);
+  const filename = file.name.replace(/[\x00-\x1f\x7f/\\]/g, '_').slice(0, 255) || 'document';
+  return new StreamableFile(bytes, {
+    type: file.type,
+    disposition: `attachment; filename="document"; filename*=UTF-8''${encodeURIComponent(filename).replace(/['()*]/g, character => '%' + character.charCodeAt(0).toString(16).toUpperCase())}`,
+    length: bytes.length,
+  });
 }

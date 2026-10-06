@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { VerificationDocumentsDto } from './dto/company-profile.dto';
-import { validateVerificationDocuments } from './verification-documents';
+import { validateVerificationDocuments, streamVerificationDocument } from './verification-documents';
 import { PrismaService } from '../prisma/prisma.service';
 import { CandidateService } from '../candidate/candidate.service';
 import {
@@ -95,6 +95,28 @@ export class CompanyService {
     }
 
     return updated;
+  }
+
+  async getProfile(userId: string) {
+    const company = await this.getCompanyByUserId(userId);
+    return { ...company, verifications: company.verifications.map(verification => {
+      const documents = verification.documents as any;
+      const files = Array.isArray(documents?.files) ? documents.files.map((file: any, index: number) => ({
+        name: file.name, type: file.type, size: file.size,
+        dataUrl: typeof file.dataUrl === 'string'
+          ? `/api/company/verifications/${encodeURIComponent(verification.id)}/documents/${index}` : null,
+      })) : [];
+      return { ...verification, documents: { files } };
+    }) };
+  }
+
+  async downloadVerificationDocument(userId: string, verificationId: string, index: number) {
+    const company = await this.getCompanyByUserId(userId);
+    const verification = await this.prisma.companyVerification.findFirst({
+      where: { id: verificationId, companyId: company.id }, select: { documents: true },
+    });
+    if (!verification) throw new NotFoundException('ไม่พบเอกสารนี้');
+    return streamVerificationDocument(verification.documents, index);
   }
 
   async submitVerification(userId: string, businessRegNo: string, documents: VerificationDocumentsDto) {

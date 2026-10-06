@@ -1,7 +1,7 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, StreamableFile } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { VerificationQueryDto } from './dto/verification-query.dto';
-import { decodeVerificationFile } from '../company/verification-documents';
+import { streamVerificationDocument } from '../company/verification-documents';
 import { PrismaService } from '../prisma/prisma.service';
 import { assessmentQuestionsMatch, getAssessmentValidationError, VerificationStatus } from '@smartcareer/shared';
 
@@ -92,20 +92,7 @@ export class AdminService {
   async downloadVerificationDocument(verificationId: string, index: number) {
     if (!Number.isSafeInteger(index) || index < 0) throw new BadRequestException('Invalid document index');
     const verification = await this.prisma.companyVerification.findUnique({ where: { id: verificationId }, select: { documents: true } });
-    const documents = verification?.documents as any;
-    const file = Array.isArray(documents?.files) ? documents.files[index] : undefined;
-    if (!file || typeof file.dataUrl !== 'string' || typeof file.name !== 'string' || typeof file.type !== 'string' || !Number.isSafeInteger(file.size)) {
-      throw new NotFoundException('ไม่พบเอกสารนี้');
-    }
-    // Older requests may have attachments above today's 3 MiB upload limit.
-    if (file.dataUrl.length > 14 * 1024 * 1024) throw new BadRequestException('ไฟล์เอกสารมีขนาดใหญ่เกินกว่าที่ระบบรองรับ');
-    const bytes = decodeVerificationFile(file);
-    const filename = file.name.replace(/[\x00-\x1f\x7f/\\]/g, '_').slice(0, 255) || 'document';
-    return new StreamableFile(bytes, {
-      type: file.type,
-      disposition: `attachment; filename="document"; filename*=UTF-8''${encodeURIComponent(filename).replace(/['()*]/g, character => '%' + character.charCodeAt(0).toString(16).toUpperCase())}`,
-      length: bytes.length,
-    });
+    return streamVerificationDocument(verification?.documents, index);
   }
 
   async reviewVerification(

@@ -16,6 +16,37 @@ const { SubmitCompanyVerificationDto } = require('../apps/api/dist/company/dto/c
 const { validateVerificationDocuments } = require('../apps/api/dist/company/verification-documents');
 const { VerificationQueryDto } = require('../apps/api/dist/admin/dto/verification-query.dto');
 const { VerificationReviewDto } = require('../apps/api/dist/admin/dto/verification-review.dto');
+const { CompanyService } = require('../apps/api/dist/company/company.service');
+
+test('Company document downloads select only owned requests and preserve bytes and safe filenames', async () => {
+  const bytes = Buffer.from('%PDF-QA test file');
+  const documents = {files:[{name:'../เอกสาร\nQA.pdf',type:'application/pdf',size:bytes.length,dataUrl:'data:application/pdf;base64,'+bytes.toString('base64')}]};
+  let query;
+  const service = new CompanyService({companyVerification:{findFirst:async args => {
+    query=args;
+    return args.where.companyId==='company-a' && args.where.id==='request-a' ? {documents} : null;
+  }}}, {}, {});
+  service.getCompanyByUserId=async userId => ({id:userId==='owner-a'?'company-a':'company-b'});
+  const file = await service.downloadVerificationDocument('owner-a','request-a',0);
+  assert.deepEqual(query.where,{id:'request-a',companyId:'company-a'});
+  const chunks=[]; for await(const chunk of file.getStream())chunks.push(chunk);
+  assert.deepEqual(Buffer.concat(chunks),bytes);
+  assert.equal(file.getHeaders().type,'application/pdf');
+  assert.equal(file.getHeaders().length,bytes.length);
+  assert(!file.getHeaders().disposition.includes('\n'));
+  await assert.rejects(service.downloadVerificationDocument('owner-b','request-a',0),error=>error.getStatus()===404);
+  for (const index of [-1,1,0.5]) await assert.rejects(service.downloadVerificationDocument('owner-a','request-a',index));
+  documents.files[0].size++;
+  await assert.rejects(service.downloadVerificationDocument('owner-a','request-a',0),error=>error.getStatus()===400);
+});
+
+test('Company profile attachment metadata never returns embedded file content', async () => {
+  const service = new CompanyService({}, {}, {});
+  service.getCompanyByUserId=async()=>({id:'company-a',verifications:[{id:'request-a',documents:{files:[{name:'QA.png',type:'image/png',size:5,dataUrl:'data:image/png;base64,PRIVATE-BYTES'}]}}]});
+  const profile=await service.getProfile('owner-a');
+  assert.equal(profile.verifications[0].documents.files[0].dataUrl,'/api/company/verifications/request-a/documents/0');
+  assert(!JSON.stringify(profile).includes('PRIVATE-BYTES'));
+});
 
 test('Readiness reports the deployed revision and never exposes connection errors or invalid metadata', async () => {
   const previous = process.env.RAILWAY_GIT_COMMIT_SHA;
