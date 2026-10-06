@@ -9,6 +9,7 @@ import { IngestionConfigService } from './ingestion-config.service';
 import { mentionsSkill } from '../recommendations/course-skill-evidence';
 import { fetchRenderedJobHtml } from './rendered-job-html';
 import { fetchPublicJobHttp2 } from './public-job-http2';
+import { fetchBlognonePublicJobs } from './blognone-public-jobs';
 import { validateLocalJobBatch } from './local-job-batch';
 import { honestJobContent } from '../jobs/job-content';
 
@@ -697,6 +698,15 @@ export class IngestionService {
         html = await this.fetchJobSourceHtml('https://jobs.blognone.com/search');
       } catch (error: any) {
         if (!/^SOURCE_HTTP_403:/.test(error?.message || '')) throw error;
+        // Use the anonymous job query used by the source's own homepage.
+        // Its eight featured jobs are a real subset, not the full search catalog.
+        try {
+          const publicJobs = await fetchBlognonePublicJobs(limit);
+          this.logger.log(`[Blognone Scraper] Read ${publicJobs.length} real jobs from the public homepage API`);
+          return publicJobs;
+        } catch (apiError: any) {
+          if (!/^SOURCE_HTTP_403:/.test(apiError?.message || '')) throw apiError;
+        }
         // The public homepage publishes the same real job-card fields, with a
         // smaller selection. Read it once rather than inventing replacement jobs.
         this.logger.log('[Blognone Scraper] Reading actual cards on the public homepage');

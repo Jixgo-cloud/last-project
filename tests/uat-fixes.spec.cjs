@@ -346,9 +346,12 @@ test('Blognone preserves contract work and skips links without actual job titles
 
 test('A denied Blognone listing can read real public homepage cards once; other failures never trigger this alternative', async () => {
   const transport=require('../apps/api/dist/ingestion/public-job-http2');
+  const publicApi=require('../apps/api/dist/ingestion/blognone-public-jobs');
+  const originalApi=publicApi.fetchBlognonePublicJobs;
   const original=transport.fetchPublicJobHttp2;
   const service=new IngestionService({}, {}, {});let calls=0;
   try {
+    publicApi.fetchBlognonePublicJobs=async()=>{throw new Error('SOURCE_HTTP_403: API denied');};
     service.fetchJobSourceHtml=async()=>{throw new Error('SOURCE_HTTP_403: denied');};
     transport.fetchPublicJobHttp2=async url=>{calls++;assert.equal(url,'https://jobs.blognone.com/');return '<a href="/company/qa/job/home"><h3>Homepage QA Developer</h3><h4>Contract</h4><span>Actual QA Company</span></a>';};
     const jobs=await service.scrapeBlognoneJobs(5);
@@ -358,7 +361,53 @@ test('A denied Blognone listing can read real public homepage cards once; other 
     service.fetchJobSourceHtml=async()=>{throw new Error('SOURCE_HTTP_403: denied');};
     transport.fetchPublicJobHttp2=async()=>{throw new Error('SOURCE_HTTP_403: homepage also denied');};
     await assert.rejects(service.scrapeBlognoneJobs(5),/SOURCE_HTTP_403/);
-  } finally {transport.fetchPublicJobHttp2=original;}
+  } finally {transport.fetchPublicJobHttp2=original;publicApi.fetchBlognonePublicJobs=originalApi;}
+});
+
+test('Blognone public job API preserves real fields, hides negotiable salaries and rejects incomplete or unsafe data', () => {
+  const {parseBlognonePublicJobs}=require('../apps/api/dist/ingestion/blognone-public-jobs');
+  const row={slug:'qa-1',title:'QA Developer',company:{slug:'actual-qa',name_en:'Actual QA'},type:'JOBTYPE_CONTRACT',province:'กรุงเทพมหานคร',district:'บางรัก',salary_min:25000,salary_max:45000,salary_display_format:'MIN_MAX'};
+  const payload={data:{home_jobs:[row,{...row,slug:'qa-2',salary_display_format:'NEGOTIABLE'}]}};
+  const jobs=parseBlognonePublicJobs(payload,5);
+  assert.equal(jobs.length,2);assert.equal(jobs[0].employmentType,'CONTRACT');assert.equal(jobs[0].salaryMin,25000);assert.equal(jobs[0].location,'บางรัก, กรุงเทพมหานคร');
+  assert.equal(jobs[0].url,'https://jobs.blognone.com/company/actual-qa/job/qa-1');assert.equal(jobs[1].salaryMin,null);assert.equal(jobs[1].salaryMax,null);
+  assert.equal(parseBlognonePublicJobs(payload,1).length,1);assert.deepEqual(parseBlognonePublicJobs({data:{home_jobs:[]}},1),[]);
+  for(const change of [{slug:'../private'},{company:{slug:'qa?token=x',name_en:'QA'}},{title:''},{type:'UNKNOWN'},{salary_min:50000},{salary_max:-1},{province:{private:true}}]){
+    assert.throws(()=>parseBlognonePublicJobs({data:{home_jobs:[{...row,...change}]}},5),/SOURCE_DATA_INVALID/);
+  }
+  assert.throws(()=>parseBlognonePublicJobs({data:{home_jobs:[row,row]}},5),/SOURCE_DATA_INVALID/);
+  assert.throws(()=>parseBlognonePublicJobs({errors:[{message:'private details'}],data:{home_jobs:[row]}},5),/SOURCE_DATA_INVALID/);
+  assert.throws(()=>parseBlognonePublicJobs({data:{}},5),/SOURCE_DATA_INVALID/);
+});
+
+test('Blognone public API uses a bounded anonymous read and never exposes provider error details', async () => {
+  const {fetchBlognonePublicJobs,blognonePublicEndpoint}=require('../apps/api/dist/ingestion/blognone-public-jobs');
+  const axios=require('axios');const original=axios.post;
+  try {
+    axios.post=async(url,body,options)=>{assert.equal(url,blognonePublicEndpoint);assert.match(body.query,/query getHome/);assert.doesNotMatch(body.query,/mutation|my_candidate/);assert.equal(options.timeout,12000);assert.equal(options.maxRedirects,0);assert.equal(options.headers.Authorization,undefined);return {data:{data:{home_jobs:[]}}};};
+    assert.deepEqual(await fetchBlognonePublicJobs(5),[]);
+    axios.post=async()=>{throw {response:{status:429,data:'private details'}};};
+    await assert.rejects(fetchBlognonePublicJobs(5),error=>/SOURCE_HTTP_429/.test(error.message)&&!error.message.includes('private'));
+    axios.post=async()=>({data:{errors:[{message:'private details'}]}});
+    await assert.rejects(fetchBlognonePublicJobs(5),/SOURCE_DATA_INVALID/);
+  }finally{axios.post=original;}
+});
+
+test('A denied Blognone HTML listing uses the public API; rate limits and malformed data stop without another retry', async () => {
+  const publicApi=require('../apps/api/dist/ingestion/blognone-public-jobs');const original=publicApi.fetchBlognonePublicJobs;
+  const service=new IngestionService({}, {}, {});let calls=0;
+  try{
+    service.fetchJobSourceHtml=async()=>{throw new Error('SOURCE_HTTP_403: denied');};
+    publicApi.fetchBlognonePublicJobs=async limit=>{calls++;assert.equal(limit,5);return [{id:'qa-1',title:'Actual QA job'}];};
+    assert.equal((await service.scrapeBlognoneJobs(5))[0].id,'qa-1');
+    service.fetchJobSourceHtml=async()=>{throw new Error('SOURCE_HTTP_429: rate limited');};
+    await assert.rejects(service.scrapeBlognoneJobs(5),/SOURCE_HTTP_429/);assert.equal(calls,1);
+    service.fetchJobSourceHtml=async()=>{throw new Error('SOURCE_HTTP_403: denied');};
+    for(const message of ['SOURCE_HTTP_429: rate limited','SOURCE_DATA_INVALID: missing data']){
+      publicApi.fetchBlognonePublicJobs=async()=>{throw new Error(message);};
+      await assert.rejects(service.scrapeBlognoneJobs(5),error=>error.message.includes(message));
+    }
+  }finally{publicApi.fetchBlognonePublicJobs=original;}
 });
 
 test('Job HTML uses the authorized browser for 403 or unrendered pages, but does not retry rate limits', async () => {
