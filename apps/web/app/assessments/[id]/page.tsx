@@ -4,6 +4,7 @@ import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import AssessmentResultGuidance from '@/components/AssessmentResultGuidance';
 import { useAuth } from '@/lib/auth-context';
 import { apiRequest } from '@/lib/api';
 import { getCodingFailureKind } from '@/lib/assessment-errors';
@@ -718,6 +719,8 @@ export default function AssessmentRunnerPage() {
                   </div>
                 )}
 
+                <AssessmentResultGuidance percentage={getAttemptPercentage(theoryResult)} passingScore={assessment.passingScore} feedbackHidden={theoryResult.feedbackHidden} skillName={assessment.skill?.name} />
+
                 <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
                   <Link
                     href="/profile?tab=skills"
@@ -988,6 +991,8 @@ export default function AssessmentRunnerPage() {
                         </Link>
                       </div>
                     )}
+
+                    <AssessmentResultGuidance percentage={getAttemptPercentage(codingFinalResult)} passingScore={assessment.passingScore} feedbackHidden={codingFinalResult.feedbackHidden} skillName={assessment.skill?.name} />
 
                     <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
                       <Link

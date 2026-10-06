@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { apiRequest } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { UserRole } from '@smartcareer/shared';
+import { useLanguage } from '@/lib/use-language';
+import { applicationStatusLabel } from '@/lib/application-status';
 import {
   Bell,
   CheckCircle2,
@@ -31,6 +33,7 @@ interface NotificationItem {
 }
 
 export default function NotificationBell() {
+  const { language } = useLanguage();
   const { user } = useAuth();
   const router = useRouter();
   const applicationListPath = user?.role === UserRole.COMPANY
@@ -289,7 +292,7 @@ export default function NotificationBell() {
                     {notif.metadata?.newStatus && (
                       <div className="mt-1.5 flex items-center gap-1.5">
                         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-white border border-slate-200 text-slate-700 shadow-2xs">
-                          สถานะ: {notif.metadata.newStatus}
+                          {language === 'EN' ? 'Status' : 'สถานะ'}: {applicationStatusLabel(notif.metadata.newStatus, language)}
                         </span>
                         {notif.metadata?.companyName && (
                           <span className="text-[10px] text-slate-400 truncate">

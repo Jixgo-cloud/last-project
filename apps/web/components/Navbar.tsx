@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { UserRole } from '@smartcareer/shared';
 import NotificationBell from './NotificationBell';
+import { useLanguage } from '@/lib/use-language';
 import {
   ChevronDown,
   LogOut,
@@ -30,7 +31,7 @@ export default function Navbar() {
   const [navOpen, setNavOpen] = useState(false);
   // User Account Dropdown State
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [lang, setLang] = useState<'TH' | 'EN'>('TH');
+  const { language: lang, setLanguage: setLang } = useLanguage();
 
   const navDropdownRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -163,6 +164,7 @@ export default function Navbar() {
               <button
                 type="button"
                 onClick={() => setLang('TH')}
+                aria-pressed={lang === 'TH'}
                 className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition ${
                   lang === 'TH' ? 'bg-[#6366f1] text-white shadow-sm' : 'text-[#667085] hover:text-[#111827]'
                 }`}
@@ -172,6 +174,7 @@ export default function Navbar() {
               <button
                 type="button"
                 onClick={() => setLang('EN')}
+                aria-pressed={lang === 'EN'}
                 className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition ${
                   lang === 'EN' ? 'bg-[#6366f1] text-white shadow-sm' : 'text-[#667085] hover:text-[#111827]'
                 }`}

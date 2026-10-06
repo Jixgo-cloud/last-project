@@ -471,6 +471,7 @@ export default function JobDetailPage() {
 
               {match ? (
                 <div>
+                  <p className="text-xs text-slate-500 mb-3">ประเมินจากทักษะและสายงานที่ตรงกับประกาศ ไม่ใช่คะแนนสอบหรือการยืนยันรับเข้าทำงาน</p>
                   <div className="flex items-baseline gap-2.5 mb-4">
                     <span className="text-4xl sm:text-5xl font-extrabold text-[#4f46e5] tracking-tight">
                       {match.matchScore}%
@@ -733,7 +734,7 @@ export default function JobDetailPage() {
 
                   <div className="pt-3 border-t border-slate-100 flex items-center justify-between mt-2 text-xs">
                     <span className="text-[11px] text-slate-400">
-                      {course.duration || 'Self-paced'}
+                      {course.duration || 'ยังไม่ระบุระยะเวลา'}
                     </span>
                     <a
                       href={course.url}

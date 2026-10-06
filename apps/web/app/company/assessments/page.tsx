@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import DeleteConfirmation from '@/components/DeleteConfirmation';
 import Footer from '@/components/Footer';
+import TheoryAttemptReview from '@/components/TheoryAttemptReview';
 import { apiRequest } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import {
@@ -1458,7 +1459,9 @@ export default function CompanyAssessmentsPage() {
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      ตรวจสอบโค้ดของผู้สมัคร ดูผลวิเคราะห์จาก AI และประเมินคะแนนขั้นสุดท้าย (Tech Lead Human Review)
+                      {selectedAssessmentForAttempts.type === AssessmentType.THEORY
+                        ? 'ตรวจคำตอบปรนัย คะแนนรายข้อ และประเมินคะแนนขั้นสุดท้าย'
+                        : 'ตรวจสอบโค้ดของผู้สมัคร ดูผลวิเคราะห์จาก AI และประเมินคะแนนขั้นสุดท้าย'}
                     </p>
                   </div>
                   <button
@@ -1488,7 +1491,7 @@ export default function CompanyAssessmentsPage() {
                           <th className="py-3 px-3">ส่งเมื่อ</th>
                           <th className="py-3 px-3 text-center">สถานะการตรวจ</th>
                           <th className="py-3 px-3 text-center">Anti-Cheat</th>
-                          <th className="py-3 px-3 text-center">AI Prelim</th>
+                          {selectedAssessmentForAttempts.type !== AssessmentType.THEORY && <th className="py-3 px-3 text-center">คะแนน AI เบื้องต้น</th>}
                           <th className="py-3 px-3 text-center">Final Score</th>
                           <th className="py-3 px-4 text-right">ดำเนินการ</th>
                         </tr>
@@ -1552,9 +1555,9 @@ export default function CompanyAssessmentsPage() {
                                 );
                               })()}
                             </td>
-                            <td className="py-3 px-3 text-center font-bold text-slate-800">
+                            {selectedAssessmentForAttempts.type !== AssessmentType.THEORY && <td className="py-3 px-3 text-center font-bold text-slate-800">
                               {att.aiScore !== null && att.aiScore !== undefined ? `${att.aiScore}%` : '-'}
-                            </td>
+                            </td>}
                             <td className="py-3 px-3 text-center">
                               {getAttemptPercentage(att) !== null ? (
                                 <span
@@ -1576,7 +1579,7 @@ export default function CompanyAssessmentsPage() {
                                 className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 ml-auto"
                               >
                                 <Eye className="h-3 w-3" />
-                                ตรวจโค้ด & รีวิว
+                                {selectedAssessmentForAttempts.type === AssessmentType.THEORY ? 'ตรวจคำตอบและผลสอบ' : 'ตรวจโค้ดและผลสอบ'}
                               </button>
                             </td>
                           </tr>
@@ -1608,14 +1611,16 @@ export default function CompanyAssessmentsPage() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="text-lg font-extrabold text-slate-900">
-                      ตรวจโค้ด & รีวิวผลการสอบ (Tech Lead Audit)
+                      {selectedAttemptForReview.assessment?.type === AssessmentType.THEORY ? 'ตรวจคำตอบและผลสอบปรนัย' : 'ตรวจโค้ดและผลสอบ'}
                     </h2>
                     <span className="text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-0.5 rounded-full">
                       {selectedAttemptForReview.candidate?.fullName || 'Candidate'}
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    ตรวจสอบโค้ดที่ส่งมา, ผลลัพธ์ Sandbox, รายงาน AI 4 มิติ และระบุคะแนนขั้นสุดท้ายพร้อมบันทึก Audit Trail
+                    {selectedAttemptForReview.assessment?.type === AssessmentType.THEORY
+                      ? 'ดูคำตอบที่เลือก ผลตรวจรายข้อ และคะแนนรวมก่อนยืนยันผลให้ผู้สมัคร'
+                      : 'ตรวจโค้ดที่ส่งมา ผลการรันและรายงาน AI ก่อนระบุคะแนนขั้นสุดท้าย'}
                   </p>
                 </div>
                 <button
@@ -1630,15 +1635,17 @@ export default function CompanyAssessmentsPage() {
                 {/* Score Summary Bar */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs">
                   <div>
-                    <span className="text-slate-400 block text-[10px]">AI Preliminary Score</span>
+                    <span className="text-slate-400 block text-[10px]">{selectedAttemptForReview.assessment?.type === AssessmentType.THEORY ? 'คะแนนดิบ / คะแนนเต็ม' : 'คะแนน AI เบื้องต้น'}</span>
                     <strong className="text-base text-slate-800">
-                      {selectedAttemptForReview.aiScore !== null ? `${selectedAttemptForReview.aiScore}%` : 'N/A'}
+                      {selectedAttemptForReview.assessment?.type === AssessmentType.THEORY
+                        ? (selectedAttemptForReview.score != null && selectedAttemptForReview.maxScore != null ? `${selectedAttemptForReview.score} / ${selectedAttemptForReview.maxScore}` : 'ยังไม่มีคะแนนดิบครบถ้วน')
+                        : (selectedAttemptForReview.aiScore != null ? `${selectedAttemptForReview.aiScore}%` : 'ยังไม่มีผล AI')}
                     </strong>
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[10px]">Human Review Score</span>
+                    <span className="text-slate-400 block text-[10px]">คะแนนหลังผู้ตรวจประเมิน</span>
                     <strong className="text-base text-purple-700">
-                      {selectedAttemptForReview.humanScore !== null ? `${selectedAttemptForReview.humanScore}%` : 'ยังไม่ได้ระบุ'}
+                      {selectedAttemptForReview.humanScore != null ? `${selectedAttemptForReview.humanScore}%` : 'ยังไม่ได้ระบุ'}
                     </strong>
                   </div>
                   <div>
@@ -1703,7 +1710,7 @@ export default function CompanyAssessmentsPage() {
                 })()}
 
                 {/* Candidate Submitted Source Code */}
-                <div>
+                {selectedAttemptForReview.assessment?.type === AssessmentType.THEORY ? <TheoryAttemptReview attempt={selectedAttemptForReview} /> : <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                       <FileCode className="h-4 w-4 text-indigo-600" /> โค้ดของผู้สมัคร (Candidate Source Code)
@@ -1714,10 +1721,10 @@ export default function CompanyAssessmentsPage() {
                       selectedAttemptForReview.answers?.[0]?.submittedCode ||
                       '(ไม่มีโค้ดที่ส่งมา)'}
                   </pre>
-                </div>
+                </div>}
 
                 {/* AI Evaluation Snapshot (4-dimension rubric) */}
-                {selectedAttemptForReview.evaluationSnapshot && (
+                {selectedAttemptForReview.assessment?.type !== AssessmentType.THEORY && selectedAttemptForReview.evaluationSnapshot && (
                   <div className="p-4 rounded-2xl bg-purple-50/60 border border-purple-200 text-xs space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-purple-900 flex items-center gap-1.5 text-xs">
@@ -1797,13 +1804,13 @@ export default function CompanyAssessmentsPage() {
                 <form onSubmit={handleSubmitOverride} className="p-4 rounded-2xl border border-indigo-200 bg-indigo-50/40 space-y-3">
                   <div className="flex items-center gap-1.5 font-bold text-indigo-950 text-xs">
                     <Award className="h-4 w-4 text-indigo-600" />
-                    <span>Tech Lead Human Review & Score Override (การให้คะแนนขั้นสุดท้าย)</span>
+                    <span>การยืนยันหรือปรับคะแนนขั้นสุดท้าย</span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                        คะแนนที่ Tech Lead ประเมิน (0-100) *
+                        คะแนนที่ผู้ตรวจประเมิน (0-100%) *
                       </label>
                       <input
                         type="number"
@@ -1817,12 +1824,12 @@ export default function CompanyAssessmentsPage() {
                     </div>
                     <div className="sm:col-span-2">
                       <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                        เหตุผลการประเมิน / ตรวจสอบ (Audit Trail) *
+                        เหตุผลการตรวจหรือปรับคะแนนสำหรับบันทึกภายในบริษัท *
                       </label>
                       <input
                         type="text"
                         required
-                        placeholder="เช่น ตรวจสอบโครงสร้างโค้ดและ Business logic ผ่านตามเกณฑ์..."
+                        placeholder="เช่น ตรวจคำตอบและยืนยันคะแนนตามเกณฑ์ของข้อสอบ"
                         value={overrideReason}
                         onChange={(e) => setOverrideReason(e.target.value)}
                         className="w-full p-2 rounded-xl border border-slate-200 text-xs bg-white"
@@ -1843,7 +1850,7 @@ export default function CompanyAssessmentsPage() {
                       disabled={overriding}
                       className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition shadow-xs disabled:opacity-50"
                     >
-                      {overriding ? 'กำลังบันทึก...' : 'บันทึกคะแนน Tech Lead (Finalize Score)'}
+                      {overriding ? 'กำลังบันทึก...' : 'บันทึกคะแนนขั้นสุดท้าย'}
                     </button>
                   </div>
                 </form>

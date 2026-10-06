@@ -1025,7 +1025,7 @@ export class AssessmentsService {
             company: {
               include: { members: true },
             },
-            questions: true,
+            questions: { include: { choices: { orderBy: { order: 'asc' } } }, orderBy: { createdAt: 'asc' } },
           },
         },
         answers: true,

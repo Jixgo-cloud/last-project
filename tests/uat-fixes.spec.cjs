@@ -727,7 +727,7 @@ test('Raw points normalize against their maximum; human zero overrides machine s
 test('All three company disclosure modes enforce review state and never expose marking snapshots', () => {
   for (const visibility of ['IMMEDIATE','AFTER_REVIEW','PRIVATE_TO_COMPANY']) {
     for (const reviewStatus of ['PENDING_HUMAN_REVIEW','HUMAN_REVIEWED']) {
-      const input = { score:50, percentage:100, humanScore:100, passed:true, snapshot:{secret:true}, answers:[{isCorrect:true}], evaluationSnapshot:{secret:true}, reviewStatus, assessment:{companyId:'company', feedbackVisibility:visibility, questions:[{solutionCode:'secret'}]} };
+      const input = { score:50, percentage:100, humanScore:100, passed:true, reviewReason:'Internal audit only', reviewedById:'internal-reviewer', snapshot:{secret:true}, answers:[{isCorrect:true}], evaluationSnapshot:{secret:true}, reviewStatus, assessment:{companyId:'company', feedbackVisibility:visibility, questions:[{solutionCode:'secret'}]} };
       const output = candidateFeedback(input);
       const hidden = visibility === 'PRIVATE_TO_COMPANY' || (visibility === 'AFTER_REVIEW' && reviewStatus !== 'HUMAN_REVIEWED');
       assert.equal(output.feedbackHidden, hidden);
@@ -735,6 +735,8 @@ test('All three company disclosure modes enforce review state and never expose m
       assert.equal(output.snapshot, undefined);
       assert.equal(output.answers, undefined);
       assert.equal(output.assessment.questions, undefined);
+      assert.equal(output.reviewReason, undefined);
+      assert.equal(output.reviewedById, undefined);
       assert.equal(input.percentage, 100);
       if (hidden) assert.equal(output.evaluationSnapshot, null);
     }
@@ -903,4 +905,101 @@ test('Course filters do not recommend JavaScript courses as Java from old inferr
   const matched=await service.getAllCourses({skillId:'js'});
   assert.deepEqual(matched[0].skills.map(s=>s.skillId),['js']);
   assert.equal(course.skills.length,2);
+});
+
+function loadPilotUi(file) {
+  const fs = require('node:fs'), ts = require('typescript');
+  const module = {exports:{}};
+  const code = ts.transpileModule(fs.readFileSync(file,'utf8'), {compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2020}}).outputText;
+  const resolve = name => name === 'next/link' ? {default:props=>require('react').createElement('a',props,props.children)} : require(name);
+  new Function('require','module','exports',code)(resolve,module,module.exports);
+  return module.exports;
+}
+
+test('Theory review keeps original question order, selected answers and genuine zero marks', () => {
+  const React = require('react'), {renderToStaticMarkup} = require('react-dom/server');
+  const View = loadPilotUi('apps/web/components/TheoryAttemptReview.tsx').default;
+  const questions = [
+    {id:'b',title:'Second question',prompt:'Second prompt',points:99,choices:[{id:'b1',text:'Correct second answer',isCorrect:true},{id:'b2',text:'Wrong second answer',isCorrect:false}]},
+    {id:'a',title:'First question',prompt:'First prompt',points:25,choices:[{id:'a1',text:'Correct first answer',isCorrect:true}]},
+  ];
+  const html = renderToStaticMarkup(React.createElement(View,{attempt:{assessment:{questions},snapshot:{questions:[{id:'a',points:25},{id:'b',points:25}]},answers:[{questionId:'a',selectedChoiceId:'a1',isCorrect:true,pointsEarned:25},{questionId:'b',selectedChoiceId:'b2',isCorrect:false,pointsEarned:0}]}}));
+  assert(html.indexOf('First question') < html.indexOf('Second question'));
+  assert.match(html,/Wrong second answer/); assert.match(html,/Correct second answer/);
+  assert.match(html,/0 \/ 25 คะแนน/); assert.doesNotMatch(html,/99 คะแนน|Source code|ตรวจโค้ด/);
+});
+
+test('Result guidance never reveals hidden or pending feedback and distinguishes exam from selection', () => {
+  const React = require('react'), {renderToStaticMarkup} = require('react-dom/server');
+  const View = loadPilotUi('apps/web/components/AssessmentResultGuidance.tsx').default;
+  const render = props => renderToStaticMarkup(React.createElement(View,{passingScore:70,...props}));
+  assert.equal(render({percentage:100,feedbackHidden:true}),'');
+  assert.equal(render({percentage:null}),''); assert.equal(render({percentage:NaN}),'');
+  const failed=render({percentage:0,skillName:'JavaScript'});
+  assert.match(failed,/คะแนน 0% ยังไม่ถึง/); assert.match(failed,/JavaScript/);
+  assert.match(failed,/href="\/courses"/); assert.match(failed,/ไม่ใช่คะแนนความเหมาะสมกับงาน/);
+  assert.match(render({percentage:100}),/ถึงเกณฑ์ผ่าน 70% แล้ว/);
+});
+
+test('Application localization preserves employer notes and unknown statuses', () => {
+  const {applicationStatusLabel:label,applicationHistoryNote:note}=loadPilotUi('apps/web/lib/application-status.ts');
+  for(const status of ['APPLIED','REVIEWING','INTERVIEW','TECHNICAL_TEST','OFFER','ACCEPTED','REJECTED','CANCELLED']){
+    assert.notEqual(label(status,'TH'),status); assert.notEqual(label(status,'EN'),status);
+  }
+  assert.equal(label('FUTURE_STATUS','TH'),'FUTURE_STATUS');
+  assert.equal(note('Status updated to REJECTED','TH'),'เปลี่ยนสถานะเป็นไม่ผ่านการคัดเลือก');
+  assert.equal(note('Status updated to REJECTED','EN'),'Status updated to Rejected');
+  assert.equal(note('Company note: Status updated to REJECTED','TH'),'Company note: Status updated to REJECTED');
+});
+
+test('Review detail permits the owning company and admin but strips marking keys for the candidate', async () => {
+  const attempt={id:'qa',candidateId:'candidate',score:25,percentage:50,reviewStatus:'HUMAN_REVIEWED',reviewReason:'Private note',reviewedById:'reviewer',snapshot:{questions:[{id:'q'}]},answers:[{questionId:'q',isCorrect:true}],assessment:{companyId:'company',feedbackVisibility:'AFTER_REVIEW',questions:[{id:'q',choices:[{id:'c',isCorrect:true}]}]}};
+  let role='COMPANY', members=[{companyId:'company'}], owner=null;
+  const prisma={assessmentAttempt:{findUnique:async query=>{assert.deepEqual(query.include.assessment.include.questions.include.choices.orderBy,{order:'asc'});return attempt;}},user:{findUnique:async()=>({role,companyMembers:members})},candidateProfile:{findUnique:async()=>owner}};
+  const service=new AssessmentsService(prisma,{},{});
+  assert.equal((await service.getAttemptReviewDetails('qa','company-user')).assessment.questions[0].choices[0].isCorrect,true);
+  members=[{companyId:'other-company'}];await assert.rejects(service.getAttemptReviewDetails('qa','outsider'),/Access denied/);
+  role='CANDIDATE';members=[];owner={id:'candidate'};
+  const candidate=await service.getAttemptReviewDetails('qa','candidate-user');
+  assert.equal(candidate.percentage,50); assert.equal(candidate.reviewReason,undefined);
+  assert.equal(candidate.answers,undefined);assert.equal(candidate.snapshot,undefined);assert.equal(candidate.assessment.questions,undefined);
+  role='ADMIN';owner=null;assert.equal((await service.getAttemptReviewDetails('qa','admin')).reviewReason,'Private note');
+});
+
+test('YouTube duration reads only a playable matching main video, ignoring ads and malformed metadata', () => {
+  const {youtubeDurationFromHtml:parse}=require('../apps/api/dist/ingestion/youtube-duration');
+  const id='cuEtnrL9-H0';
+  const html=(details={},status='OK')=>'adData={"lengthSeconds":"99999"}; var ytInitialPlayerResponse = '+JSON.stringify({videoDetails:{videoId:id,lengthSeconds:'395',title:'Title with }; and \\" escapes',...details},playabilityStatus:{status}})+';';
+  assert.deepEqual(parse(html(),id),{seconds:395,duration:'6 นาที 35 วินาที'});
+  assert.deepEqual(parse(html({lengthSeconds:'30117'}),id),{seconds:30117,duration:'8 ชั่วโมง 21 นาที 57 วินาที'});
+  for(const details of [{videoId:'gieEQFIfgYc'},{isLive:true},{lengthSeconds:0},{lengthSeconds:-1},{lengthSeconds:true},{lengthSeconds:'1.5'},{lengthSeconds:'NaN'},{lengthSeconds:'999999999'}]) assert.equal(parse(html(details),id),null);
+  assert.equal(parse(html({},'LOGIN_REQUIRED'),id),null);
+  assert.equal(parse('ytInitialPlayerResponse = {broken;',id),null);
+  assert.equal(parse('<html>Challenge</html>',id),null);
+});
+
+test('YouTube fetch does not reuse estimated catalog duration when verification is unavailable', async () => {
+  const {IngestionService}=require('../apps/api/dist/ingestion/ingestion.service');
+  const service=new IngestionService({}, {}, {});
+  service.getCuratedCourses=()=>[{externalId:'yt-qa',url:'https://www.youtube.com/watch?v=cuEtnrL9-H0',title:'QA',duration:'7 hours'}];
+  const original=axios.get;
+  axios.get=async()=>{throw new Error('isolated network failure');};
+  try {const [course]=await service.fetchYouTubeCourses(1);assert.equal(course.duration,null);assert.equal(course.durationVerified,false);}
+  finally {axios.get=original;}
+});
+
+test('Duplicate course refresh only changes verified duration on the same video and records updated count', async () => {
+  const {IngestionService}=require('../apps/api/dist/ingestion/ingestion.service');
+  const writes=[], url='https://www.youtube.com/watch?v=cuEtnrL9-H0';
+  let incoming={externalId:'qa',url,title:'New title',duration:'6 นาที 35 วินาที',durationVerified:true};
+  const existing={id:'qa',url,title:'Keep existing title',duration:'7 hours'};
+  const prisma={skill:{findMany:async()=>[]},course:{findFirst:async()=>existing,update:async query=>{writes.push(query);return {...existing,...query.data};}},ingestionLog:{create:async query=>query.data}};
+  const service=new IngestionService(prisma,{},{});service.fetchYouTubeCourses=async()=>[incoming];
+  const log=await service.syncCourses('YOUTUBE',1);
+  assert.deepEqual(writes,[{where:{id:'qa'},data:{duration:'6 นาที 35 วินาที'}}]);
+  assert.equal(log.updatedCount,1);assert.equal(log.createdCount,0);assert.equal(log.errorCount,0);
+  for(const patch of [{durationVerified:false},{url:'https://www.youtube.com/watch?v=gieEQFIfgYc'}]){
+    incoming={...incoming,...patch};await service.syncCourses('YOUTUBE',1);
+  }
+  assert.equal(writes.length,1);
 });

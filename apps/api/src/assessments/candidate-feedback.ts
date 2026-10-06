@@ -12,12 +12,15 @@ export function candidateFeedback<T extends Record<string, any>>(attempt: T, ass
   delete result.assessmentSnapshot;
   delete result.questionSnapshot;
   delete result.answers;
+  // Reviewer audit notes and internal identifiers are not candidate-facing feedback.
+  delete result.reviewReason;
+  delete result.reviewedById;
   if (result.assessment) {
     const { questions, company, ...publicAssessment } = result.assessment;
     result.assessment = { ...publicAssessment, ...(company ? { company: { id: company.id, name: company.name } } : {}) };
   }
   if (hidden) {
-    for (const key of ['score', 'totalPointsEarned', 'percentage', 'finalScore', 'humanScore', 'aiScore', 'passed', 'executionResult', 'aiFeedback', 'reviewReason', 'evaluation', 'evaluationSnapshot', 'execution', 'isCorrect', 'pointsEarned']) result[key] = null;
+    for (const key of ['score', 'totalPointsEarned', 'percentage', 'finalScore', 'humanScore', 'aiScore', 'passed', 'executionResult', 'aiFeedback', 'evaluation', 'evaluationSnapshot', 'execution', 'isCorrect', 'pointsEarned']) result[key] = null;
   }
   result.feedbackHidden = hidden;
   return result;

@@ -19,9 +19,12 @@ import {
   Code2,
 } from 'lucide-react';
 import Link from 'next/link';
+import { useLanguage } from '@/lib/use-language';
+import { applicationStatusLabel, applicationHistoryNote } from '@/lib/application-status';
 
 export default function ApplicationsPage() {
   useAuth();
+  const { language } = useLanguage();
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -70,26 +73,7 @@ export default function ApplicationsPage() {
   };
 
   const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'APPLIED':
-        return 'ยื่นใบสมัครแล้ว';
-      case 'REVIEWING':
-        return 'กำลังพิจารณา';
-      case 'INTERVIEW':
-        return 'นัดสัมภาษณ์';
-      case 'TECHNICAL_TEST':
-        return 'ทดสอบทักษะ';
-      case 'OFFER':
-        return 'ได้รับข้อเสนอ';
-      case 'ACCEPTED':
-        return 'ตอบรับแล้ว';
-      case 'REJECTED':
-        return 'ไม่ผ่านการคัดเลือก';
-      case 'CANCELLED':
-        return 'ยกเลิกใบสมัครแล้ว';
-      default:
-        return status;
-    }
+    return applicationStatusLabel(status, language);
   };
 
   return (
@@ -218,7 +202,7 @@ export default function ApplicationsPage() {
                       </div>
                       {app.statusHistory[0].note && (
                         <p className="mt-1 opacity-90 leading-relaxed font-medium">
-                          {app.statusHistory[0].note}
+                          {applicationHistoryNote(app.statusHistory[0].note, language)}
                         </p>
                       )}
                     </div>

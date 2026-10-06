@@ -438,7 +438,7 @@ export default function CoursesPage() {
                           )}
 
                           <div className="flex items-center justify-between text-xs text-[#667085] pt-3 border-t border-slate-100">
-                            <span>{c.duration || 'Self-paced'}</span>
+                            <span>{c.duration || 'ยังไม่ระบุระยะเวลา'}</span>
                             {c.rating ? (
                               <span className="font-bold text-amber-500 flex items-center gap-1">
                                 ★ {c.rating}

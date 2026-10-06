@@ -12,6 +12,7 @@ import { fetchPublicJobHttp2 } from './public-job-http2';
 import { fetchBlognonePublicJobs } from './blognone-public-jobs';
 import { validateLocalJobBatch } from './local-job-batch';
 import { honestJobContent } from '../jobs/job-content';
+import { youtubeDurationFromHtml } from './youtube-duration';
 
 @Injectable()
 export class IngestionService {
@@ -343,6 +344,7 @@ export class IngestionService {
   ) {
     const startedAt = new Date();
     let createdCount = 0;
+    let updatedCount = 0;
     let duplicateCount = 0;
     let errorCount = 0;
     let errorMessage: string | null = null;
@@ -387,6 +389,11 @@ export class IngestionService {
 
           if (course) {
             duplicateCount++;
+            // Refresh only a verified duration for the same known video; preserve all other stored content.
+            if (provider === CourseSource.YOUTUBE && c.durationVerified && course.url === c.url && course.duration !== c.duration) {
+              course = await this.prisma.course.update({ where: { id: course.id }, data: { duration: c.duration } });
+              updatedCount++;
+            }
           } else {
             course = await this.prisma.course.create({
               data: {
@@ -495,7 +502,7 @@ export class IngestionService {
         startedAt,
         finishedAt,
         createdCount,
-        updatedCount: 0,
+        updatedCount,
         duplicateCount,
         errorCount,
         errorMessage,
@@ -1007,6 +1014,7 @@ export class IngestionService {
 
     return Promise.all(
       selectedCatalog.map(async (c) => {
+        const verified: any = { ...c, duration: null, durationVerified: false };
         try {
           const oembedRes = await axios.get(
             `https://www.youtube.com/oembed?url=${encodeURIComponent(c.url)}&format=json`,
@@ -1014,17 +1022,26 @@ export class IngestionService {
           );
           if (oembedRes.data) {
             this.logger.log(`[YouTube API] Live oEmbed verified: "${oembedRes.data.title}" by ${oembedRes.data.author_name}`);
-            return {
-              ...c,
-              title: oembedRes.data.title || c.title,
-              thumbnailUrl: oembedRes.data.thumbnail_url || c.thumbnailUrl,
-              source: oembedRes.data.author_name || 'YouTube',
-            };
+            verified.title = oembedRes.data.title || c.title;
+            verified.thumbnailUrl = oembedRes.data.thumbnail_url || c.thumbnailUrl;
+            verified.source = oembedRes.data.author_name || 'YouTube';
           }
         } catch (e: any) {
           this.logger.warn(`[YouTube API] Live oEmbed unreachable for ${c.url}: ${e.message}`);
         }
-        return c;
+        const videoId = new URL(c.url).searchParams.get('v');
+        if (videoId) {
+          try {
+            const page = await axios.get<string>(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`, {
+              timeout: 5000, maxContentLength: 10 * 1024 * 1024, responseType: 'text',
+            });
+            const duration = youtubeDurationFromHtml(String(page.data), videoId);
+            if (duration) { verified.duration = duration.duration; verified.durationVerified = true; }
+          } catch {
+            this.logger.warn(`[YouTube] Duration could not be verified for video ${videoId}; no estimate supplied`);
+          }
+        }
+        return verified;
       }),
     );
   }

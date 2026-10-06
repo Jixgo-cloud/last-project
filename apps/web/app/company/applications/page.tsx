@@ -41,6 +41,8 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { ApplicationStatus, getAttemptPercentage, formatAttemptScore } from '@smartcareer/shared';
+import { useLanguage } from '@/lib/use-language';
+import { applicationStatusLabel } from '@/lib/application-status';
 
 const STATUS_OPTIONS: { value: ApplicationStatus; label: string; labelTh: string; color: string }[] = [
   { value: ApplicationStatus.APPLIED, label: 'Applied', labelTh: 'สมัครเข้ามาใหม่', color: 'bg-blue-50 text-blue-700 border-blue-200' },
@@ -53,6 +55,7 @@ const STATUS_OPTIONS: { value: ApplicationStatus; label: string; labelTh: string
 ];
 
 function CompanyApplicationsContent() {
+  const { language } = useLanguage();
   const searchParams = useSearchParams();
   const jobId = searchParams.get('jobId');
   const jobQuery = jobId ? `?jobId=${encodeURIComponent(jobId)}` : '';
@@ -367,6 +370,9 @@ function CompanyApplicationsContent() {
               <p className="text-slate-600 text-sm mt-1 max-w-2xl">
                 ตรวจสอบความพร้อมของผู้สมัครด้วยคะแนน 70/20/10 AI Matching, ทักษะที่ยืนยันแล้ว, เลื่อนสถานะกระบวนการ และให้คะแนนประเมินรายบุคคล
               </p>
+              <p className="text-xs text-slate-500 mt-2 max-w-2xl">{language === 'EN'
+                ? 'Job match measures skills and career fit. Assessment scores come from test answers. Hiring decisions are a separate stage.'
+                : 'ความเหมาะสมประเมินจากทักษะและสายงาน ส่วนคะแนนสอบมาจากคำตอบ การรับเข้าทำงานเป็นผลคัดเลือกอีกขั้นหนึ่ง'}</p>
             </div>
             <div className="flex flex-col items-start gap-2">
               <button
@@ -453,7 +459,7 @@ function CompanyApplicationsContent() {
                       : 'bg-white border border-slate-200 text-slate-600 hover:border-indigo-300'
                   }`}
                 >
-                  <span>{st.label}</span>
+                  <span>{applicationStatusLabel(st.value, language)}</span>
                   <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
                     statusFilter === st.value ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-500'
                   }`}>
@@ -538,7 +544,7 @@ function CompanyApplicationsContent() {
                         }`}
                       >
                         <Sparkles className="h-3 w-3" />
-                        <span>{score}% Match</span>
+                        <span>{score}% {language === 'EN' ? 'Job match' : 'ความเหมาะสม'}</span>
                       </div>
                     </div>
 
@@ -655,10 +661,10 @@ function CompanyApplicationsContent() {
                           onChange={(e) => handleStatusChange(app.id, e.target.value as ApplicationStatus)}
                           className="w-full appearance-none text-xs font-bold rounded-xl border border-slate-200/90 py-2.5 pl-3.5 pr-8 bg-slate-50/70 hover:bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition cursor-pointer"
                         >
-                          {app.status === ApplicationStatus.CANCELLED && <option value={ApplicationStatus.CANCELLED}>Cancelled — ผู้สมัครยกเลิกแล้ว</option>}
+                          {app.status === ApplicationStatus.CANCELLED && <option value={ApplicationStatus.CANCELLED}>{applicationStatusLabel(ApplicationStatus.CANCELLED, language)}</option>}
                           {STATUS_OPTIONS.map((opt) => (
                             <option key={opt.value} value={opt.value}>
-                              {opt.label} — {opt.labelTh}
+                              {applicationStatusLabel(opt.value, language)}
                             </option>
                           ))}
                         </select>
@@ -1615,11 +1621,11 @@ function CompanyApplicationsContent() {
                         className="text-xs font-bold rounded-xl border border-slate-200 bg-white py-2 px-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition cursor-pointer shadow-2xs"
                       >
                         {candidateProfile.application?.status === ApplicationStatus.CANCELLED && (
-                          <option value={ApplicationStatus.CANCELLED}>Cancelled — ยกเลิกใบสมัครแล้ว</option>
+                          <option value={ApplicationStatus.CANCELLED}>{applicationStatusLabel(ApplicationStatus.CANCELLED, language)}</option>
                         )}
                         {STATUS_OPTIONS.map((opt) => (
                           <option key={opt.value} value={opt.value}>
-                            {opt.label} — {opt.labelTh}
+                            {applicationStatusLabel(opt.value, language)}
                           </option>
                         ))}
                       </select>
