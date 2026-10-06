@@ -187,11 +187,21 @@ export class GeminiExtractorService {
     description: string,
     requirements?: string,
   ): Promise<ExtractedSkill[]> {
+    const ruleSkills = this.fallbackRuleBasedExtractor(title, description, requirements);
     const apiKey = process.env.GEMINI_API_KEY?.trim();
 
     if (apiKey) {
       try {
-        const aiSkills = await this.callGeminiFlash(apiKey, title, description, requirements);
+        const suggestedSkills = await this.callGeminiFlash(apiKey, title, description, requirements);
+        const text = `${title} ${description || ''} ${requirements || ''}`;
+        const explicitNames = new Set(ruleSkills.map((skill) => skill.name.toLowerCase()));
+        const aiSkills = suggestedSkills.filter((skill) => {
+          const name = skill.name.trim();
+          if (!name) return false;
+          if (explicitNames.has(name.toLowerCase())) return true;
+          const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          return new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`, 'i').test(text);
+        });
         if (aiSkills && aiSkills.length > 0) {
           this.logger.log(`[Gemini 1.5 Flash] Successfully extracted ${aiSkills.length} skills for '${title}'`);
           return aiSkills;
@@ -203,7 +213,7 @@ export class GeminiExtractorService {
       this.logger.debug(`[Skill Extractor] No GEMINI_API_KEY configured. Using Smart Rule-Based Engine.`);
     }
 
-    return this.fallbackRuleBasedExtractor(title, description, requirements);
+    return ruleSkills;
   }
 
   /**
@@ -230,6 +240,7 @@ Analyze the following tech job opening:
 
 Task:
 Extract ALL technical skills, tools, programming languages, frameworks, libraries, protocols (e.g. REST APIs), databases, and platforms mentioned in this job posting.
+Use only technologies explicitly named in the supplied text. Never infer a technology from the job title, employer, or a typical stack. Return [] when no technologies are named.
 Do NOT skip any technologies even if they appear briefly, in benefits, or inside list items.
 Include items such as: CSS/CSS3, HTML5, JavaScript, TypeScript, React, Angular, Vue, Redux, RxJS, REST APIs, Node.js, Spring Boot, Java, Python, Go, Docker, Kubernetes, Linux, Git, OpenShift, CI/CD, Postman, etc.
 
@@ -381,20 +392,6 @@ Return ONLY a valid JSON array of objects.`;
           isRequired: r.isReq !== undefined ? r.isReq : true,
           minimumScore: r.minScore || 70,
         });
-      }
-    }
-
-    if (skillsMap.size === 0) {
-      if (/qa|test|quality/i.test(title)) {
-        skillsMap.set('Postman', { name: 'Postman', category: SkillCategory.TESTING, isRequired: true, minimumScore: 75 });
-        skillsMap.set('SQL', { name: 'PostgreSQL', category: SkillCategory.DATABASE, isRequired: true, minimumScore: 70 });
-        skillsMap.set('Selenium', { name: 'Selenium', category: SkillCategory.TESTING, isRequired: false, minimumScore: 60 });
-      } else if (/frontend|client|ui/i.test(title)) {
-        skillsMap.set('React', { name: 'React', category: SkillCategory.FRONTEND, isRequired: true, minimumScore: 75 });
-        skillsMap.set('TypeScript', { name: 'TypeScript', category: SkillCategory.FRONTEND, isRequired: true, minimumScore: 70 });
-      } else {
-        skillsMap.set('Node.js', { name: 'Node.js', category: SkillCategory.BACKEND, isRequired: true, minimumScore: 70 });
-        skillsMap.set('PostgreSQL', { name: 'PostgreSQL', category: SkillCategory.DATABASE, isRequired: true, minimumScore: 65 });
       }
     }
 

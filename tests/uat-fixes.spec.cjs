@@ -22,6 +22,32 @@ const {validateLocalJobBatch}=require('../apps/api/dist/ingestion/local-job-batc
 
 const localBatch=()=>({version:1,source:'JOBSDB',collectedAt:new Date().toISOString(),jobs:[{id:'jobsdb-12345678',title:'QA Engineer',company:'QA Company',logoUrl:null,description:'QA listing',location:'Bangkok',isRemote:false,employmentType:'CONTRACT',salaryMin:0,salaryMax:null,url:'https://th.jobsdb.com/job/12345678'}]});
 
+test('Skill extraction fallback does not invent a typical stack from a job title', async()=>{
+  const {GeminiExtractorService}=require('../apps/api/dist/ingestion/gemini-extractor.service');
+  const service=new GeminiExtractorService();
+  service.callGeminiFlash=async()=>[];
+  for(const title of ['QA Engineer','Frontend Developer','Full Stack Developer','Performance Media Optimization']){
+    assert.deepEqual(await service.extractSkills(title,'Build modern products with our team.'),[]);
+  }
+  const skills=await service.extractSkills('Full Stack Developer','Use React, Go and PostgreSQL.');
+  assert.deepEqual(skills.map(s=>s.name).sort(),['Go','PostgreSQL','React']);
+  assert.deepEqual(await service.extractSkills('QA Engineer','','Use Selenium and SQL.').then(s=>s.map(x=>x.name).sort()),['SQL','Selenium']);
+  service.callGeminiFlash=async()=>{throw new Error('unavailable');};
+  assert.deepEqual(await service.extractSkills('Backend Developer','No named technology.'),[]);
+  const oldKey=process.env.GEMINI_API_KEY;
+  try {
+    process.env.GEMINI_API_KEY='isolated-test-key';
+    service.callGeminiFlash=async()=>[
+      {name:'Node.js',category:'BACKEND',isRequired:true,minimumScore:70},
+      {name:'PostgreSQL',category:'DATABASE',isRequired:true,minimumScore:65},
+      {name:'React',category:'FRONTEND',isRequired:true,minimumScore:70},
+      {name:'Rust',category:'BACKEND',isRequired:true,minimumScore:70},
+    ];
+    assert.deepEqual(await service.extractSkills('Full Stack Developer','Build products.'),[]);
+    assert.deepEqual((await service.extractSkills('Developer','Use React and Rust.')).map(s=>s.name),['React','Rust']);
+  } finally { if(oldKey===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=oldKey; }
+});
+
 test('Local imports reject arbitrary destinations, forged IDs, stale files and injected ownership fields before saving',()=>{
   const valid=localBatch();assert.equal(validateLocalJobBatch(valid).jobs[0].salaryMin,0);
   for(const patch of [{url:'http://th.jobsdb.com/job/12345678'},{url:'https://th.jobsdb.com.evil.test/job/12345678'},{url:'https://user:password@th.jobsdb.com/job/12345678'},{id:'other-id'},{companyId:'victim'},{salaryMin:-1},{salaryMin:20,salaryMax:10},{logoUrl:'http://localhost/secret'}]){
