@@ -344,6 +344,23 @@ test('Blognone preserves contract work and skips links without actual job titles
   assert.equal(jobs[0].company,'QA Company');
 });
 
+test('A denied Blognone listing can read real public homepage cards once; other failures never trigger this alternative', async () => {
+  const transport=require('../apps/api/dist/ingestion/public-job-http2');
+  const original=transport.fetchPublicJobHttp2;
+  const service=new IngestionService({}, {}, {});let calls=0;
+  try {
+    service.fetchJobSourceHtml=async()=>{throw new Error('SOURCE_HTTP_403: denied');};
+    transport.fetchPublicJobHttp2=async url=>{calls++;assert.equal(url,'https://jobs.blognone.com/');return '<a href="/company/qa/job/home"><h3>Homepage QA Developer</h3><h4>Contract</h4><span>Actual QA Company</span></a>';};
+    const jobs=await service.scrapeBlognoneJobs(5);
+    assert.equal(jobs.length,1);assert.equal(jobs[0].title,'Homepage QA Developer');assert.equal(jobs[0].company,'Actual QA Company');assert.equal(calls,1);
+    service.fetchJobSourceHtml=async()=>{throw new Error('SOURCE_HTTP_429: rate limit');};
+    await assert.rejects(service.scrapeBlognoneJobs(5),/SOURCE_HTTP_429/);assert.equal(calls,1);
+    service.fetchJobSourceHtml=async()=>{throw new Error('SOURCE_HTTP_403: denied');};
+    transport.fetchPublicJobHttp2=async()=>{throw new Error('SOURCE_HTTP_403: homepage also denied');};
+    await assert.rejects(service.scrapeBlognoneJobs(5),/SOURCE_HTTP_403/);
+  } finally {transport.fetchPublicJobHttp2=original;}
+});
+
 test('Job HTML uses the authorized browser for 403 or unrendered pages, but does not retry rate limits', async () => {
   const rendered=require('../apps/api/dist/ingestion/rendered-job-html');
   const transport=require('../apps/api/dist/ingestion/public-job-http2');

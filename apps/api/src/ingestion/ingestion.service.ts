@@ -692,7 +692,16 @@ export class IngestionService {
     this.logger.log(`[Blognone Scraper] Fetching live jobs from https://jobs.blognone.com/search (quota: ${limit})...`);
     const jobs: any[] = [];
     try {
-      const html = await this.fetchJobSourceHtml('https://jobs.blognone.com/search');
+      let html: string;
+      try {
+        html = await this.fetchJobSourceHtml('https://jobs.blognone.com/search');
+      } catch (error: any) {
+        if (!/^SOURCE_HTTP_403:/.test(error?.message || '')) throw error;
+        // The public homepage publishes the same real job-card fields, with a
+        // smaller selection. Read it once rather than inventing replacement jobs.
+        this.logger.log('[Blognone Scraper] Reading actual cards on the public homepage');
+        html = await fetchPublicJobHttp2('https://jobs.blognone.com/');
+      }
       const $ = cheerio.load(html);
       $('style, script').remove();
 
