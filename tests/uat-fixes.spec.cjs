@@ -410,6 +410,38 @@ test('A denied Blognone HTML listing uses the public API; rate limits and malfor
   }finally{publicApi.fetchBlognonePublicJobs=original;}
 });
 
+test('Blognone API can use ordinary HTTP2 after a native 403, but never retries a rate limit', async () => {
+  const {fetchBlognonePublicJobs}=require('../apps/api/dist/ingestion/blognone-public-jobs');
+  const transport=require('../apps/api/dist/ingestion/blognone-public-http2');const axios=require('axios');
+  const originals=[axios.post,transport.fetchBlognonePublicHttp2];let calls=0;
+  try{
+    axios.post=async()=>{throw {response:{status:403}};};
+    transport.fetchBlognonePublicHttp2=async body=>{calls++;const json=JSON.parse(body);assert.equal(json.operationName,'getHome');assert.deepEqual(json.variables,{});assert.match(json.query,/home_jobs/);return {data:{home_jobs:[]}};};
+    assert.deepEqual(await fetchBlognonePublicJobs(5),[]);assert.equal(calls,1);
+    axios.post=async()=>{throw {response:{status:429}};};
+    await assert.rejects(fetchBlognonePublicJobs(5),/SOURCE_HTTP_429/);assert.equal(calls,1);
+    axios.post=async()=>{throw {response:{status:403}};};
+    transport.fetchBlognonePublicHttp2=async()=>({errors:[{message:'private details'}]});
+    await assert.rejects(fetchBlognonePublicJobs(5),/SOURCE_DATA_INVALID/);
+  }finally{[axios.post,transport.fetchBlognonePublicHttp2]=originals;}
+});
+
+test('Blognone HTTP2 public reads use a fixed destination, reject redirects and oversized or incomplete JSON, and close sessions', async () => {
+  const {EventEmitter}=require('node:events');const {fetchBlognonePublicHttp2}=require('../apps/api/dist/ingestion/blognone-public-http2');
+  let status=200,content='{"data":{"home_jobs":[]}}',incomplete=false,closed=0;
+  const body=JSON.stringify({operationName:'getHome',variables:{},query:'query getHome { home_jobs { slug } }'});
+  const open=origin=>{assert.equal(origin,'https://jobs-api.blognone.com');const session=new EventEmitter();session.destroy=()=>{closed++;};session.request=headers=>{
+    assert.equal(headers[':method'],'POST');assert.equal(headers[':path'],'/graphql');assert.equal(headers.authorization,undefined);assert.equal(headers['content-length'],Buffer.byteLength(body));
+    const request=new EventEmitter();request.end=value=>{assert.equal(value,body);queueMicrotask(()=>{request.emit('response',{':status':status,location:'https://127.0.0.1/private'});request.emit('data',Buffer.from(content));request.emit(incomplete?'close':'end');});};return request;
+  };return session;};
+  assert.deepEqual(await fetchBlognonePublicHttp2(body,open),{data:{home_jobs:[]}});
+  for(const code of [301,403,429]){status=code;await assert.rejects(fetchBlognonePublicHttp2(body,open),new RegExp(`SOURCE_HTTP_${code}`));}
+  status=200;content='<html>denied</html>';await assert.rejects(fetchBlognonePublicHttp2(body,open),/SOURCE_DATA_INVALID/);
+  content='x'.repeat(2*1024*1024+1);await assert.rejects(fetchBlognonePublicHttp2(body,open),/SOURCE_HTTP2_PAGE_TOO_LARGE/);
+  content='{"data":{"home_jobs":[]}}';incomplete=true;await assert.rejects(fetchBlognonePublicHttp2(body,open),/SOURCE_HTTP2_CONNECTION_FAILED/);
+  assert.equal(closed,7);
+});
+
 test('Job HTML uses the authorized browser for 403 or unrendered pages, but does not retry rate limits', async () => {
   const rendered=require('../apps/api/dist/ingestion/rendered-job-html');
   const transport=require('../apps/api/dist/ingestion/public-job-http2');

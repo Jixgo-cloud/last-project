@@ -1,9 +1,11 @@
 import axios from 'axios';
 import { JobType } from '@smartcareer/shared';
+import { blognonePublicEndpoint, fetchBlognonePublicHttp2 } from './blognone-public-http2';
+
+export { blognonePublicEndpoint } from './blognone-public-http2';
 
 // The anonymous getHome query published in Blognone's own frontend bundle.
 // This is a read operation; no account token, cookies or relay is involved.
-export const blognonePublicEndpoint = 'https://jobs-api.blognone.com/graphql';
 export const blognonePublicQuery = `query getHome {
   home_jobs {
     slug title company { slug name_en } type province district
@@ -55,8 +57,9 @@ export function parseBlognonePublicJobs(payload: any, limit: number) {
 
 export async function fetchBlognonePublicJobs(limit: number) {
   let payload: unknown;
+  const body = { operationName: 'getHome', variables: {}, query: blognonePublicQuery };
   try {
-    const response = await axios.post(blognonePublicEndpoint, { query: blognonePublicQuery }, {
+    const response = await axios.post(blognonePublicEndpoint, body, {
       timeout: 12000, maxRedirects: 0, maxContentLength: 2 * 1024 * 1024,
       responseType: 'json',
       headers: { 'User-Agent': 'SmartCareer/1.0', Accept: 'application/json', 'Content-Type': 'application/json' },
@@ -64,9 +67,13 @@ export async function fetchBlognonePublicJobs(limit: number) {
     payload = response.data;
   } catch (error: any) {
     const status = error.response?.status;
-    throw new Error(status
-      ? `SOURCE_HTTP_${status}: API สาธารณะ Blognone ไม่พร้อมให้อ่านข้อมูล รักษางานเดิมไว้`
-      : 'SOURCE_CONNECTION_FAILED: ติดต่อ API สาธารณะ Blognone ไม่ได้ รักษางานเดิมไว้');
+    if (status === 403) {
+      payload = await fetchBlognonePublicHttp2(JSON.stringify(body));
+    } else {
+      throw new Error(status
+        ? `SOURCE_HTTP_${status}: API สาธารณะ Blognone ไม่พร้อมให้อ่านข้อมูล รักษางานเดิมไว้`
+        : 'SOURCE_CONNECTION_FAILED: ติดต่อ API สาธารณะ Blognone ไม่ได้ รักษางานเดิมไว้');
+    }
   }
   return parseBlognonePublicJobs(payload, limit);
 }
