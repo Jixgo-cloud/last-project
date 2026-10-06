@@ -525,7 +525,7 @@ export class IngestionService {
             'X-RapidAPI-Key': apiKey.trim(),
             'X-RapidAPI-Host': 'jsearch.p.rapidapi.com',
           },
-          timeout: 10000,
+          timeout: 30000,
         });
 
         if (response.data && Array.isArray(response.data.data) && response.data.data.length > 0) {
@@ -567,11 +567,18 @@ export class IngestionService {
       } catch (err: any) {
         if (err.message?.startsWith('JSEARCH_')) throw err;
         const status = err.response?.status;
+        const timedOut = err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT';
+        const invalidUrl = err.code === 'ERR_INVALID_URL';
+        const dnsFailed = err.code === 'ENOTFOUND' || err.code === 'EAI_AGAIN';
         const reason = status === 401 || status === 403
           ? 'คีย์หรือสิทธิ์ใช้บริการ JSearch ไม่พร้อม ตรวจการสมัครบริการที่ RapidAPI'
           : status === 429 ? 'เกินโควตาหรืออัตราการเรียก JSearch ให้ตรวจแพ็กเกจและลองภายหลัง'
-          : 'ติดต่อ JSearch ไม่สำเร็จหรือหมดเวลารอ';
-        throw new Error(`JSEARCH_${status || 'CONNECTION_FAILED'}: ${reason} รักษางานเดิมไว้`);
+          : timedOut ? 'JSearch ตอบกลับไม่ทันภายในเวลาที่กำหนด ให้ลองภายหลัง'
+          : invalidUrl ? 'ที่อยู่บริการ JSearch ไม่ถูกต้อง ให้ตรวจ JSEARCH_API_URL'
+          : dnsFailed ? 'หาเซิร์ฟเวอร์ JSearch ไม่พบ ให้ตรวจที่อยู่บริการและการเชื่อมต่อ'
+          : 'ติดต่อ JSearch ไม่สำเร็จ ให้ตรวจการเชื่อมต่อและที่อยู่บริการ';
+        const failureCode = status || (timedOut ? 'TIMEOUT' : invalidUrl ? 'INVALID_URL' : dnsFailed ? 'DNS_FAILED' : 'CONNECTION_FAILED');
+        throw new Error(`JSEARCH_${failureCode}: ${reason} รักษางานเดิมไว้`);
       }
     } else {
       throw new Error('JSEARCH_MISSING_KEY: ยังไม่ได้ตั้งค่าคีย์ JSearch ของบริการ API รักษางานเดิมไว้');

@@ -230,6 +230,13 @@ test('JSearch distinguishes missing key, access failure and quota without storin
       const result=await service.performJobsSync('JSEARCH',5);
       assert.equal(result.status,'FAILED');assert.equal(result.createdCount,0);assert.match(result.errorMessage,new RegExp(`JSEARCH_${status}`));assert(!result.errorMessage.includes('isolated-qa-key'));
     }
+    for(const [code,expected] of [['ECONNABORTED','TIMEOUT'],['ETIMEDOUT','TIMEOUT'],['ENOTFOUND','DNS_FAILED'],['EAI_AGAIN','DNS_FAILED'],['ERR_INVALID_URL','INVALID_URL'],['ECONNRESET','CONNECTION_FAILED']]) {
+      axios.get=async()=>{throw {code,message:'private URL and isolated-qa-key'};};
+      const result=await service.performJobsSync('JSEARCH',5);
+      assert.match(result.errorMessage,new RegExp(`JSEARCH_${expected}`));
+      assert(!result.errorMessage.includes('isolated-qa-key'));
+      assert(!result.errorMessage.includes('private URL'));
+    }
     axios.get=async()=>({data:{data:[{job_id:'broken'}]}});
     assert.match((await service.performJobsSync('JSEARCH',5)).errorMessage,/JSEARCH_EMPTY_RESPONSE/);
     assert.equal(writes,0);
@@ -246,6 +253,7 @@ test('JSearch prioritizes its trimmed dedicated key and falls back only when it 
   const requested=[];
   try {
     axios.get=async(_url,options)=>{
+      assert.equal(options.timeout,30000);
       requested.push(options.headers['X-RapidAPI-Key']);
       return {data:{data:[{job_id:'qa-key-selection',job_title:'QA Developer',employer_name:'QA Employer',job_apply_link:'https://example.com/qa-job'}]}};
     };
