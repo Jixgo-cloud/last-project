@@ -20,6 +20,27 @@ const { JobScreeningService } = require('../apps/api/dist/ingestion/job-screenin
 const { SchedulerService } = require('../apps/api/dist/scheduler/scheduler.service');
 const {validateLocalJobBatch}=require('../apps/api/dist/ingestion/local-job-batch');
 
+test('Coding failures use the real HTTP status when API messages omit Judge0 or status numbers', async () => {
+  const fs=require('node:fs');const ts=require('typescript');
+  const load=file=>{const exports={};const code=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;new Function('exports',code)(exports);return exports;};
+  const {apiRequest}=load('apps/web/lib/api.ts');
+  const {getCodingFailureKind}=load('apps/web/lib/assessment-errors.ts');
+  const original=global.fetch;
+  try {
+    for(const [status,message,expected] of [
+      [503,'Code evaluation server is currently unavailable. Please retry in a few moments.','unavailable'],
+      [429,'Too many requests','rate-limit'],
+      [422,'Invalid source code','other'],
+      [401,'Judge0 is not available to this account','other'],
+    ]) {
+      global.fetch=async()=>new Response(JSON.stringify({message}),{status,headers:{'content-type':'application/json'}});
+      await assert.rejects(apiRequest('/assessments/qa/run-code',{method:'POST'}),error=>{assert.equal(error.status,status);assert.equal(error.message,message);assert.equal(getCodingFailureKind(error),expected);return true;});
+    }
+    assert.equal(getCodingFailureKind(new Error('JUDGE_UNAVAILABLE')),'unavailable');
+    assert.equal(getCodingFailureKind(null),'other');
+  } finally {global.fetch=original;}
+});
+
 const localBatch=()=>({version:1,source:'JOBSDB',collectedAt:new Date().toISOString(),jobs:[{id:'jobsdb-12345678',title:'QA Engineer',company:'QA Company',logoUrl:null,description:'QA listing',location:'Bangkok',isRemote:false,employmentType:'CONTRACT',salaryMin:0,salaryMax:null,url:'https://th.jobsdb.com/job/12345678'}]});
 
 test('Backfilling external job skills excludes known invented requirements and preserves employer-authored internal text',async()=>{

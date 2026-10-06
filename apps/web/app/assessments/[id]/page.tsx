@@ -6,6 +6,7 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useAuth } from '@/lib/auth-context';
 import { apiRequest } from '@/lib/api';
+import { getCodingFailureKind } from '@/lib/assessment-errors';
 import Editor from '@monaco-editor/react';
 import ConfirmationDialog from '@/components/DeleteConfirmation';
 import {
@@ -357,9 +358,9 @@ export default function AssessmentRunnerPage() {
         [currentQuestion.id]: result,
       }));
     } catch (e: any) {
-      if (e.message?.includes('429') || e.message?.includes('3 วินาที')) {
+      if (getCodingFailureKind(e) === 'rate-limit') {
         setRateLimitMessage('⏱️ กรุณารอ 3 วินาทีก่อนกดรันโค้ดอีกครั้ง (Sandbox Rate Limit Protection)');
-      } else if (e.message?.includes('503') || e.message?.includes('JUDGE_UNAVAILABLE') || e.message?.includes('Judge0')) {
+      } else if (getCodingFailureKind(e) === 'unavailable') {
         setJudgeUnavailableError('⚠️ ระบบรันโค้ด Sandbox (Judge0) ไม่พร้อมใช้งานชั่วคราว ข้อสอบของคุณได้รับการบันทึกร่างไว้แล้ว และคุณจะไม่เสียสิทธิ์');
       } else {
         alert(`Test Run error: ${e.message}`);
@@ -414,8 +415,10 @@ export default function AssessmentRunnerPage() {
         }
       }
     } catch (e: any) {
-      if (e.message?.includes('503') || e.message?.includes('JUDGE_UNAVAILABLE') || e.message?.includes('Judge0')) {
+      if (getCodingFailureKind(e) === 'unavailable') {
         setJudgeUnavailableError('⚠️ ระบบรันโค้ด Sandbox (Judge0) ไม่พร้อมใช้งานชั่วคราว ระบบได้ตั้งสถานะ SYSTEM_ERROR ให้อัตโนมัติ เพื่อให้คุณสามารถเริ่มทำใหม่ได้โดยไม่เสียคะแนน');
+      } else if (getCodingFailureKind(e) === 'rate-limit') {
+        setRateLimitMessage('⏱️ กรุณารอ 3 วินาทีก่อนกดส่งคำตอบอีกครั้ง (Sandbox Rate Limit Protection)');
       } else {
         alert(`Submission error: ${e.message}`);
       }
