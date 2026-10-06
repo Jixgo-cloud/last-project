@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="th">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>แบบบันทึกความคิดเห็นผู้ทดลอง SmartCareer</title>
+<style>
+@font-face{font-family:Thai;src:url('file:///C:/Windows/Fonts/LeelawUI.ttf')}
+@font-face{font-family:Thai;src:url('file:///C:/Windows/Fonts/LeelaUIb.ttf');font-weight:700}
+*{box-sizing:border-box}body{margin:0;background:#edf0f4;color:#172333;font:15px/1.6 Thai,'Leelawadee UI',Tahoma,sans-serif}
+main{max-width:820px;margin:24px auto}.sheet{background:white;padding:38px 46px;margin-bottom:22px}
+h1{font-size:25px;line-height:1.35;margin:0 0 12px;color:#111}h2{font-size:18px;margin:19px 0 7px;color:#111}
+p{margin:7px 0}ol{margin:7px 0;padding-left:24px}li{padding-left:3px;margin-bottom:7px}a{color:#17578e;text-decoration:underline}
+.small{font-size:12px;color:#4d5968}.toolbar{max-width:820px;margin:20px auto;padding:0 12px;display:flex;flex-wrap:wrap;gap:10px}
+button{font:inherit;cursor:pointer;padding:8px 14px;border:1px solid #a6b1bf;border-radius:5px;background:white;color:#172333}
+label{display:block;margin-top:10px;font-weight:700}input,select,textarea{font:inherit;color:inherit;width:100%;padding:7px 9px;background:white;border:1px solid #b4beca;border-radius:3px}
+textarea{resize:vertical;min-height:76px}input{height:38px}.pair{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+table{border-collapse:collapse;width:100%;margin:12px 0}th{text-align:left;font-size:13px;background:#f0f3f6;padding:7px 9px}td{padding:7px 9px;border-bottom:1px solid #c9d0d9;vertical-align:top}
+.records td:first-child{width:29%}.records select{font-size:13px}.records input{font-size:13px}
+.print-value{display:none}.legend{font-size:12px;color:#4d5968}.footer{font-size:11px;color:#4d5968;margin-top:14px}
+@media(max-width:600px){main{margin:10px}.sheet{padding:24px 18px}.pair{grid-template-columns:1fr}.records{font-size:12px}.records td{padding:5px}}
+@page{size:A4;margin:15mm 17mm}
+@media print{body{background:white;font-size:11pt;line-height:1.5}main{margin:0;max-width:none}.sheet{padding:0;margin:0;break-after:page}.sheet:last-child{break-after:auto}h1{font-size:19pt}h2{font-size:13pt;margin:14px 0 5px}li{margin-bottom:5px}.toolbar{display:none}input,select,textarea{display:none}.print-value{display:block;white-space:pre-wrap;overflow-wrap:anywhere;min-height:28px;padding:5px 0;border-bottom:1px solid #bcc4ce;font-weight:400}textarea+.print-value{min-height:54px}.pair{grid-template-columns:1fr 1fr}.records tr{break-inside:avoid}.small,.legend{font-size:9pt}.footer{font-size:8pt}}
+</style>
+<div class="toolbar"><button id="print">พิมพ์หรือบันทึก PDF</button><button id="export">ดาวน์โหลดคำตอบเป็นไฟล์ JSON</button><span class="small">พิมพ์ข้อมูลลงในหน้าได้ ข้อมูลไม่ส่งไปเว็บไซต์และไม่บันทึกอัตโนมัติ</span></div>
+<main>
+<section class="sheet">
+<h1>ใบงานทดลองอ่านผล SmartCareer</h1>
+<p>ใช้บัญชี QA เดิมเพื่อดูว่าผู้ทดลองเข้าใจข้อมูลและหาสิ่งที่ต้องการได้หรือไม่ ผู้ทดลองทำเองก่อน ผู้สังเกตจดเมื่อจำเป็นต้องช่วย ใช้หน้าที่ 2 บันทึกความคิดเห็นหนึ่งชุดต่อหนึ่งคน</p>
+<p class="small">ฉบับ 6 ตุลาคม 2026 • รอบ R3 สอบและตรวจแล้ว • ใบงานนี้ไม่มีการสมัครงาน สอบใหม่ หรือเปลี่ยนผลคัดเลือก</p>
+<h2>ก่อนเริ่ม</h2>
+<p>เปิด <a href="https://smartcareerplatform.vercel.app/login">SmartCareer</a> ผู้สมัครเข้าด้วย GitHub บริษัทเข้าด้วย Google ของบัญชี QA ที่เจ้าของอนุญาต เจ้าของบัญชีทำขั้นตอนรหัสผ่านหรือรหัสยืนยันเอง เลือกทำเฉพาะบทบาทที่ได้รับมอบหมาย</p>
+<h2>สำหรับผู้สมัคร</h2>
+<ol>
+<li>เปิด <a href="https://smartcareerplatform.vercel.app/applications">ประวัติการสมัคร</a> หา <b>PILOT-QA-R3-JOB-20261006</b> แล้วอธิบายสถานะและคะแนนด้วยคำของตนเอง</li>
+<li>เปิดผลสอบที่ส่งแล้วของงานนี้ อ่านผลและเหตุผลจากผู้ตรวจ แล้วโหลดหน้าใหม่ จดว่าพบข้อมูลครบและเข้าใจหรือไม่ ผลเดิมต้องคงอยู่และไม่มีเวลานับถอยหลัง</li>
+<li>เปิดกระดิ่ง หาแจ้งเตือนที่มีชื่อรอบ R3 จดว่าเข้าใจสิ่งที่แจ้งหรือไม่ ลองคลิกนอกกล่องและเปิดอีกครั้งแล้วกด Escape เพื่อปิด</li>
+<li>เปิด <a href="https://smartcareerplatform.vercel.app/jobs/7e58b2b2-e9ce-4b3b-ae98-ad93f8626cbd">รายละเอียดงาน R3</a> แล้วลองค้นหางานหรือคอร์สจากเมนู จดสิ่งที่หาไม่เจอหรืออ่านไม่เข้าใจ โดยยังไม่ส่งใบสมัครอื่น</li>
+</ol>
+<h2>สำหรับบริษัท</h2>
+<ol>
+<li>เปิด <a href="https://smartcareerplatform.vercel.app/company/applications?jobId=7e58b2b2-e9ce-4b3b-ae98-ad93f8626cbd">ใบสมัครเฉพาะงาน R3</a> ตรวจชื่อผู้สมัคร คะแนน และสถานะ จดว่ารู้หรือไม่ว่ากำลังดูเฉพาะงานใด โดยไม่เปลี่ยนสถานะเดิม</li>
+<li>เปิด <a href="https://smartcareerplatform.vercel.app/company/assessments">ข้อสอบบริษัท</a> ค้นหา <b>PILOT-QA-R3-THEORY-20261006</b> เปิดรายชื่อผู้ส่งคำตอบ อ่านผลที่ตรวจแล้วทั้งสองคน โดยไม่แก้คะแนนหรือข้อสอบ</li>
+</ol>
+<p class="small"><b>สำหรับผู้สังเกตหลังผู้ทดลองตอบ:</b> รอบ R3 มีสองใบสมัคร Jixgo-cloud ได้ 100% รับเข้าทำงาน ส่วน BADREE ได้ 50% ถูกปฏิเสธ ผลสอบทั้งสองตรวจแล้ว เกณฑ์ผ่านข้อสอบ 70% ห้ามใช้ตัวเลขนี้แทนความคิดเห็นของผู้ทดลอง</p>
+<p class="footer">อ้างอิงคู่มือ PILOT_PARTICIPANT_GUIDE.md และผล PILOT_QA_R3_RESULT_20261006.md ใน docs/uat ใบงานนี้ใช้ดูผลเดิม การทดสอบสมัครและสอบเองตั้งแต่ต้นต้องเตรียมงานและข้อสอบชุดใหม่เมื่อผู้ทดลองพร้อม</p>
+</section>
+<section class="sheet" id="form">
+<h1>แบบบันทึกความคิดเห็นผู้ทดลอง SmartCareer</h1>
+<p class="small">กรอกตามสิ่งที่ผู้ทดลองทำและพูดจริง เว้นสิ่งที่ยังไม่ได้ลอง ใช้รหัสผู้ทดลองแทนชื่อจริง ไม่กรอกรหัสผ่านหรือข้อมูลลับ</p>
+<div class="pair"><label>รหัสผู้ทดลอง<input name="participant" maxlength="40"></label><label>วันและเวลาที่ทดลอง<input name="testedAt" maxlength="50"></label></div>
+<div class="pair"><label>บทบาท<select name="role"><option value="">เลือกบทบาท</option><option>ผู้สมัคร Jixgo-cloud</option><option>ผู้สมัคร BADREE</option><option>บริษัท QA</option></select></label><label>อุปกรณ์และเบราว์เซอร์<input name="device" maxlength="100"></label></div>
+<h2>ผลการทำแต่ละขั้น</h2>
+<p class="legend">ทำเองได้ = ไม่ต้องบอกทาง • ต้องช่วย = จดสิ่งที่ช่วย • ทำต่อไม่ได้ = จดจุดที่หยุด • ยังไม่ลอง = ไม่มีผลในขั้นนั้น</p>
+<table class="records"><thead><tr><th>ขั้นที่ลอง</th><th>ผล</th><th>สิ่งที่ต้องช่วยหรือจุดที่ติด</th></tr></thead><tbody>
+<tr><td>1 ดูใบสมัคร</td><td><select name="step1"><option>ยังไม่ลอง</option><option>ทำเองได้</option><option>ต้องช่วย</option><option>ทำต่อไม่ได้</option></select></td><td><input name="note1" maxlength="160"></td></tr>
+<tr><td>2 ดูผลสอบ</td><td><select name="step2"><option>ยังไม่ลอง</option><option>ทำเองได้</option><option>ต้องช่วย</option><option>ทำต่อไม่ได้</option></select></td><td><input name="note2" maxlength="160"></td></tr>
+<tr><td>3 กระดิ่ง ผู้สมัคร</td><td><select name="step3"><option>ยังไม่ลอง</option><option>ทำเองได้</option><option>ต้องช่วย</option><option>ทำต่อไม่ได้</option></select></td><td><input name="note3" maxlength="160"></td></tr>
+<tr><td>4 ค้นหา ผู้สมัคร</td><td><select name="step4"><option>ยังไม่ลอง</option><option>ทำเองได้</option><option>ต้องช่วย</option><option>ทำต่อไม่ได้</option></select></td><td><input name="note4" maxlength="160"></td></tr>
+</tbody></table>
+<label>ขั้นตอนที่ติด คาดว่าจะเกิดอะไร และเกิดอะไรจริง<textarea name="problem" maxlength="2000"></textarea></label>
+<label>เข้าใจสถานะและคะแนนหรือไม่ เพราะอะไร<textarea name="understanding" maxlength="2000"></textarea></label>
+<label>อยากให้แก้สิ่งใดก่อน และเพราะอะไร<textarea name="priority" maxlength="2000"></textarea></label>
+<p class="footer">ผู้สังเกตเก็บคำตอบต้นฉบับไว้ ผลตรวจ QA ของผู้ช่วยแยกจากความคิดเห็นของผู้ทดลอง แบบบันทึกนี้ไม่รับรองว่าผ่าน UAT ครบโครงการ</p>
+</section>
+</main>
+<script>
+const fields=[...document.querySelectorAll('input[name], select[name], textarea[name]')];
+for(const field of fields){const printed=document.createElement('div');printed.className='print-value';field.after(printed)}
+function syncPrint(){for(const field of fields){field.nextElementSibling.textContent=field.value||' '}}
+for(const field of fields){field.addEventListener('input',syncPrint);field.addEventListener('change',syncPrint)}
+syncPrint();window.addEventListener('beforeprint',syncPrint);
+document.querySelector('#print').addEventListener('click',()=>{syncPrint();window.print()});
+document.querySelector('#export').addEventListener('click',()=>{const data={formVersion:'20261006',round:'R3 reading existing results',responses:Object.fromEntries(fields.map(f=>[f.name,f.value]))};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='smartcareer-pilot-feedback.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
+</script>
+</html>
