@@ -23,5 +23,17 @@
 - เลือก JobsDB ในหน้ารวมงานแสดง 10 จาก 10 งาน และรายการมีแหล่ง JOBSDB
 - เปิดรายละเอียดจากงาน Thai Agro Exchange ชื่อ บริษัท สถานที่ และข้อความตรงกับไฟล์
 - กด “ยื่นใบสมัครบน JobsDB” เกิดแท็บต้นทาง `https://th.jobsdb.com/job/95081131` ชื่อแท็บตรงงาน ไม่ส่งใบสมัครหรือเข้าสู่ระบบต้นทาง
+- เลือก Blognone แสดง 5 จาก 5 งาน หลังโหลดรายการใหม่งานที่แก้ไม่แสดงคู่ทักษะสำเร็จรูป
+- ค้นหา Flutter ใน Blognone แสดง 1 จาก 1 งาน NILECON THAILAND เปิดรายละเอียดแล้วเงินเดือน 20,000–40,000 บาทและลิงก์ตรงกับไฟล์
+- กด “ยื่นใบสมัครบน Blognone” เกิดแท็บต้นทางชื่อ Mobile Developer ของ NILECON และ URL ตรง `https://jobs.blognone.com/company/nilecon-thailand-co-ltd/job/mobile-developer-f-NHjf`
+- โหลดรายละเอียด Thai Agro Exchange ใหม่ ไม่แสดงคู่ทักษะ Node.js/PostgreSQL หรือคอร์สที่แนะนำจากคู่นั้นแล้ว ข้อความประกาศและลิงก์ยังอยู่
+- ตรวจรายการสาธารณะหลังแก้: JobsDB 10/10 และ Blognone 5/5 ตรงกับไฟล์ ทั้งชื่อ บริษัท description URL ประเภทงาน remote และเงินเดือน ไม่มีประกาศหายจากการแก้ลิงก์ทักษะ
+- เปิด Sr.Security Specialist ของ Digital Health Venture แสดง CONTRACT ตรงไฟล์ หลังแก้ไม่แสดงคู่ Node.js/PostgreSQL แล้ว
 
-การตรวจ Blognone การค้นหาคำ และการเผยแพร่โค้ดแก้ทักษะยังดำเนินการอยู่ ไม่เปลี่ยนยอด UAT 186 กรณีจากผลบางส่วน
+หลักฐานหน้าจอเก็บใน `outputs/local-jobs/public-blognone-list.txt`, `public-flutter-search.txt`, `public-blognone-detail.txt`, `public-job-after-skill-repair.txt`, `public-job-after-skill-repair.png` และ `public-flow-validation.json`
+
+## ฉบับโค้ดและการตรวจ
+
+โค้ดแก้ `d5d673520d16674826fdcf379043e309d8bfa838` ผ่าน build API, lint และชุดตรวจในเครื่อง 62 กรณี (ความปลอดภัย 16 + UAT 46) [GitHub Actions รอบ 37453226178](https://github.com/Jixgo-cloud/last-project/actions/runs/37453226178) ผ่านครบ รวม build ทั้งโปรเจกต์และชุดตรวจหน้าจอเดิม 41 รายการ Vercel READY deployment `dpl_2QDndtrZRAzyxVdWNTv4MDGHrG6Z` ฉบับเดียวกัน Railway `/api/health` ตอบ HTTP 200, status ok, database connected และ revision `d5d673520d16674826fdcf379043e309d8bfa838` ยืนยันเผยแพร่ API แล้ว
+
+รอบนี้ปิดการตรวจช่องทางใหม่และแก้คู่ทักษะสำเร็จรูปของ 15 งานที่ระบุ ไม่รับรองทักษะงานเก่าทั้งฐานข้อมูลหรือความครบถ้วนของรายละเอียดต้นทางทุกงาน ไม่เปลี่ยนยอดทะเบียน UAT 186 กรณี: ผ่าน 154 ติดขัด 31 ไม่ผ่าน 1 กรณีอ่านตรงจาก Railway, สมัครบัญชีใหม่ และกู้ใบสมัครเดิมยังคงข้อจำกัดตามทะเบียน
