@@ -253,7 +253,8 @@ export default function ApplicationsPage() {
                     (app.candidate?.assessmentAttempts || []).filter((att: any) => ['COMPLETED', 'EXPIRED'].includes(att.status)),
                     effectiveAssessment?.id,
                   );
-                  const isPassed = customAttempt && (getAttemptPercentage(customAttempt) ?? -1) >= (effectiveAssessment?.passingScore || 70);
+                  const attemptPercentage = customAttempt ? getAttemptPercentage(customAttempt) : null;
+                  const isPassed = attemptPercentage !== null && attemptPercentage >= (effectiveAssessment?.passingScore || 70);
 
                   return (
                     <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/70 via-white to-purple-50/40 p-5 shadow-xs">
@@ -286,15 +287,15 @@ export default function ApplicationsPage() {
                                 <span className="text-[10px] text-slate-500 block">คะแนนล่าสุด</span>
                                 <span className="text-sm font-black text-indigo-700">{formatAttemptScore(customAttempt)}</span>
                               </div>
-                              <span
+                              {attemptPercentage !== null && <span
                                 className={`text-xs font-bold px-3 py-1 rounded-full border ${
                                   isPassed
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                     : 'bg-rose-50 text-rose-700 border-rose-200'
                                 }`}
                               >
-                                {getAttemptPercentage(customAttempt) === null ? 'รอตรวจ' : isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ยังไม่ผ่าน (Failed)'}
-                              </span>
+                                {isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ยังไม่ผ่าน (Failed)'}
+                              </span>}
                             </div>
                           ) : (
                             <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1.5">
@@ -337,7 +338,7 @@ export default function ApplicationsPage() {
                             >
                               {customAttempt ? (
                                 <>
-                                  <span>{applicationClosed ? 'ดูผลสอบที่ส่งแล้ว' : 'ดูผล / ทำแบบทดสอบอีกครั้ง'}</span>
+                                  <span>{applicationClosed ? 'ดูผลสอบที่ส่งแล้ว' : customAttempt.status === 'IN_PROGRESS' ? 'ทำแบบทดสอบต่อ' : 'ดูผลสอบ'}</span>
                                   <ArrowRight className="h-3.5 w-3.5" />
                                 </>
                               ) : (

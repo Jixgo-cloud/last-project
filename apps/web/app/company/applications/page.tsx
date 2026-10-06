@@ -627,21 +627,22 @@ function CompanyApplicationsContent() {
                                 </div>
                               );
                             }
-                            const isPassed = (getAttemptPercentage(customAttempt) ?? -1) >= (effectiveAssessment.passingScore || 70);
+                            const attemptPercentage = getAttemptPercentage(customAttempt);
+                            const isPassed = attemptPercentage !== null && attemptPercentage >= (effectiveAssessment.passingScore || 70);
                             return (
                               <div className="flex items-center justify-between text-xs pt-0.5">
                                 <span className="font-semibold text-slate-800">
                                   คะแนนล่าสุด: <span className="font-extrabold text-[#4f46e5] text-sm">{formatAttemptScore(customAttempt)}</span>
                                 </span>
-                                <span
+                                {attemptPercentage !== null && <span
                                   className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                                     isPassed
                                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                       : 'bg-rose-50 text-rose-700 border-rose-200'
                                   }`}
                                 >
-                                  {getAttemptPercentage(customAttempt) === null ? 'รอตรวจ' : isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ยังไม่ผ่าน (Failed)'}
-                                </span>
+                                  {isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ยังไม่ผ่าน (Failed)'}
+                                </span>}
                               </div>
                             );
                           })()}
@@ -1456,8 +1457,9 @@ function CompanyApplicationsContent() {
                         {candidateProfile.assessmentAttempts && candidateProfile.assessmentAttempts.length > 0 ? (
                           <div className="space-y-4">
                             {candidateProfile.assessmentAttempts.map((att: any) => {
+                              const attemptPercentage = getAttemptPercentage(att);
                               const isPassed =
-                                (getAttemptPercentage(att) ?? -1) >= (att.assessment?.passingScore || 70) || att.passed === true;
+                                (attemptPercentage !== null && attemptPercentage >= (att.assessment?.passingScore || 70)) || att.passed === true;
                               const integrity = att.integritySummary;
                               const tabSwitches = integrity?.tabSwitchCount || 0;
                               const requiresReview = tabSwitches > 0;
@@ -1490,15 +1492,15 @@ function CompanyApplicationsContent() {
                                         </span>
                                         <span className="text-[10px] text-slate-400 block font-semibold">คะแนนที่ได้</span>
                                       </div>
-                                      <span
+                                      {attemptPercentage !== null && <span
                                         className={`px-3 py-1 rounded-full text-xs font-bold border ${
                                           isPassed
                                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                             : 'bg-rose-50 text-rose-700 border-rose-200'
                                         }`}
                                       >
-                                        {getAttemptPercentage(att) === null ? 'รอตรวจ' : isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ไม่ผ่านเกณฑ์ (Failed)'}
-                                      </span>
+                                        {isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ไม่ผ่านเกณฑ์ (Failed)'}
+                                      </span>}
                                     </div>
                                   </div>
 
