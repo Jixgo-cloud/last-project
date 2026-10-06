@@ -19,6 +19,66 @@ const { codingAttemptTotals } = require('../apps/api/dist/assessments/coding-att
 const { JobScreeningService } = require('../apps/api/dist/ingestion/job-screening.service');
 const { SchedulerService } = require('../apps/api/dist/scheduler/scheduler.service');
 
+function runHarness() {
+  const rows = [];
+  const matches = (row, where) => Object.entries(where).every(([key,value]) =>
+    value && typeof value === 'object' && value.lt ? row[key] < value.lt : row[key] === value);
+  const prisma = { ingestionRun: {
+    findUnique: async ({where}) => rows.find(row => matches(row,where)) || null,
+    findMany: async ({where}) => rows.filter(row => matches(row,where)),
+    create: async ({data}) => {
+      if (rows.some(row => row.requestKey === data.requestKey || row.activeKey === data.activeKey)) throw {code:'P2002'};
+      const row = {...data,id:require('crypto').randomUUID(),state:'RUNNING',startedAt:new Date(),heartbeatAt:new Date()};
+      rows.push(row);return {...row};
+    },
+    updateMany: async ({where,data}) => {const found=rows.filter(row=>matches(row,where));found.forEach(row=>Object.assign(row,data));return {count:found.length};},
+  }};
+  const service=new (require('../apps/api/dist/ingestion/ingestion.service').IngestionService)(prisma,{},
+    {getQuotas:()=>({JOBTHAI:{category:'JOB',min:10,max:50,quota:25}})});
+  return {rows,service};
+}
+
+test('Long imports return a durable run immediately and concurrent/retried starts share one worker', async () => {
+  const {service,rows}=runHarness();let finish;let calls=0;
+  const gate=new Promise(resolve=>{finish=resolve;});
+  service.performJobsSync=async()=>{calls++;await gate;return {id:'audit-1',status:'SUCCESS',createdCount:10,errorCount:0};};
+  const key=require('crypto').randomUUID();
+  try {
+    const [a,b]=await Promise.all([service.startJobsRun('JOBTHAI',10,key),service.startJobsRun('JOBTHAI',10,require('crypto').randomUUID())]);
+    assert.equal(a.id,b.id);assert.equal(a.state,'RUNNING');assert.equal(calls,1);
+    assert.equal((await service.startJobsRun('JOBTHAI',10,key)).id,a.id);
+    assert.equal((await service.getJobsRun(a.id)).state,'RUNNING');
+    assert.equal((await service.listJobsRuns())[0].id,a.id);
+    finish();await new Promise(resolve=>setImmediate(resolve));
+    const completed=await service.getJobsRun(a.id);
+    assert.equal(completed.state,'COMPLETED');assert.equal(completed.result.createdCount,10);
+    assert.equal(rows[0].activeKey,null);
+    assert.equal((await service.startJobsRun('JOBTHAI',10,key)).id,a.id);assert.equal(calls,1);
+    await assert.rejects(service.startJobsRun('JOBTHAI',11,key),/คำขออื่น/);
+  } finally {finish();await new Promise(resolve=>setImmediate(resolve));}
+});
+
+test('Stale runs are interrupted instead of reported successful, and stale workers cannot publish results', async () => {
+  const {service,rows}=runHarness();let finish;const gate=new Promise(resolve=>{finish=resolve;});
+  service.performJobsSync=async (_source,_quota,check)=>{await gate;await check();assert.fail('A fenced worker must stop');};
+  const run=await service.startJobsRun('JOBTHAI',10,require('crypto').randomUUID());
+  try {
+    rows[0].heartbeatAt=new Date(Date.now()-180000);
+    const interrupted=await service.getJobsRun(run.id);
+    assert.equal(interrupted.state,'INTERRUPTED');assert.equal(interrupted.activeKey,null);
+    finish();await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(rows[0].state,'INTERRUPTED');assert.equal(rows[0].result,undefined);
+  } finally {finish();await new Promise(resolve=>setImmediate(resolve));}
+});
+
+test('Import run validation rejects unsupported sources, malformed keys and out-of-range quotas before work', async () => {
+  const {service,rows}=runHarness();service.performJobsSync=async()=>assert.fail('Invalid requests cannot run');
+  await assert.rejects(service.startJobsRun('INTERNAL',10,require('crypto').randomUUID()),/ไม่ถูกต้อง/);
+  await assert.rejects(service.startJobsRun('JOBTHAI',10,'bad-key'),/ไม่ถูกต้อง/);
+  await assert.rejects(service.startJobsRun('JOBTHAI',9,require('crypto').randomUUID()),/ระหว่าง/);
+  assert.equal(rows.length,0);
+});
+
 test('Finished results remain readable for closed applications without granting retakes or exposing exam content', async () => {
   for (const status of ['REJECTED', 'CANCELLED']) {
     const candidate = { id: 'owner-profile' };
@@ -162,15 +222,15 @@ test('JSearch distinguishes missing key, access failure and quota without storin
   const service=new IngestionService({job:{create:async()=>{writes++;}},ingestionLog:{create:async({data})=>data}}, {}, {getQuotaForSource:()=>5});
   try {
     delete process.env.RAPIDAPI_KEY;delete process.env.JSEARCH_API_KEY;
-    assert.match((await service.syncJobs('JSEARCH',5)).errorMessage,/JSEARCH_MISSING_KEY/);
+    assert.match((await service.performJobsSync('JSEARCH',5)).errorMessage,/JSEARCH_MISSING_KEY/);
     process.env.JSEARCH_API_KEY='isolated-qa-key';
     for(const status of [401,403,429]) {
       axios.get=async()=>{throw {response:{status},message:'private provider body with isolated-qa-key'};};
-      const result=await service.syncJobs('JSEARCH',5);
+      const result=await service.performJobsSync('JSEARCH',5);
       assert.equal(result.status,'FAILED');assert.equal(result.createdCount,0);assert.match(result.errorMessage,new RegExp(`JSEARCH_${status}`));assert(!result.errorMessage.includes('isolated-qa-key'));
     }
     axios.get=async()=>({data:{data:[{job_id:'broken'}]}});
-    assert.match((await service.syncJobs('JSEARCH',5)).errorMessage,/JSEARCH_EMPTY_RESPONSE/);
+    assert.match((await service.performJobsSync('JSEARCH',5)).errorMessage,/JSEARCH_EMPTY_RESPONSE/);
     assert.equal(writes,0);
   } finally {
     axios.get=original;
@@ -182,7 +242,7 @@ test('Unavailable HTML sources report the actual HTTP reason while preserving ex
   for(const source of ['BLOGNONE','JOBSDB','JOBTHAI']) {
     const service=new IngestionService({job:{create:async()=>assert.fail('Unavailable sources must not insert')},ingestionLog:{create:async({data})=>data}}, {}, {getQuotaForSource:()=>5});
     service.fetchNativeHtml=async()=>{throw new Error('SOURCE_HTTP_429: upstream rate limit');};
-    const result=await service.syncJobs(source,5);
+    const result=await service.performJobsSync(source,5);
     assert.equal(result.status,'FAILED');assert.match(result.errorMessage,/SOURCE_HTTP_429/);assert.equal(result.createdCount,0);
   }
 });
@@ -203,7 +263,7 @@ test('Job ingestion preserves missing fields and zero salary rather than fabrica
   const service=new IngestionService(prisma,{}, {getQuotaForSource:()=>1});
   service.fetchRemotiveJobs=async()=>[{id:'qa',title:'QA source title',company:'QA source employer',url:'https://example.invalid/qa',salaryMin:0,salaryMax:0}];
   service.assignSkillsToJob=async()=>{};
-  await service.syncJobs('REMOTIVE',1);
+  await service.performJobsSync('REMOTIVE',1);
   assert.equal(saved.length,1);
   assert.equal(saved[0].requirements,null);
   assert.equal(saved[0].benefits,null);
@@ -216,7 +276,7 @@ test('An empty live job provider records failure and keeps existing jobs without
   let inserted=0;
   const service=new IngestionService({job:{create:async()=>{inserted++;}},ingestionLog:{create:async({data})=>data}}, {}, {getQuotaForSource:()=>1});
   service.fetchRemotiveJobs=async()=>[];
-  const result=await service.syncJobs('REMOTIVE',1);
+  const result=await service.performJobsSync('REMOTIVE',1);
   assert.equal(inserted,0);
   assert.equal(result.status,'FAILED');
   assert.match(result.errorMessage,/No live jobs returned/);

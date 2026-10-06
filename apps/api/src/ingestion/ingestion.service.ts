@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
@@ -42,7 +43,99 @@ export class IngestionService {
   // =========================================================================
   // Main Synchronizers
   // =========================================================================
+  async startJobsRun(source: JobSource = JobSource.REMOTIVE, limit?: number, requestKey: string = randomUUID()) {
+    const config = this.configService.getQuotas()[source];
+    if (!config || config.category !== 'JOB' || !/^[a-f0-9-]{36}$/i.test(requestKey)) {
+      throw new BadRequestException('แหล่งงานหรือรหัสรอบไม่ถูกต้อง');
+    }
+    const quota = limit ?? config.quota;
+    if (!Number.isInteger(quota) || quota < config.min || quota > config.max) {
+      throw new BadRequestException(`จำนวนงานต้องอยู่ระหว่าง ${config.min} และ ${config.max}`);
+    }
+    await this.expireInterruptedRuns();
+    const previous = await this.prisma.ingestionRun.findUnique({ where: { requestKey } });
+    if (previous) {
+      if (previous.source !== source || previous.quota !== quota) throw new BadRequestException('รหัสรอบนี้ใช้กับคำขออื่นแล้ว');
+      return previous;
+    }
+    let run;
+    try {
+      run = await this.prisma.ingestionRun.create({ data: { requestKey, source, quota, activeKey: source } });
+    } catch (error: any) {
+      if (error.code !== 'P2002') throw error;
+      const sameRequest = await this.prisma.ingestionRun.findUnique({ where: { requestKey } });
+      const active = sameRequest || await this.prisma.ingestionRun.findUnique({ where: { activeKey: source } });
+      if (!active) throw error;
+      if (sameRequest && (active.source !== source || active.quota !== quota)) throw new BadRequestException('รหัสรอบนี้ใช้กับคำขออื่นแล้ว');
+      return active;
+    }
+    // Keep the HTTP request short. State and results live in Postgres, not a process-local map.
+    void this.executeJobsRun(run.id, source, quota);
+    return run;
+  }
+
+  private async expireInterruptedRuns() {
+    await this.prisma.ingestionRun.updateMany({
+      where: { state: 'RUNNING', heartbeatAt: { lt: new Date(Date.now() - 120_000) } },
+      data: { state: 'INTERRUPTED', activeKey: null, finishedAt: new Date() },
+    });
+  }
+
+  async listJobsRuns(requestKey?: string) {
+    await this.expireInterruptedRuns();
+    return this.prisma.ingestionRun.findMany({
+      where: requestKey ? { requestKey } : { state: 'RUNNING' }, orderBy: { startedAt: 'asc' }, take: 10,
+    });
+  }
+
+  async getJobsRun(id: string) {
+    await this.expireInterruptedRuns();
+    const run = await this.prisma.ingestionRun.findUnique({ where: { id } });
+    if (!run) throw new NotFoundException('ไม่พบรอบนำเข้า');
+    return run;
+  }
+
+  private async assertRunActive(id: string) {
+    const run = await this.prisma.ingestionRun.findUnique({ where: { id } });
+    if (run?.state !== 'RUNNING') throw new Error('INGESTION_INTERRUPTED');
+  }
+
+  private async executeJobsRun(id: string, source: JobSource, quota: number) {
+    let heartbeatBusy = false;
+    const heartbeat = setInterval(async () => {
+      if (heartbeatBusy) return;
+      heartbeatBusy = true;
+      try {
+        await this.prisma.ingestionRun.updateMany({ where: { id, state: 'RUNNING' }, data: { heartbeatAt: new Date() } });
+      } catch { this.logger.warn('Unable to update ingestion heartbeat'); }
+      finally { heartbeatBusy = false; }
+    }, 15_000);
+    try {
+      const result = await this.performJobsSync(source, quota, () => this.assertRunActive(id));
+      await this.prisma.ingestionRun.updateMany({
+        where: { id, state: 'RUNNING' },
+        data: { state: 'COMPLETED', activeKey: null, finishedAt: new Date(), result: JSON.parse(JSON.stringify(result)) },
+      });
+    } catch {
+      this.logger.error('Job import interrupted before its result could be recorded');
+      try {
+        await this.prisma.ingestionRun.updateMany({ where: { id, state: 'RUNNING' }, data: { state: 'INTERRUPTED', activeKey: null, finishedAt: new Date() } });
+      } catch { this.logger.error('Unable to record interrupted import'); }
+    } finally { clearInterval(heartbeat); }
+  }
+
+  // Scheduled and legacy callers use the same database lock as the asynchronous UI.
   async syncJobs(source: JobSource = JobSource.REMOTIVE, limit?: number) {
+    let run = await this.startJobsRun(source, limit);
+    while (run.state === 'RUNNING') {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      run = await this.getJobsRun(run.id);
+    }
+    if (run.state !== 'COMPLETED') throw new Error('รอบนำเข้าถูกขัดจังหวะ โปรดตรวจประวัติก่อนเริ่มใหม่');
+    return run.result as any;
+  }
+
+  private async performJobsSync(source: JobSource = JobSource.REMOTIVE, limit?: number, assertActive?: () => Promise<void>) {
     const startedAt = new Date();
     let createdCount = 0;
     let duplicateCount = 0;
@@ -77,6 +170,8 @@ export class IngestionService {
       }
 
       for (const raw of jobsToProcess) {
+        // Fence a stale worker before it can insert another job after losing its lease.
+        if (assertActive) await assertActive();
         try {
           const externalId = String(raw.id || raw.externalId || `${source}-${raw.title}-${raw.company}`);
 
@@ -140,6 +235,7 @@ export class IngestionService {
         ? IngestionStatus.PARTIAL_SUCCESS
         : IngestionStatus.FAILED;
 
+    if (assertActive) await assertActive();
     const log = await this.prisma.ingestionLog.create({
       data: {
         source,

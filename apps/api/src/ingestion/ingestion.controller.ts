@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Query, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Query, Body, Param, UseGuards } from '@nestjs/common';
 import { IngestionService } from './ingestion.service';
 import { IngestionConfigService } from './ingestion-config.service';
 import { JobScreeningService } from './job-screening.service';
@@ -43,6 +43,21 @@ export class IngestionController {
       source || JobSource.REMOTIVE,
       limit ? parseInt(limit, 10) : undefined,
     );
+  }
+
+  @Post('job-runs')
+  async startJobRun(@Body() body: { source?: JobSource; limit?: number; requestKey?: string }) {
+    return this.ingestionService.startJobsRun(body.source || JobSource.REMOTIVE, body.limit, body.requestKey);
+  }
+
+  @Get('job-runs')
+  async listJobRuns(@Query('requestKey') requestKey?: string) {
+    return this.ingestionService.listJobsRuns(requestKey);
+  }
+
+  @Get('job-runs/:id')
+  async getJobRun(@Param('id') id: string) {
+    return this.ingestionService.getJobsRun(id);
   }
 
   @Post('sync-courses')

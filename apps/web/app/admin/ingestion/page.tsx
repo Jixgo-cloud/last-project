@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import DeleteConfirmation from '@/components/DeleteConfirmation';
@@ -36,16 +36,20 @@ import {
 } from 'lucide-react';
 import { JobSource, CourseSource, ingestionFeedback } from '@smartcareer/shared';
 
+const JOB_RUN_STORAGE = 'smartcareer_admin_job_run';
+type JobRunTracking = { id?: string; requestKey: string; source: JobSource; quota: number };
+
 export default function AdminIngestionPage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncingSource, setSyncingSource] = useState<string | null>(null);
+  const [syncingSource, setSyncingSource] = useState<string | null>('CHECKING');
+  const [jobRun, setJobRun] = useState<JobRunTracking | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [msgSeverity, setMsgSeverity] = useState<string>('success');
-  const showMessage = (message: string | null, severity = 'success') => {
+  const showMessage = useCallback((message: string | null, severity = 'success') => {
     setMsg(message);
     setMsgSeverity(severity);
-  };
+  }, []);
 
   // Ingestion Quotas States
   const [quotas, setQuotas] = useState<any>(null);
@@ -79,7 +83,7 @@ export default function AdminIngestionPage() {
   const [customCourseKeyword, setCustomCourseKeyword] = useState<string>('');
   const [backfillingCourses, setBackfillingCourses] = useState<boolean>(false);
 
-  const fetchLogs = async () => {
+  const fetchLogs = useCallback(async () => {
     try {
       setLoading(true);
       const data = await apiRequest('/admin/ingestion-logs');
@@ -89,9 +93,9 @@ export default function AdminIngestionPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const fetchQuotas = async () => {
+  const fetchQuotas = useCallback(async () => {
     try {
       setQuotasLoading(true);
       const data = await apiRequest('/ingestion/quotas');
@@ -106,15 +110,85 @@ export default function AdminIngestionPage() {
     } finally {
       setQuotasLoading(false);
     }
-  };
+  }, []);
+
+  const rememberJobRun = useCallback((run: JobRunTracking | null) => {
+    setJobRun(run);
+    try {
+      if (run) localStorage.setItem(JOB_RUN_STORAGE, JSON.stringify(run));
+      else localStorage.removeItem(JOB_RUN_STORAGE);
+    } catch { /* Server-side active runs still protect against duplicate starts. */ }
+  }, []);
+
+  const displayJobRun = useCallback((run: any) => {
+    if (run.state === 'RUNNING') {
+      rememberJobRun({ id: run.id, requestKey: run.requestKey, source: run.source, quota: run.quota });
+      setSyncingSource(run.source);
+      showMessage(`กำลังนำเข้าจาก ${run.source} · รอบ ${run.id} โหลดหน้าใหม่ได้ ระบบจะติดตามรอบเดิมต่อ`, 'warning');
+      return;
+    }
+    rememberJobRun(null);
+    setSyncingSource(null);
+    if (run.state === 'COMPLETED' && run.result) {
+      const feedback = ingestionFeedback(run.result, `ตำแหน่งงานจาก ${run.source}`, `โควต้า: ${run.quota} ตำแหน่ง`);
+      showMessage(feedback.message, feedback.severity);
+    } else {
+      showMessage(`รอบ ${run.id} ถูกขัดจังหวะ อาจมีงานที่บันทึกแล้ว กรุณาตรวจประวัติก่อนเริ่มรอบใหม่`, 'warning');
+    }
+    fetchLogs();
+  }, [rememberJobRun, showMessage, fetchLogs]);
+
+  const restoreJobRun = useCallback(async () => {
+    try {
+      let saved: JobRunTracking | null = null;
+      try { saved = JSON.parse(localStorage.getItem(JOB_RUN_STORAGE) || 'null'); } catch { /* check server below */ }
+      if (saved && /^[a-f0-9-]{36}$/i.test(saved.requestKey)) {
+        rememberJobRun(saved);
+        setSyncingSource(saved.source);
+        return;
+      }
+      const active = await apiRequest('/ingestion/job-runs');
+      if (active.length) displayJobRun(active[0]);
+      else setSyncingSource(null);
+    } catch {
+      showMessage('ยังตรวจสถานะรอบนำเข้าไม่ได้ กรุณาตรวจสถานะอีกครั้งก่อนเริ่มรอบใหม่', 'warning');
+    }
+  }, [rememberJobRun, displayJobRun, showMessage]);
 
   useEffect(() => {
     fetchLogs();
     fetchQuotas();
+    restoreJobRun();
     apiRequest('/skills')
       .then((data) => setSkillsList(data || []))
       .catch((err) => console.error('Failed to load skills:', err));
-  }, []);
+  }, [fetchLogs, fetchQuotas, restoreJobRun]);
+
+  useEffect(() => {
+    if (!jobRun) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const runs = jobRun.id
+          ? [await apiRequest(`/ingestion/job-runs/${jobRun.id}`)]
+          : await apiRequest(`/ingestion/job-runs?requestKey=${encodeURIComponent(jobRun.requestKey)}`);
+        if (cancelled) return;
+        if (runs.length && runs[0].state !== 'RUNNING') { displayJobRun(runs[0]); return; }
+        if (runs.length) {
+          setSyncingSource(runs[0].source);
+          showMessage(`กำลังนำเข้าจาก ${runs[0].source} · รอบ ${runs[0].id} โหลดหน้าใหม่ได้ ระบบจะติดตามรอบเดิมต่อ`, 'warning');
+        } else {
+          showMessage('ยังยืนยันการรับคำขอนำเข้าไม่ได้ กดส่งคำขอเดิมอีกครั้งได้โดยระบบป้องกันรอบซ้ำ', 'warning');
+        }
+      } catch {
+        if (!cancelled) showMessage('การติดตามสถานะขาดการเชื่อมต่อ ระบบจะตรวจรอบเดิมต่อ ยังไม่ควรเริ่มรอบใหม่', 'warning');
+      }
+      if (!cancelled) timer = setTimeout(poll, 5000);
+    };
+    void poll();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [jobRun, displayJobRun, showMessage]);
 
   const handleSaveQuotas = async () => {
     try {
@@ -152,20 +226,19 @@ export default function AdminIngestionPage() {
   };
 
   const triggerJobSync = async (source: JobSource) => {
+    const tracking = jobRun?.source === source ? jobRun : {
+      source, quota: quotas?.[source]?.quota, requestKey: crypto.randomUUID(),
+    };
     try {
       setSyncingSource(source);
-      showMessage(null);
-      const quota = quotas?.[source]?.quota;
-      const queryParam = quota ? `&limit=${quota}` : '';
-      const res = await apiRequest(`/ingestion/sync-jobs?source=${source}${queryParam}`, { method: 'POST' });
-      const feedback = ingestionFeedback(res, `ตำแหน่งงานจาก ${source}`, `โควต้า: ${quota || 'ค่าเริ่มต้น'} ตำแหน่ง`);
-      showMessage(feedback.message, feedback.severity);
-      fetchLogs();
-    } catch (err: any) {
-      showMessage(`ดึงข้อมูลไม่สำเร็จ: ${err.message}`, 'error');
-      fetchLogs();
-    } finally {
-      setSyncingSource(null);
+      rememberJobRun(tracking);
+      showMessage('กำลังส่งคำขอนำเข้า ระบบจะติดตามรอบนี้ต่อแม้โหลดหน้าใหม่', 'warning');
+      const run = await apiRequest('/ingestion/job-runs', {
+        method: 'POST', body: JSON.stringify({ source, limit: tracking.quota, requestKey: tracking.requestKey }),
+      });
+      displayJobRun(run);
+    } catch {
+      showMessage('ยังยืนยันการรับคำขอไม่ได้ ระบบจะตรวจรอบเดิมต่อ กรุณาอย่าเริ่มคำขอใหม่', 'warning');
     }
   };
 
@@ -376,6 +449,12 @@ export default function AdminIngestionPage() {
         </div>
 
         {/* Sync Feedback Toast */}
+        {syncingSource === 'CHECKING' && (
+          <button onClick={restoreJobRun} className="mb-4 rounded-lg border px-4 py-2">ตรวจสถานะรอบนำเข้าอีกครั้ง</button>
+        )}
+        {jobRun && !jobRun.id && (
+          <button onClick={() => triggerJobSync(jobRun.source)} className="mb-4 rounded-lg border px-4 py-2">ส่งคำขอเดิมอีกครั้ง (ป้องกันรอบซ้ำ)</button>
+        )}
         {msg && (
           <div role="alert" className={`mb-6 p-4 rounded-2xl border text-sm font-semibold flex items-center justify-between gap-3 shadow-xs ${msgSeverity === 'error' ? 'bg-rose-50 border-rose-200 text-rose-800' : msgSeverity === 'warning' ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
             <div className="flex items-center gap-3">

@@ -638,6 +638,23 @@ model CourseSkill {
 }
 
 // 24. Ingestion Log
+// Durable tracking and a database-enforced per-source lock for long job imports.
+model IngestionRun {
+  id          String   @id @default(uuid())
+  requestKey  String   @unique
+  source      String
+  quota       Int
+  activeKey   String?  @unique
+  state       String   @default("RUNNING")
+  startedAt   DateTime @default(now())
+  heartbeatAt DateTime @default(now())
+  finishedAt  DateTime?
+  result      Json?
+
+  @@index([state, heartbeatAt])
+  @@map("ingestion_runs")
+}
+
 model IngestionLog {
   id             String          @id @default(uuid())
   source         String
