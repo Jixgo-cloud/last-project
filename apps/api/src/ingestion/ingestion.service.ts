@@ -9,6 +9,7 @@ import { IngestionConfigService } from './ingestion-config.service';
 import { mentionsSkill } from '../recommendations/course-skill-evidence';
 import { fetchRenderedJobHtml } from './rendered-job-html';
 import { validateLocalJobBatch } from './local-job-batch';
+import { honestJobContent } from '../jobs/job-content';
 
 @Injectable()
 export class IngestionService {
@@ -282,7 +283,7 @@ export class IngestionService {
           createdCount++;
 
           // Auto-tag tech stack skills for matching & skill gap calculations
-          await this.assignSkillsToJob(createdJob.id, raw.title, raw.description, raw.requirements);
+          await this.assignSkillsToJob(createdJob.id, raw.title, raw.description, raw.requirements, source);
         } catch (err: any) {
           errorCount++;
           this.logger.error(`Error saving job: ${err.message}`);
@@ -1677,13 +1678,14 @@ export class IngestionService {
     title: string,
     description?: string,
     requirements?: string,
+    source: `${JobSource}` = JobSource.INTERNAL,
   ) {
     try {
       // 1. Extract skills using Gemini 1.5 Flash (or Smart Rule-Based Engine if API key is not present)
       const extractedSkills = await this.geminiExtractor.extractSkills(
         title,
         description || '',
-        requirements,
+        honestJobContent({ source, requirements }).requirements || undefined,
       );
 
       if (!extractedSkills || extractedSkills.length === 0) return;
@@ -1772,6 +1774,7 @@ export class IngestionService {
           updated.title,
           updated.description,
           updated.requirements || undefined,
+          updated.source,
         );
 
         enrichedCount++;
@@ -1791,12 +1794,12 @@ export class IngestionService {
     this.logger.log('[Tech Stack Engine] Backfilling skills for all active jobs without skills...');
     const jobs = await this.prisma.job.findMany({
       where: { skills: { none: {} } },
-      select: { id: true, title: true, description: true, requirements: true },
+      select: { id: true, title: true, description: true, requirements: true, source: true },
     });
 
     let count = 0;
     for (const job of jobs) {
-      await this.assignSkillsToJob(job.id, job.title, job.description, job.requirements || undefined);
+      await this.assignSkillsToJob(job.id, job.title, job.description, job.requirements || undefined, job.source);
       count++;
     }
 

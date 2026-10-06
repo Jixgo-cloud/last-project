@@ -22,6 +22,16 @@ const {validateLocalJobBatch}=require('../apps/api/dist/ingestion/local-job-batc
 
 const localBatch=()=>({version:1,source:'JOBSDB',collectedAt:new Date().toISOString(),jobs:[{id:'jobsdb-12345678',title:'QA Engineer',company:'QA Company',logoUrl:null,description:'QA listing',location:'Bangkok',isRemote:false,employmentType:'CONTRACT',salaryMin:0,salaryMax:null,url:'https://th.jobsdb.com/job/12345678'}]});
 
+test('Backfilling external job skills excludes known invented requirements and preserves employer-authored internal text',async()=>{
+  const legacy='Proficiency with modern web tech stack, Git, team collaboration, and problem-solving.';
+  const inputs=[];const jobs=['REMOTIVE','INTERNAL'].map(source=>({id:source,source,title:'Support Engineer',description:'Support our users.',requirements:legacy}));
+  const service=new(require('../apps/api/dist/ingestion/ingestion.service').IngestionService)({job:{findMany:async({select})=>{assert.equal(select.source,true);return jobs;}}},{extractSkills:async(...args)=>{inputs.push(args);return[];}},{});
+  await service.backfillAllJobSkills();
+  assert.equal(inputs[0][2],undefined);assert.equal(inputs[1][2],legacy);
+  await service.assignSkillsToJob('fresh','Developer','Use Rust.','Use Git.','JOBSDB');
+  assert.equal(inputs[2][2],'Use Git.');
+});
+
 test('Skill extraction fallback does not invent a typical stack from a job title', async()=>{
   const {GeminiExtractorService}=require('../apps/api/dist/ingestion/gemini-extractor.service');
   const service=new GeminiExtractorService();
