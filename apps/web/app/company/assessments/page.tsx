@@ -7,6 +7,7 @@ import DeleteConfirmation from '@/components/DeleteConfirmation';
 import Footer from '@/components/Footer';
 import TheoryAttemptReview from '@/components/TheoryAttemptReview';
 import { apiRequest } from '@/lib/api';
+import { mergeAttemptReview, saveAttemptReview } from '@/lib/attempt-review';
 import { useAuth } from '@/lib/auth-context';
 import {
   Code2,
@@ -462,7 +463,7 @@ export default function CompanyAssessmentsPage() {
 
   const handleSubmitOverride = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedAttemptForReview) return;
+    if (!selectedAttemptForReview || overriding) return;
     if (!overrideReason.trim()) {
       alert('กรุณาระบุเหตุผลการตรวจ/ปรับคะแนน (Audit Reason)');
       return;
@@ -470,22 +471,24 @@ export default function CompanyAssessmentsPage() {
 
     setOverriding(true);
     try {
-      const updated = await apiRequest(`/assessments/attempts/${selectedAttemptForReview.id}/override-score`, {
+      const { refreshFailed } = await saveAttemptReview(() => apiRequest(`/assessments/attempts/${selectedAttemptForReview.id}/override-score`, {
         method: 'POST',
         body: JSON.stringify({
           humanScore: Number(overrideScore),
           reviewReason: overrideReason,
         }),
+      }), (updated) => {
+        setSelectedAttemptForReview((current: any) => current ? mergeAttemptReview(current, updated) : current);
+        setAttemptsList((current) => current.map((attempt) => mergeAttemptReview(attempt, updated)));
+      }, async () => {
+        if (selectedAssessmentForAttempts) {
+          const attempts = await apiRequest(`/company/assessment-attempts?assessmentId=${selectedAssessmentForAttempts.id}`);
+          setAttemptsList(attempts || []);
+        }
       });
-
-      setSelectedAttemptForReview(updated);
-      alert('บันทึกผลการตรวจและคะแนนเรียบร้อยแล้ว (Human Review Saved)');
-
-      // Refresh attempts list
-      if (selectedAssessmentForAttempts) {
-        const attempts = await apiRequest(`/company/assessment-attempts?assessmentId=${selectedAssessmentForAttempts.id}`);
-        setAttemptsList(attempts || []);
-      }
+      alert(refreshFailed
+        ? 'บันทึกคะแนนเรียบร้อยแล้ว แต่โหลดรายชื่อผู้สอบล่าสุดไม่สำเร็จ กรุณาปิดหน้าต่างแล้วเปิดรายชื่อใหม่ ไม่ต้องบันทึกคะแนนซ้ำ'
+        : 'บันทึกผลการตรวจและคะแนนเรียบร้อยแล้ว (Human Review Saved)');
     } catch (err: any) {
       alert(`Override failed: ${err.message}`);
     } finally {

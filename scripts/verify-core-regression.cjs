@@ -792,6 +792,65 @@ async function run() {
       await page.setRequestInterception(false);
     }
   });
+  for (const type of ['THEORY', 'PRACTICAL_CODING']) {
+    await check(`Company ${type} review keeps its content immediately after saving a score`, async () => {
+      const exam = await db.assessment.create({ data: {
+        companyId: company.id, title: 'Regression Review ' + type, slug: 'regression-review-' + type,
+        type, questions: { create: { title: 'Review fixture question', prompt: 'Isolated review regression only', points: 50,
+          ...(type === 'THEORY' ? { choices: { create: [{ text: 'Review correct choice', isCorrect: true, order: 0 }, { text: 'Review wrong choice', isCorrect: false, order: 1 }] } } : {}),
+        } },
+      }, include: { questions: { include: { choices: true } } } });
+      const code = 'function solution(a, b) { return a + b; }';
+      const attempt = await db.assessmentAttempt.create({ data: {
+        assessmentId: exam.id, candidateId: candidate.candidateProfile.id, status: 'COMPLETED', completedAt: new Date(),
+        score: 50, maxScore: 50, percentage: 100, reviewStatus: 'PENDING_HUMAN_REVIEW',
+        answers: { create: { questionId: exam.questions[0].id, pointsEarned: 50, isCorrect: true,
+          ...(type === 'THEORY' ? { selectedChoiceId: exam.questions[0].choices[0].id } : { submittedCode: code }),
+        } },
+      } });
+      await login('hr@techcorp.co.th', 'password123');
+      await goto('/company/assessments');
+      await fill('input[placeholder="ค้นหาชื่อแบบทดสอบของบริษัท..."]', exam.title);
+      await clickText('ตรวจผลและให้คะแนนผู้สมัคร');
+      await clickText(type === 'THEORY' ? 'ตรวจคำตอบและผลสอบ' : 'ตรวจโค้ดและผลสอบ');
+      await page.waitForSelector('input[type="number"]');
+      const assertions = async () => {
+        const text = await page.$eval('body', el => el.innerText);
+        assert(text.includes(type === 'THEORY' ? 'ตรวจคำตอบและผลสอบปรนัย' : 'โค้ดของผู้สมัคร'));
+        if (type === 'THEORY') { assert(text.includes('คำตอบที่เลือก:')); assert(text.includes('Review correct choice')); assert(text.includes('50 / 50')); }
+        else { assert(text.includes(code)); assert(!text.includes('คำตอบปรนัยของผู้สมัคร')); }
+      };
+      await assertions();
+      const refreshPath = '/api/company/assessment-attempts';
+      let writes = 0; const messages = [];
+      const intercept = req => {
+        const pathname = new URL(req.url()).pathname;
+        if (pathname.endsWith('/override-score')) writes++;
+        if (type === 'THEORY' && pathname === refreshPath) void req.respond({ status: 503, contentType: 'application/json', body: '{"message":"Isolated refresh failure"}' });
+        else void req.continue();
+      };
+      const recordDialog = dialog => messages.push(dialog.message());
+      await page.setRequestInterception(true); page.on('request', intercept); page.on('dialog', recordDialog);
+      if (type === 'THEORY') expectedApiResponses.set(refreshPath, 503);
+      try {
+        await fill('input[type="number"]', '50');
+        await fill('input[placeholder="เช่น ตรวจคำตอบและยืนยันคะแนนตามเกณฑ์ของข้อสอบ"]', 'Isolated review score reason');
+        const response = page.waitForResponse(res => res.url().endsWith(`/attempts/${attempt.id}/override-score`));
+        await clickText('บันทึกคะแนนขั้นสุดท้าย'); assert((await response).ok());
+        await page.waitForFunction(() => Array.from(document.querySelectorAll('button')).some(b => b.innerText.includes('บันทึกคะแนนขั้นสุดท้าย') && !b.disabled));
+        await assertions();
+        assert.equal(writes, 1); assert.equal(messages.length, 1);
+        assert(messages[0].includes(type === 'THEORY' ? 'ไม่ต้องบันทึกคะแนนซ้ำ' : 'Human Review Saved'));
+        assert(!messages[0].includes('Override failed'));
+        const persisted = await db.assessmentAttempt.findUniqueOrThrow({ where: { id: attempt.id } });
+        assert.equal(persisted.score, 50); assert.equal(persisted.maxScore, 50); assert.equal(persisted.finalScore, 50);
+        await screenshot('company-review-saved-' + type);
+      } finally {
+        page.off('request', intercept); page.off('dialog', recordDialog); await page.setRequestInterception(false);
+        expectedApiResponses.delete(refreshPath);
+      }
+    });
+  }
   await check('No browser runtime exceptions', async () => assert.equal(pageErrors.length, 0, pageErrors.join('; ')));
   await check('No failed browser API requests', async () => assert.equal(apiFailures.length, 0, JSON.stringify(apiFailures)));
   await check('Configured database remains unchanged', async () => assert.deepEqual({ users: await admin.user.count(), jobs: await admin.job.count(), attempts: await admin.assessmentAttempt.count() }, sourceCounts));
