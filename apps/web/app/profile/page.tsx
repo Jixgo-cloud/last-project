@@ -197,7 +197,7 @@ function ProfileHubContent() {
 
           <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
             {/* Left: Avatar + Identity Info */}
-            <div className="flex items-start sm:items-center gap-4 sm:gap-5">
+            <div className="flex min-w-0 flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5">
               <div className="relative shrink-0">
                 <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-[#6366f1] via-[#4f46e5] to-[#4338ca] text-white flex items-center justify-center text-2xl sm:text-3xl font-black shadow-md shadow-indigo-500/20">
                   {initialLetter}
@@ -207,7 +207,7 @@ function ProfileHubContent() {
                 </span>
               </div>
 
-              <div className="space-y-1">
+              <div className="min-w-0 w-full space-y-1">
                 <div className="flex flex-wrap items-center gap-2.5">
                   <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 leading-snug">
                     {displayName}
@@ -225,10 +225,10 @@ function ProfileHubContent() {
                 {/* GitHub Capsule & Quick Sync */}
                 <div className="pt-2 flex flex-wrap items-center gap-3">
                   {profile?.githubUsername ? (
-                    <div className="inline-flex items-center gap-2.5 rounded-full border border-slate-200 bg-[#f8fafc] px-3 py-1 shadow-2xs">
-                      <div className="flex items-center gap-1.5 text-slate-800 text-xs font-semibold">
-                        <Github className="h-3.5 w-3.5 text-slate-900" />
-                        <span>@{profile.githubUsername}</span>
+                    <div className="inline-flex max-w-full flex-wrap items-center gap-2.5 rounded-2xl sm:rounded-full border border-slate-200 bg-[#f8fafc] px-3 py-1 shadow-2xs">
+                      <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-slate-800 text-xs font-semibold">
+                        <Github className="h-3.5 w-3.5 shrink-0 text-slate-900" />
+                        <span className="break-all">@{profile.githubUsername}</span>
                         <span className="inline-flex items-center gap-1 text-[9px] bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded-full border border-emerald-200">
                           <Lock className="h-2.5 w-2.5 text-emerald-600" /> ผูกแล้ว
                         </span>
@@ -255,7 +255,7 @@ function ProfileHubContent() {
 
             {/* Right: Quick Stats Badges */}
             <div className="grid grid-cols-3 gap-2.5 sm:gap-3 shrink-0 pt-4 lg:pt-0 border-t lg:border-t-0 border-slate-100">
-              <div className="p-3 sm:p-3.5 rounded-2xl bg-[#f9fafb] border border-slate-200/70 text-center min-w-[95px] sm:min-w-[105px]">
+              <div className="min-w-0 p-2 sm:p-3.5 rounded-2xl bg-[#f9fafb] border border-slate-200/70 text-center sm:min-w-[105px]">
                 <div className="flex items-center justify-center gap-1 text-[#4f46e5] mb-0.5">
                   <Award className="h-3.5 w-3.5" />
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Skills</span>
@@ -264,7 +264,7 @@ function ProfileHubContent() {
                 <span className="text-[10px] text-slate-400">ทักษะที่ตรวจแล้ว</span>
               </div>
 
-              <div className="p-3 sm:p-3.5 rounded-2xl bg-[#f9fafb] border border-slate-200/70 text-center min-w-[95px] sm:min-w-[105px]">
+              <div className="min-w-0 p-2 sm:p-3.5 rounded-2xl bg-[#f9fafb] border border-slate-200/70 text-center sm:min-w-[105px]">
                 <div className="flex items-center justify-center gap-1 text-slate-800 mb-0.5">
                   <Github className="h-3.5 w-3.5" />
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Repos</span>
@@ -273,7 +273,7 @@ function ProfileHubContent() {
                 <span className="text-[10px] text-slate-400">คลังหลักฐาน</span>
               </div>
 
-              <div className="p-3 sm:p-3.5 rounded-2xl bg-[#f9fafb] border border-slate-200/70 text-center min-w-[95px] sm:min-w-[105px]">
+              <div className="min-w-0 p-2 sm:p-3.5 rounded-2xl bg-[#f9fafb] border border-slate-200/70 text-center sm:min-w-[105px]">
                 <div className="flex items-center justify-center gap-1 text-emerald-600 mb-0.5">
                   <TrendingUp className="h-3.5 w-3.5" />
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Score</span>
@@ -309,7 +309,7 @@ function ProfileHubContent() {
         {/* ======================================================== */}
         {/* TAB NAVIGATION SWITCHER                                  */}
         {/* ======================================================== */}
-        <div className="flex items-center justify-start gap-2 mb-6 border-b border-slate-200 pb-3">
+        <div className="flex flex-wrap items-center justify-start gap-2 mb-6 border-b border-slate-200 pb-3">
           <button
             type="button"
             onClick={() => handleTabChange('skills')}
@@ -354,7 +354,7 @@ function ProfileHubContent() {
                 {/* Radar Chart Card (Left 6 cols) */}
                 <div className="lg:col-span-6 rounded-[20px] border border-slate-200/90 bg-white/95 p-6 sm:p-7 shadow-[0_12px_32px_rgba(15,23,42,0.04)] flex flex-col justify-between">
                   <div>
-                    <div className="flex items-center justify-between gap-3 mb-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                       <div className="flex items-center gap-2.5">
                         <span className="grid place-items-center w-8 h-8 rounded-xl bg-[#e8eaff] text-[#4f46e5]">
                           <Layers className="h-4 w-4" />
@@ -760,7 +760,7 @@ function ProfileHubContent() {
                   )}
                 </div>
 
-                <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                <div className="pt-4 border-t border-slate-100 flex flex-wrap gap-3 items-center justify-between">
                   <button
                     type="button"
                     onClick={() => handleTabChange('skills')}
