@@ -256,14 +256,21 @@ export class CompanyService {
 
   async deleteJob(userId: string, jobId: string) {
     const company = await this.getCompanyByUserId(userId);
-    const job = await this.prisma.job.findFirst({
-      where: { id: jobId, companyId: company.id },
-    });
-    if (!job) throw new NotFoundException('Job not found or unauthorized');
-
-    return this.prisma.job.delete({
-      where: { id: jobId },
-    });
+    return this.prisma.$transaction(async tx => {
+      // Lock the parent before checking children: concurrent FK inserts must
+      // finish before this check, or wait until an empty job has been deleted.
+      const jobs = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM public.jobs
+        WHERE id = ${jobId} AND "companyId" = ${company.id}
+        FOR UPDATE
+      `;
+      if (!jobs.length) throw new NotFoundException('Job not found or unauthorized');
+      const applications = await tx.jobApplication.count({ where: { jobId } });
+      if (applications > 0) {
+        throw new BadRequestException('งานนี้มีประวัติใบสมัครแล้ว จึงลบไม่ได้ กรุณาปิดรับสมัครเพื่อรักษาประวัติของผู้สมัคร');
+      }
+      return tx.job.delete({ where: { id: jobId } });
+    }, { isolationLevel: 'ReadCommitted' });
   }
 
   async getApplications(userId: string, jobId?: string) {

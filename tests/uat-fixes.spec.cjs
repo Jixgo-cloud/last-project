@@ -14,6 +14,30 @@ test('Salary labels preserve currency, missing endpoints and a genuine zero', ()
 const { candidateFeedback } = require('../apps/api/dist/assessments/candidate-feedback');
 const { GithubService } = require('../apps/api/dist/github/github.service');
 const { CompanyService } = require('../apps/api/dist/company/company.service');
+test('Job deletion preserves every application round and rejects foreign jobs without reading their history', async () => {
+  for (const owned of [true,false]) {
+    let deleted=false;
+    const service=new CompanyService({$transaction:async fn=>fn({
+      $queryRaw:async()=>owned?[{id:'qa-history-job'}]:[],
+      jobApplication:{count:async()=>{assert(owned,'Foreign history must not be read');return 1;}},
+      job:{delete:async()=>{deleted=true;assert.fail('Recruitment history must never cascade-delete');}}
+    })});
+    service.getCompanyByUserId=async()=>({id:'qa-company'});
+    await assert.rejects(service.deleteJob('qa-owner','qa-history-job'),error=>error.getStatus()===(owned?400:404));
+    assert.equal(deleted,false);
+  }
+});
+
+test('An owned empty job can still be deleted after checking for new applications', async () => {
+  let counted=false;
+  const service=new CompanyService({$transaction:async fn=>fn({
+    $queryRaw:async()=>[{id:'qa-empty-job'}],
+    jobApplication:{count:async()=>{counted=true;return 0;}},
+    job:{delete:async({where})=>{assert(counted);assert.equal(where.id,'qa-empty-job');return{id:where.id};}}
+  })});
+  service.getCompanyByUserId=async()=>({id:'qa-company'});
+  assert.equal((await service.deleteJob('qa-owner','qa-empty-job')).id,'qa-empty-job');
+});
 const { CourseScreeningService } = require('../apps/api/dist/ingestion/course-screening.service');
 
 test('Confirmed course cleanup never expands selected IDs, rechecks availability and preserves live courses', async () => {

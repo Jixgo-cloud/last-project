@@ -725,18 +725,26 @@ async function run() {
   });
   await check('Admin login and dashboard data', async () => { const token = await login('admin@smartcareer.dev', 'admin123', '/admin/dashboard'); const stats = await request('/admin/dashboard', 'GET', undefined, token); assert(stats && Object.keys(stats).length > 0); await screenshot('admin-dashboard'); });
   await check('Delete test job through UI', async () => {
-    await login('hr@techcorp.co.th', 'password123', '/company/dashboard');
+    companyToken=await login('hr@techcorp.co.th', 'password123', '/company/dashboard');
+    const disposable=await request('/company/jobs','POST',{title:'Disposable empty QA job',description:'Isolated deletion QA only',location:'QA location'},companyToken);
     await goto('/company/jobs');
-    await clickText('ลบ');
+    await page.waitForFunction(()=>document.body.innerText.includes('Disposable empty QA job'));
+    const openDelete=()=>page.evaluate(()=>{
+      const heading=Array.from(document.querySelectorAll('h3')).find(el=>el.textContent==='Disposable empty QA job');
+      const card=heading.closest('[class*="rounded-[20px]"]');
+      Array.from(card.querySelectorAll('button')).find(el=>el.textContent.includes('ลบงาน')).click();
+    });
+    await openDelete();
     await page.waitForSelector('dialog[open]');
     await clickText('ยกเลิก');
-    assert.equal(await db.job.count({ where: { id: job.id } }), 1);
-    await clickText('ลบ');
+    assert.equal(await db.job.count({ where: { id: disposable.id } }), 1);
+    await openDelete();
     await page.waitForSelector('dialog[open]');
     await clickText('ยืนยันการลบ');
     report.deleteConfirmationMode = 'In-app dialog cancellation preserves job; explicit confirmation deletes disposable fixture';
-    await page.waitForFunction(() => !document.body.innerText.includes('Regression Backend Engineer'));
-    assert.equal(await db.job.count({ where: { id: job.id } }), 0);
+    await page.waitForFunction(() => !document.body.innerText.includes('Disposable empty QA job'));
+    assert.equal(await db.job.count({ where: { id: disposable.id } }), 0);
+    assert.equal(await db.job.count({where:{id:job.id}}),1,'The original job with recruitment history must remain');
   });
   await check('Closed-job cleanup preserves hired applications and status history, including legacy DELETE mode', async () => {
     const { JobScreeningService } = require('../apps/api/dist/ingestion/job-screening.service');
@@ -748,6 +756,42 @@ async function run() {
     assert.deepEqual(await db.jobApplication.findUnique({where:{id:hired.id},include:{statusHistory:true}}),hired);
     const history=await request('/candidate/applications','GET',undefined,candidateToken);
     assert(history.some(row=>row.id===hired.id && row.status==='ACCEPTED' && row.job.id===fixture.id));
+    assert.equal((await requestResult('/company/jobs/'+fixture.id,'DELETE',undefined,companyToken)).status,400);
+    assert.deepEqual(await db.jobApplication.findUnique({where:{id:hired.id},include:{statusHistory:true}}),hired);
+    await goto('/company/jobs');
+    await page.waitForFunction(()=>document.body.innerText.includes('Closed QA history fixture'));
+    assert(await page.evaluate(()=>{
+      const heading=Array.from(document.querySelectorAll('h3')).find(el=>el.textContent==='Closed QA history fixture');
+      const card=heading.closest('[class*="rounded-[20px]"]');
+      return Array.from(card.querySelectorAll('button')).find(el=>el.textContent.includes('ลบงาน')).disabled
+        && card.innerText.includes('งานนี้มีประวัติใบสมัครแล้ว');
+    }));
+  });
+  await check('A concurrent committed application prevents cascading job deletion', async()=>{
+    const fixture=await db.job.create({data:{companyId:company.id,companyName:company.name,title:'Concurrent QA history fixture',slug:'concurrent-qa-history-fixture',description:'Isolated concurrency regression only'}});
+    let inserted,release,lockStarted;
+    const insertionReady=new Promise(resolve=>{inserted=resolve;});
+    const insertionMayCommit=new Promise(resolve=>{release=resolve;});
+    const deletionLockStarted=new Promise(resolve=>{lockStarted=resolve;});
+    const writer=db.$transaction(async tx=>{
+      const application=await tx.jobApplication.create({data:{jobId:fixture.id,candidateId:candidate.candidateProfile.id,statusHistory:{create:{newStatus:'APPLIED',note:'QA concurrent submission'}}},include:{statusHistory:true}});
+      inserted();await insertionMayCommit;return application;
+    },{timeout:15000});
+    await insertionReady;
+    const {CompanyService}=require('../apps/api/dist/company/company.service');
+    const service=new CompanyService({$transaction:fn=>db.$transaction(tx=>fn({
+      job:tx.job,jobApplication:tx.jobApplication,
+      $queryRaw:(...args)=>{lockStarted();return tx.$queryRaw(...args);}
+    }),{timeout:15000})});
+    service.getCompanyByUserId=async()=>({id:company.id});
+    const deleting=service.deleteJob(employer.id,fixture.id).then(()=>({deleted:true}),error=>({status:error.getStatus?.()}));
+    try {
+      await Promise.race([deletionLockStarted,deleting.then(()=>{throw new Error('Deletion completed without the protected lookup');})]);
+    } finally {release();}
+    const application=await writer;
+    assert.equal((await deleting).status,400);
+    assert(await db.job.findUnique({where:{id:fixture.id}}));
+    assert.deepEqual(await db.jobApplication.findUnique({where:{id:application.id},include:{statusHistory:true}}),application);
   });
   await check('CSV export recovers from a failed request with an authenticated job-scoped download link', async () => {
     const fixture = await db.job.findFirstOrThrow({ where: { slug: 'closed-qa-history-fixture' } });

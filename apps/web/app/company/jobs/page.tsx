@@ -181,13 +181,17 @@ export default function CompanyJobsManagePage() {
 
                     <button
                       onClick={() => handleDeleteJob(job.id, job.title)}
-                      disabled={actionLoading === job.id}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-bold border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition"
+                      disabled={actionLoading === job.id || (job._count?.applications || 0) > 0}
+                      title={(job._count?.applications || 0) > 0 ? 'มีประวัติใบสมัครแล้ว กรุณาปิดรับสมัครแทนการลบ' : undefined}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-bold border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Trash2 className="h-3 w-3" />
                       <span>ลบงาน</span>
                     </button>
                   </div>
+                  {(job._count?.applications || 0) > 0 && (
+                    <p className="text-[11px] text-slate-500">งานนี้มีประวัติใบสมัครแล้ว จึงลบไม่ได้ ใช้ปิดรับสมัครเพื่อเก็บประวัติไว้</p>
+                  )}
                 </div>
               </div>
             ))}
@@ -195,7 +199,7 @@ export default function CompanyJobsManagePage() {
         )}
       </main>
 
-      {deleteTarget && <DeleteConfirmation title={deleteTarget.title} description="งานนี้และข้อมูลใบสมัครที่เกี่ยวข้องจะถูกลบถาวร ไม่สามารถกู้คืนผ่านหน้าเว็บได้"
+      {deleteTarget && <DeleteConfirmation title={deleteTarget.title} description="ลบได้เฉพาะงานที่ยังไม่มีประวัติใบสมัคร งานนี้จะถูกลบถาวรและไม่สามารถกู้คืนผ่านหน้าเว็บได้ หากมีผู้สมัครเข้ามาแล้วระบบจะไม่ลบงาน"
         onCancel={() => setDeleteTarget(null)} onConfirm={async () => {
           await apiRequest(`/company/jobs/${deleteTarget.id}`, { method: 'DELETE' });
           fetchCompany();
