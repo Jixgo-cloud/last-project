@@ -232,9 +232,9 @@ export default function Navbar() {
 
                 {/* Floating User Account & Role Workspace Dropdown */}
                 {userMenuOpen && (
-                  <div className="absolute top-[calc(100%+8px)] right-0 z-50 flex flex-col w-64 p-2 rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/10 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="absolute top-[calc(100%+8px)] right-0 z-50 flex max-h-[calc(100dvh-10rem)] sm:max-h-[calc(100dvh-6rem)] flex-col w-64 overflow-y-auto overscroll-contain p-2 rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/10 animate-in fade-in zoom-in-95 duration-150">
                     {/* User Identity Header */}
-                    <div className="px-3 py-2.5 border-b border-slate-100 flex items-center gap-2.5">
+                    <div className="shrink-0 px-3 py-2.5 border-b border-slate-100 flex items-center gap-2.5">
                       <div className="w-8 h-8 rounded-full bg-[#6366f1] text-white font-bold flex items-center justify-center text-xs shrink-0">
                         {(user.candidateProfile?.fullName || user.company?.name || user.email || 'U').charAt(0).toUpperCase()}
                       </div>
@@ -247,7 +247,7 @@ export default function Navbar() {
                     </div>
 
                     {/* Role-Specific Navigation Links */}
-                    <div className="py-1.5 space-y-0.5">
+                    <div className="shrink-0 py-1.5 space-y-0.5">
                       <div className="px-3 pt-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                         {user.role === UserRole.COMPANY
                           ? 'จัดการองค์กร · Company'
@@ -388,7 +388,7 @@ export default function Navbar() {
                     </div>
 
                     {/* Divider & Logout Action */}
-                    <div className="pt-1 border-t border-slate-100">
+                    <div className="shrink-0 pt-1 border-t border-slate-100">
                       <button
                         type="button"
                         onClick={() => {

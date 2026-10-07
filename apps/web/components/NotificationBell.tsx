@@ -220,9 +220,9 @@ export default function NotificationBell() {
 
       {/* Dropdown Popover */}
       {open && (
-        <div className="absolute inset-x-4 top-[calc(100%+8px)] z-50 w-auto sm:inset-x-auto sm:right-0 sm:w-96 rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/10 animate-in fade-in zoom-in-95 duration-150 overflow-hidden">
+        <div className="absolute inset-x-4 top-[calc(100%+8px)] z-50 flex max-h-[calc(100dvh-10rem)] sm:max-h-[calc(100dvh-6rem)] flex-col w-auto sm:inset-x-auto sm:right-0 sm:w-96 rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/10 animate-in fade-in zoom-in-95 duration-150 overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-[#fbfcfe]">
+          <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-[#fbfcfe]">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-slate-900">การแจ้งเตือน</span>
               {unreadCount > 0 && (
@@ -246,7 +246,7 @@ export default function NotificationBell() {
           </div>
 
           {/* Notification List */}
-          <div className="max-h-[380px] overflow-y-auto divide-y divide-slate-100">
+          <div className="min-h-0 max-h-[380px] overflow-y-auto overscroll-contain divide-y divide-slate-100">
             {notifications.length === 0 ? (
               <div className="py-12 px-4 text-center">
                 <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2.5">
@@ -312,7 +312,7 @@ export default function NotificationBell() {
           </div>
 
           {/* Footer */}
-          <div className="p-2 border-t border-slate-100 bg-[#fbfcfe] text-center">
+          <div className="shrink-0 p-2 border-t border-slate-100 bg-[#fbfcfe] text-center">
             <button
               type="button"
               onClick={() => {
