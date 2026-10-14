@@ -820,7 +820,7 @@ test('A repeated GitHub skill is written once, keeps quiz/code scores and batche
     skill:{createMany:async()=>{},findMany:async()=>[{id:'js',name:'JavaScript'}]},
     candidateSkill:{
       findMany:async()=>[{id:'existing',skillId:'js',theoryScore:100,codingScore:50},{id:'stale',skillId:'old',theoryScore:50,codingScore:100}],
-      upsert:async args=>{skillWrites++;assert.deepEqual(args.update,{practicalScore:65,verifiedScore:68,isVerified:true});return{id:'existing'};},
+      upsert:async args=>{skillWrites++;assert.deepEqual(args.update,{practicalScore:70,verifiedScore:70});return{id:'existing'};},
       update:async args=>{staleUpdate=args;},
     },
   };
@@ -831,7 +831,7 @@ test('A repeated GitHub skill is written once, keeps quiz/code scores and batche
   assert.equal(skillWrites,1);
   assert.equal(evidence.length,16);
   assert.ok(evidence.every(row=>row.commitCount===0&&row.linesOfCode===0));
-  assert.deepEqual(staleUpdate.data,{practicalScore:0,verifiedScore:40,isVerified:false});
+  assert.deepEqual(staleUpdate.data,{practicalScore:0,verifiedScore:0});
 });
 
 test('Foreign job scope fails before querying any applications; owned scope reaches the database', async () => {

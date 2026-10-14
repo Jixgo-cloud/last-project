@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { MatchScoreResult } from '@smartcareer/shared';
+import { MatchScoreResult, githubEvidenceScore } from '@smartcareer/shared';
 
 @Injectable()
 export class MatchingService {
@@ -12,7 +12,7 @@ export class MatchingService {
         where: { id: candidateId },
         include: {
           skills: {
-            include: { skill: true },
+            include: { skill: true, evidences: true },
           },
         },
       }),
@@ -33,10 +33,10 @@ export class MatchingService {
     if (!candidate || job.skills.length === 0) {
       return {
         jobId,
-        matchScore: 40,
-        requiredCoverage: 40,
+        matchScore: 0,
+        requiredCoverage: 0,
         preferredCoverage: 0,
-        careerAlignment: 10,
+        careerAlignment: 0,
         matchedSkills: [],
         missingSkills: job.skills.map((s) => ({
           skillId: s.skillId,
@@ -51,8 +51,8 @@ export class MatchingService {
     for (const cs of candidate.skills) {
       // Practical score represents hands-on GitHub/project competence (Public Analyzer model)
       // Assessments do not dilute match score; passing grants the Verified Badge
-      const effectiveScore = cs.practicalScore || (cs.isVerified ? 85 : 70);
-      const isVerified = Boolean(cs.isVerified);
+      const effectiveScore = githubEvidenceScore(cs);
+      const isVerified = false;
       if (cs.skill?.name) {
         candidateSkillMap.set(cs.skill.name.toLowerCase(), { score: effectiveScore, isVerified });
       }
@@ -162,7 +162,7 @@ export class MatchingService {
 
     return {
       jobId,
-      matchScore: Math.min(100, Math.max(15, totalMatchScore)),
+      matchScore: candidate.skills.some(cs => githubEvidenceScore(cs) > 0) ? Math.min(100, Math.max(0, totalMatchScore)) : 0,
       requiredCoverage: Math.round(requiredCoverage),
       preferredCoverage: Math.round(preferredCoverage),
       careerAlignment: Math.round(careerAlignment),
@@ -183,7 +183,7 @@ export class MatchingService {
       where: { id: candidateId },
       include: {
         skills: {
-          include: { skill: true },
+          include: { skill: true, evidences: true },
         },
       },
     });
@@ -195,14 +195,14 @@ export class MatchingService {
 
     const candidateSkillMap = new Map<string, number>();
     for (const cs of candidate.skills) {
-      const effectiveScore = cs.practicalScore || (cs.isVerified ? 85 : 70);
+      const effectiveScore = githubEvidenceScore(cs);
       candidateSkillMap.set(cs.skill.name.toLowerCase(), effectiveScore);
       candidateSkillMap.set(cs.skill.id, effectiveScore);
     }
 
     for (const job of jobs) {
       if (!job.skills || job.skills.length === 0) {
-        scoreMap.set(job.id, 40);
+        scoreMap.set(job.id, 0);
         continue;
       }
 
@@ -251,7 +251,7 @@ export class MatchingService {
         (requiredCoverage * 0.7) + (preferredCoverage * 0.2) + (careerAlignment * 0.1),
       );
 
-      scoreMap.set(job.id, Math.min(100, Math.max(15, totalMatchScore)));
+      scoreMap.set(job.id, candidate.skills.some(cs => githubEvidenceScore(cs) > 0) ? Math.min(100, Math.max(0, totalMatchScore)) : 0);
     }
 
     return scoreMap;

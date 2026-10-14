@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { SkillGapItem, SkillCategory, CourseSource } from '@smartcareer/shared';
+import { SkillGapItem, SkillCategory, CourseSource, githubEvidenceScore } from '@smartcareer/shared';
 import { CAREER_DEFINITIONS } from '../jobs/jobs.service';
 import { courseWithSupportedSkills, mentionsSkill } from './course-skill-evidence';
 
@@ -117,7 +117,7 @@ export class RecommendationsService {
     const candidate = await this.prisma.candidateProfile.findUnique({
       where: { userId: candidateUserId },
       include: {
-        skills: { include: { skill: true } },
+        skills: { include: { skill: true, evidences: true } },
         evaluations: true,
       },
     });
@@ -132,13 +132,13 @@ export class RecommendationsService {
     // Map candidate scores
     const candidateScores = new Map<string, number>();
     for (const cs of candidate.skills) {
-      candidateScores.set(cs.skill.name.toLowerCase(), cs.verifiedScore || cs.practicalScore || cs.theoryScore);
+      candidateScores.set(cs.skill.name.toLowerCase(), githubEvidenceScore(cs));
     }
 
     const gaps: SkillGapItem[] = [];
 
     for (const [skillName, requiredLevel] of Object.entries(benchmark)) {
-      const currentLevel = candidateScores.get(skillName.toLowerCase()) || 20;
+      const currentLevel = candidateScores.get(skillName.toLowerCase()) ?? 0;
       const gap = Math.max(0, requiredLevel - currentLevel);
 
       if (gap > 5) {

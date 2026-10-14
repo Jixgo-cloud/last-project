@@ -30,7 +30,7 @@ import {
   Sliders,
   TrendingUp,
 } from 'lucide-react';
-import { RadarChartDataPoint, CandidateEarnedBadge } from '@smartcareer/shared';
+import { RadarChartDataPoint, CandidateEarnedBadge, githubEvidenceScore } from '@smartcareer/shared';
 
 function ProfileHubLoading() {
   return (
@@ -277,7 +277,7 @@ function ProfileHubContent() {
               <div className="min-w-0 p-2 sm:p-3.5 rounded-2xl bg-[#f9fafb] border border-slate-200/70 text-center sm:min-w-[105px]">
                 <div className="flex items-center justify-center gap-1 text-emerald-600 mb-0.5">
                   <TrendingUp className="h-3.5 w-3.5" />
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Score</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">GitHub</span>
                 </div>
                 <p className="text-xl sm:text-2xl font-black text-emerald-600">{avgRadarScore}</p>
                 <span className="text-[10px] text-slate-400">คะแนนเฉลี่ย</span>
@@ -321,7 +321,7 @@ function ProfileHubContent() {
             }`}
           >
             <Sparkles className="h-3.5 w-3.5" />
-            <span>เรดาร์ทักษะ &amp; หลักฐาน (Skill Radar)</span>
+            <span>เรดาร์หลักฐาน GitHub</span>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 font-extrabold">Default</span>
           </button>
 
@@ -395,7 +395,7 @@ function ProfileHubContent() {
                         </ResponsiveContainer>
                       ) : (
                         <div className="text-center text-slate-400 py-12 text-xs">
-                          ยังไม่มีข้อมูลเรดาร์ทักษะ กรุณาซิงค์ GitHub หรือทำแบบทดสอบทักษะ
+                          ยังไม่มีข้อมูลเรดาร์ทักษะ กรุณาซิงค์ GitHub
                         </div>
                       )}
                     </div>
@@ -435,9 +435,9 @@ function ProfileHubContent() {
                         </span>
                         <div>
                           <h2 className="text-base font-bold text-slate-900 tracking-tight">
-                            เหรียญทักษะที่ผ่านการตรวจ (Verified Skills)
+                            คะแนนหลักฐานจาก GitHub
                           </h2>
-                          <span className="text-[11px] text-[#667085]">เกณฑ์ 3 เสาหลัก: Git 50% + Quiz 20% + Code 30%</span>
+                          <span className="text-[11px] text-[#667085]">คิดจากหลักฐานใน Repo เท่านั้น · ผลสอบแยกเป็น Badge</span>
                         </div>
                       </div>
                       <span className="text-[11px] font-bold text-[#4f46e5] bg-[#e8eaff] px-2.5 py-1 rounded-full">
@@ -457,21 +457,21 @@ function ProfileHubContent() {
                                 <div>
                                   <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="font-bold text-slate-900 text-xs sm:text-sm">{cs.skill.name}</span>
-                                    {cs.isVerified ? (
+                                    {githubEvidenceScore(cs) > 0 ? (
                                       <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-200">
-                                        <CheckCircle2 className="h-2.5 w-2.5" /> ยืนยันแล้ว
+                                        <CheckCircle2 className="h-2.5 w-2.5" /> มีหลักฐาน GitHub
                                       </span>
                                     ) : (
-                                      <span className="text-[9px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full border border-amber-200" title="ทำแบบทดสอบ Quiz/Code เพื่อเพิ่มคะแนนยืนยัน">
-                                        รอสอบยืนยัน
+                                      <span className="text-[9px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full border border-amber-200" title="ซิงค์ GitHub เพื่อแสดงหลักฐานผลงาน">
+                                        ยังไม่มีหลักฐาน GitHub
                                       </span>
                                     )}
                                   </div>
                                   <span className="text-[10px] font-medium text-[#667085]">{cs.skill.category}</span>
                                 </div>
                                 <div className="text-right">
-                                  <span className={`text-sm sm:text-base font-extrabold ${cs.isVerified ? 'text-emerald-600' : 'text-[#4f46e5]'}`}>
-                                    {cs.verifiedScore}
+                                  <span className={`text-sm sm:text-base font-extrabold ${githubEvidenceScore(cs) > 0 ? 'text-emerald-600' : 'text-[#4f46e5]'}`}>
+                                    {githubEvidenceScore(cs)}
                                   </span>
                                   <span className="text-[9px] text-slate-400 block">/ 100</span>
                                 </div>
@@ -479,9 +479,9 @@ function ProfileHubContent() {
 
                               {/* Score breakdown pills */}
                               <div className="mt-3 grid grid-cols-3 gap-1 text-[10px] pt-2 border-t border-slate-100 text-[#667085]">
-                                <div>Git: <span className="font-bold text-slate-800">{cs.practicalScore}%</span></div>
-                                <div>Quiz: <span className="font-bold text-slate-800">{cs.theoryScore}%</span></div>
-                                <div>Code: <span className="font-bold text-slate-800">{cs.codingScore}%</span></div>
+                                <div>Git: <span className="font-bold text-slate-800">{githubEvidenceScore(cs)}%</span></div>
+                                <div>ผล Quiz (แยก): <span className="font-bold text-slate-800">{cs.theoryScore}%</span></div>
+                                <div>ผล Code (แยก): <span className="font-bold text-slate-800">{cs.codingScore}%</span></div>
                               </div>
                             </div>
                           ))}
@@ -490,7 +490,7 @@ function ProfileHubContent() {
                         {/* Verification Guidance Note */}
                         <div className="mt-3.5 p-3 rounded-xl bg-indigo-50/70 border border-indigo-100/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-[#4338ca]">
                           <span className="font-medium">
-                            💡 <strong>เกณฑ์ Verified Badge:</strong> คะแนนรวมต้องได้ 60+ (ทำแบบทดสอบ Quiz และ Coding เพื่อปลดล็อก)
+                            💡 <strong>คะแนนหลักฐาน GitHub:</strong> ใช้หลักฐานที่ตรวจพบ ไม่รวมผลสอบหรือจำนวนดาว และไม่ใช่การรับรองความเชี่ยวชาญ
                           </span>
                           <Link
                             href="/assessments"
@@ -503,7 +503,7 @@ function ProfileHubContent() {
                       </>
                     ) : (
                       <div className="text-center py-8 text-xs text-slate-400">
-                        ยังไม่มีทักษะที่ผ่านการยืนยัน ทำแบบทดสอบในหน้า Assessments เพื่อรับเหรียญทักษะ
+                        ยังไม่มีหลักฐาน GitHub · ผลสอบและ Badge แสดงแยกด้านล่าง
                       </div>
                     )}
                   </div>
@@ -519,7 +519,7 @@ function ProfileHubContent() {
                           <h2 className="text-base font-bold text-slate-900 tracking-tight">
                             เหรียญรางวัลรายบททดสอบ (Assessment Badges)
                           </h2>
-                          <span className="text-[11px] text-[#667085]">เหรียญรับรองมาตรฐานแยกตามการทดสอบที่ผ่านจริง</span>
+                          <span className="text-[11px] text-[#667085]">ได้จากข้อสอบที่ผ่านเกณฑ์และเปิดเผยผลแล้ว ไม่เพิ่มคะแนน GitHub</span>
                         </div>
                       </div>
                       <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200/80 px-2.5 py-1 rounded-full">

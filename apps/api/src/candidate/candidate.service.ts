@@ -1,7 +1,7 @@
 import { candidateFeedback } from '../assessments/candidate-feedback';
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { RadarChartDataPoint, SkillCategory, evidenceWeightedScore } from '@smartcareer/shared';
+import { RadarChartDataPoint, SkillCategory, evidenceWeightedScore, githubSkillView } from '@smartcareer/shared';
 
 @Injectable()
 export class CandidateService {
@@ -30,7 +30,7 @@ export class CandidateService {
       throw new NotFoundException('Candidate profile not found');
     }
 
-    return profile;
+    return { ...profile, skills: profile.skills.map(githubSkillView) };
   }
 
   async updateProfile(
@@ -91,12 +91,12 @@ export class CandidateService {
       },
       include: {
         skills: {
-          include: { skill: true },
+          include: { skill: true, evidences: true },
         },
       },
     });
 
-    return profile;
+    return { ...profile, skills: profile.skills.map(githubSkillView) };
   }
 
   async getRadarData(userId: string): Promise<RadarChartDataPoint[]> {
@@ -126,7 +126,7 @@ export class CandidateService {
     ];
 
     const radarPoints: RadarChartDataPoint[] = categories.map(category => {
-      const skills = profile.skills.filter(cs => cs.skill.category === category);
+      const skills = profile.skills.filter(cs => cs.skill.category === category && evidenceWeightedScore(cs) > 0);
       const score = skills.length ? Math.round(skills.reduce((sum, cs) => sum + evidenceWeightedScore(cs), 0) / skills.length) : 0;
       return { category, subject: category, score, fullMark: 100 };
     });

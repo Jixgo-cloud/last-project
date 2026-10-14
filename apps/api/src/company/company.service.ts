@@ -7,6 +7,7 @@ import { CandidateService } from '../candidate/candidate.service';
 import {
   assessmentQuestionsMatch,
   codingScreeningResult,
+  githubSkillView,
   getAssessmentValidationError,
   VerificationStatus,
   ApplicationStatus,
@@ -317,7 +318,7 @@ export class CompanyService {
         candidate: {
           include: {
             user: { select: { email: true } },
-            skills: { include: { skill: true } },
+            skills: { include: { skill: true, evidences: true } },
             githubRepos: { take: 3 },
             assessmentAttempts: {
               where: { assessment: { OR: [{ companyId: company.id }, { companyId: null }] } },
@@ -332,6 +333,7 @@ export class CompanyService {
       orderBy: { createdAt: 'desc' },
     });
     return applications.map(application => ({ ...application,
+      candidate: { ...application.candidate, skills: (application.candidate.skills || []).map(githubSkillView) },
       codingResult: codingScreeningResult(application.candidate.assessmentAttempts, application.assignedAssessment || application.job.customAssessment),
       evaluation: companyEvaluationView(application.evaluation) }));
   }
@@ -1066,6 +1068,7 @@ export class CompanyService {
 
     return {
       ...candidate,
+      skills: (candidate.skills || []).map(githubSkillView),
       assessmentAttempts: attemptsWithIntegrity,
       radarData,
       application: { ...application, evaluation: companyEvaluationView(application.evaluation) },

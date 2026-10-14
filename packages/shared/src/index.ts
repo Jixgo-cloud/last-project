@@ -206,7 +206,7 @@ export interface SkillScoreSummary {
   practicalScore: number; // 0-100 (GitHub)
   theoryScore: number;    // 0-100 (MCQ Assessment)
   codingScore: number;    // 0-100 (Judge0 Coding)
-  verifiedScore: number;  // Combined
+  verifiedScore: number;  // Legacy cache; use githubEvidenceScore(evidences)
   isVerified: boolean;
 }
 

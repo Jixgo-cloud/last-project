@@ -1,7 +1,7 @@
 import { Injectable, Logger, ForbiddenException, ConflictException, NotFoundException, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import axios from 'axios';
-import { SkillCategory } from '@smartcareer/shared';
+import { SkillCategory, githubEvidenceScore } from '@smartcareer/shared';
 
 interface RepoAnalysisResult {
   repoName: string;
@@ -147,13 +147,13 @@ export class GithubService {
     // 1. Fetch repositories
     const repos = await this.fetchUserRepositories(targetUsername);
 
-    // Aggregate repeated skills before writing, retaining the original last-repository score.
+    // Strongest evidence wins; stars and repeated detections do not add points.
     const detectedByName = new Map<string, { category: SkillCategory; practicalScore: number }>();
     for (const repo of repos) {
       for (const detected of repo.detectedSkills) {
         detectedByName.set(detected.skillName, {
           category: detected.category,
-          practicalScore: Math.min(95, Math.max(50, 60 + repo.stars * 5 + detected.scoreWeight)),
+          practicalScore: Math.max(detectedByName.get(detected.skillName)?.practicalScore || 0, githubEvidenceScore({evidences:[{repositoryId:repo.fullName,scoreContribution:detected.scoreWeight}]})),
         });
       }
     }
@@ -194,9 +194,7 @@ export class GithubService {
         const candidateSkillIds = new Map<string, string>();
         for (const skill of masterSkills) {
           const practicalScore = detectedByName.get(skill.name)!.practicalScore;
-          const existing = existingBySkill.get(skill.id);
-          const verifiedScore = Math.round(practicalScore * 0.5 + (existing?.theoryScore || 0) * 0.2 + (existing?.codingScore || 0) * 0.3);
-          const data = { practicalScore, verifiedScore, isVerified: verifiedScore >= 60 };
+          const data = { practicalScore, verifiedScore: practicalScore };
           const saved = await tx.candidateSkill.upsert({
             where: { candidateId_skillId: { candidateId: profile.id, skillId: skill.id } },
             update: data, create: { ...data, candidateId: profile.id, skillId: skill.id },
@@ -213,8 +211,7 @@ export class GithubService {
         if (evidence.length) await tx.gitHubEvidence.createMany({ data: evidence });
         // Remove stale practical contributions while preserving quiz/code history.
         for (const skill of existingBySkill.values()) {
-          const verifiedScore = Math.round(skill.theoryScore * 0.2 + skill.codingScore * 0.3);
-          await tx.candidateSkill.update({ where: { id: skill.id }, data: { practicalScore: 0, verifiedScore, isVerified: verifiedScore >= 60 } });
+          await tx.candidateSkill.update({ where: { id: skill.id }, data: { practicalScore: 0, verifiedScore: 0 } });
         }
       }, { timeout: 60000 });
     } catch (error) {
@@ -438,7 +435,7 @@ export class GithubService {
       for (const ds of repo.detectedSkills) {
         const existing = skillCountMap.get(ds.skillName) || { count: 0, category: ds.category, totalWeight: 0 };
         existing.count += 1;
-        existing.totalWeight += ds.scoreWeight;
+        existing.totalWeight = Math.max(existing.totalWeight, githubEvidenceScore({evidences:[{repositoryId:repo.fullName,scoreContribution:ds.scoreWeight}]}));
         skillCountMap.set(ds.skillName, existing);
       }
     }
@@ -466,8 +463,8 @@ export class GithubService {
         };
       }
 
-      const totalScore = skillsInCat.reduce((acc, [_, d]) => acc + d.totalWeight + d.count * 12, 0);
-      const avgScore = Math.min(95, Math.max(45, Math.round(50 + totalScore / (skillsInCat.length * 1.5))));
+      const totalScore = skillsInCat.reduce((acc, [_, d]) => acc + d.totalWeight, 0);
+      const avgScore = Math.round(totalScore / skillsInCat.length);
 
       return {
         category: cat,

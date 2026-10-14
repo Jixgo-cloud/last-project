@@ -21,9 +21,17 @@ export function filterCodingApplications<T extends { codingResult?: { percentage
   return filtered;
 }
 
-/** Missing GitHub evidence cannot contribute a cached practical score. No baseline or bonus. */
-export function evidenceWeightedScore(skill: { practicalScore?: number; theoryScore?: number; codingScore?: number; evidences?: { repositoryId?: string | null }[] }) {
-  const bounded = (n?: number) => typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0;
-  const practical = skill.evidences?.some(e => !!e.repositoryId) ? bounded(skill.practicalScore) : 0;
-  return practical * 0.5 + bounded(skill.theoryScore) * 0.2 + bounded(skill.codingScore) * 0.3;
+/** Evidence strength, not proficiency. Repeated repos, stars and exams never add points. */
+export function githubEvidenceScore(skill: { evidences?: { repositoryId?: string | null; scoreContribution?: number }[] }) {
+  const weights = (skill.evidences || []).filter(e => e.repositoryId && typeof e.scoreContribution === 'number' && Number.isFinite(e.scoreContribution) && e.scoreContribution > 0).map(e => e.scoreContribution!);
+  return weights.length ? Math.min(95, 60 + Math.max(...weights)) : 0;
+}
+
+/** Compatibility alias for radar callers; exams are deliberately excluded. */
+export const evidenceWeightedScore = githubEvidenceScore;
+
+/** Normalize legacy combined caches without rewriting historical exam records. */
+export function githubSkillView<T extends { evidences?: { repositoryId?: string | null; scoreContribution?: number }[] }>(skill: T) {
+  const score = githubEvidenceScore(skill);
+  return { ...skill, practicalScore: score, verifiedScore: score, hasGithubEvidence: score > 0, scoreSource: 'GITHUB_EVIDENCE' as const };
 }

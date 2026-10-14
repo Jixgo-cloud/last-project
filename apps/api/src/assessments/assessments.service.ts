@@ -1175,7 +1175,7 @@ export class AssessmentsService {
 
     const bestScore = Math.max(existing?.[field] || 0, score);
 
-    const candidateSkill = await tx.candidateSkill.upsert({
+    await tx.candidateSkill.upsert({
       where: {
         candidateId_skillId: { candidateId, skillId },
       },
@@ -1189,21 +1189,8 @@ export class AssessmentsService {
       },
     });
 
-    const verifiedScore = Math.round(
-      candidateSkill.practicalScore * 0.5 +
-        candidateSkill.theoryScore * 0.2 +
-        candidateSkill.codingScore * 0.3,
-    );
+    // Exam results feed badges and screening, never GitHub evidence scores.
 
-    const isPassing = bestScore >= 60 || verifiedScore >= 60;
-    await tx.candidateSkill.update({
-      where: { id: candidateSkill.id },
-      data: {
-        verifiedScore: Math.max(verifiedScore, bestScore),
-        isVerified: isPassing || candidateSkill.isVerified,
-        verifiedAt: isPassing ? new Date() : candidateSkill.verifiedAt,
-      },
-    });
   }
 
   async getCandidateBadges(userId: string): Promise<CandidateEarnedBadge[]> {

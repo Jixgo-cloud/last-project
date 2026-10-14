@@ -40,7 +40,7 @@ import {
   PolarRadiusAxis,
   ResponsiveContainer,
 } from 'recharts';
-import { ApplicationStatus, getAttemptPercentage, formatAttemptScore, filterCodingApplications } from '@smartcareer/shared';
+import { ApplicationStatus, getAttemptPercentage, formatAttemptScore, filterCodingApplications, githubEvidenceScore } from '@smartcareer/shared';
 import { useLanguage } from '@/lib/use-language';
 import { applicationStatusLabel } from '@/lib/application-status';
 
@@ -580,7 +580,7 @@ function CompanyApplicationsContent() {
                         }`}
                       >
                         <Sparkles className="h-3 w-3" />
-                        <span>{score}% {language === 'EN' ? 'Job match' : 'ความเหมาะสม'}</span>
+                        <span>{score}% {language === 'EN' ? 'Match at application' : 'ความเหมาะสม ณ วันที่สมัคร'}</span>
                       </div>
                     </div>
 
@@ -595,7 +595,7 @@ function CompanyApplicationsContent() {
                     {/* Verified Competencies */}
                     <div className="mb-4">
                       <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-2">
-                        ทักษะที่ผ่านการตรวจสอบ (Verified Skills)
+                        ทักษะจากหลักฐาน GitHub (GitHub Skills)
                       </span>
                       {app.candidate?.skills && app.candidate.skills.length > 0 ? (
                         <div className="flex flex-wrap gap-1.5">
@@ -606,7 +606,7 @@ function CompanyApplicationsContent() {
                             >
                               <span>{cs.skill?.name}</span>
                               <span className="text-[10px] font-bold text-[#4f46e5]/80 bg-white/70 px-1 rounded-md">
-                                {cs.verifiedScore}%
+                                {githubEvidenceScore(cs)}%
                               </span>
                             </span>
                           ))}
@@ -678,7 +678,7 @@ function CompanyApplicationsContent() {
                                       : 'bg-rose-50 text-rose-700 border-rose-200'
                                   }`}
                                 >
-                                  {isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ยังไม่ผ่าน (Failed)'}
+                                  {isPassed ? '🏅 ผ่านเกณฑ์ (Badge)' : '✗ ยังไม่ผ่าน (Failed)'}
                                 </span>}
                               </div>
                             );
@@ -1155,7 +1155,7 @@ function CompanyApplicationsContent() {
                       <div className="px-3.5 py-1.5 rounded-2xl bg-indigo-50 border border-indigo-200/90 text-[#4f46e5] flex items-center gap-1.5 shadow-2xs">
                         <Sparkles className="h-4 w-4" />
                         <span className="text-sm font-black">
-                          {candidateProfile.application?.matchScoreAtApplication || 0}% Match
+                          {candidateProfile.application?.matchScoreAtApplication || 0}% Match ณ วันที่สมัคร
                         </span>
                       </div>
                       <button
@@ -1244,11 +1244,11 @@ function CompanyApplicationsContent() {
                             <div className="flex items-center justify-between w-full mb-3">
                               <span className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
                                 <Sparkles className="h-3.5 w-3.5 text-[#4f46e5]" />
-                                เรดาร์ทักษะ 5 มิติ (Skill Radar)
+                                เรดาร์หลักฐาน GitHub 5 มิติ
                               </span>
                               <span className="text-[10px] text-slate-400 font-semibold">คะแนนเต็ม 100</span>
                             </div>
-                            <p className="text-xs text-slate-500">เฉลี่ยคะแนนทักษะในแต่ละด้าน: GitHub ที่มีหลักฐาน 50% + ทฤษฎี 20% + Coding 30% ไม่มีคะแนนตั้งต้น; 0 อาจหมายถึงไม่มีหลักฐาน ไม่ใช่ข้อสรุปว่าไม่มีความสามารถ</p>
+                            <p className="text-xs text-slate-500">เฉลี่ยคะแนนหลักฐาน GitHub ในแต่ละด้านเท่านั้น ไม่รวมข้อสอบหรือจำนวนดาว · 0 หมายถึงยังไม่มีหลักฐาน ไม่ใช่ไม่มีความสามารถ</p>
                             <div className="h-64 sm:h-72 w-full">
                               <ResponsiveContainer width="100%" height="100%">
                                 <RadarChart data={candidateProfile.radarData || []}>
@@ -1313,7 +1313,7 @@ function CompanyApplicationsContent() {
                             {/* Quick Stats Grid */}
                             <div className="grid grid-cols-3 gap-3">
                               <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-3.5 text-center">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase block">Verified Skills</span>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase block">GitHub Skills</span>
                                 <span className="text-lg font-black text-slate-900 mt-1 block">
                                   {candidateProfile.skills?.length || 0}
                                 </span>
@@ -1336,12 +1336,12 @@ function CompanyApplicationsContent() {
                       </div>
                     )}
 
-                    {/* Tab 2: Verified Skills & Evidences */}
+                    {/* Tab 2: GitHub Skills & Evidences */}
                     {profileTab === 'skills' && (
                       <div className="space-y-4">
                         <div className="flex items-center justify-between">
                           <h3 className="text-sm font-bold text-slate-900">
-                            ทักษะที่ผ่านการตรวจสอบและหลักฐานเชิงประจักษ์ (Evidence-based Skills)
+                            ทักษะจากหลักฐาน GitHubและหลักฐานเชิงประจักษ์ (Evidence-based Skills)
                           </h3>
                           <span className="text-xs text-slate-500 font-medium">
                             ทั้งหมด {candidateProfile.skills?.length || 0} ทักษะ
@@ -1364,12 +1364,12 @@ function CompanyApplicationsContent() {
                                       </span>
                                     </div>
                                     <span className="text-[11px] text-slate-500">
-                                      ระดับความเชี่ยวชาญ: {cs.isVerified ? '✓ ตรวจสอบแล้ว' : 'รอการยืนยัน'}
+                                      {githubEvidenceScore(cs) > 0 ? 'มีหลักฐาน GitHub' : 'ยังไม่มีหลักฐาน GitHub'}
                                     </span>
                                   </div>
                                   <div className="text-right">
-                                    <span className="text-base font-black text-[#4f46e5]">{cs.verifiedScore}%</span>
-                                    <span className="text-[10px] text-slate-400 block font-semibold">Verified Score</span>
+                                    <span className="text-base font-black text-[#4f46e5]">{githubEvidenceScore(cs)}%</span>
+                                    <span className="text-[10px] text-slate-400 block font-semibold">GitHub Evidence</span>
                                   </div>
                                 </div>
 
@@ -1377,15 +1377,15 @@ function CompanyApplicationsContent() {
                                 <div className="w-full bg-slate-200/80 rounded-full h-2 overflow-hidden">
                                   <div
                                     className="bg-gradient-to-r from-indigo-500 to-indigo-600 h-2 rounded-full transition-all"
-                                    style={{ width: `${Math.min(100, cs.verifiedScore)}%` }}
+                                    style={{ width: `${Math.min(100, githubEvidenceScore(cs))}%` }}
                                   />
                                 </div>
 
                                 {/* Score Breakdown */}
                                 <div className="grid grid-cols-3 gap-2 text-[10px] font-bold text-slate-500 pt-1 border-t border-slate-200/60">
-                                  <div>ทฤษฎี: <strong className="text-slate-800">{cs.theoryScore || 0}%</strong></div>
-                                  <div>ปฏิบัติ: <strong className="text-slate-800">{cs.codingScore || 0}%</strong></div>
-                                  <div>GitHub: <strong className="text-slate-800">{cs.practicalScore || 0}%</strong></div>
+                                  <div>ผลทฤษฎี (แยก): <strong className="text-slate-800">{cs.theoryScore || 0}%</strong></div>
+                                  <div>ผล Coding (แยก): <strong className="text-slate-800">{cs.codingScore || 0}%</strong></div>
+                                  <div>GitHub: <strong className="text-slate-800">{githubEvidenceScore(cs)}%</strong></div>
                                 </div>
 
                                 {/* Evidences from GitHub */}
@@ -1415,7 +1415,7 @@ function CompanyApplicationsContent() {
                           </div>
                         ) : (
                           <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-500">
-                            ยังไม่มีข้อมูลทักษะที่ผ่านการตรวจสอบ
+                            ยังไม่มีข้อมูลทักษะจากหลักฐาน GitHub
                           </div>
                         )}
                       </div>
@@ -1555,7 +1555,7 @@ function CompanyApplicationsContent() {
                                             : 'bg-rose-50 text-rose-700 border-rose-200'
                                         }`}
                                       >
-                                        {isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ไม่ผ่านเกณฑ์ (Failed)'}
+                                        {isPassed ? '🏅 ผ่านเกณฑ์ (Badge)' : '✗ ไม่ผ่านเกณฑ์ (Failed)'}
                                       </span>}
                                     </div>
                                   </div>
