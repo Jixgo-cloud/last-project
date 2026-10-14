@@ -704,7 +704,7 @@ export default function CompanyAssessmentsPage() {
                   <p className="text-xs text-slate-500">
                     {editingId
                       ? 'ปรับปรุงเนื้อหาโจทย์ เกณฑ์ผ่าน ตัวเลือก และ Test Cases (ระบบจะเพิ่มเลขเวอร์ชันอัตโนมัติ)'
-                      : 'ตั้งโจทย์คัดกรองผู้สมัครในตำแหน่งของบริษัท พร้อมกำหนด Test Cases สำหรับ Judge0'}
+                      : 'ระบุโจทย์ ผลลัพธ์ที่คาดหวัง และเกณฑ์ประเมิน ให้ AI ช่วยตรวจโค้ดก่อนบริษัททบทวนผล'}
                   </p>
                 </div>
                 <button
@@ -739,7 +739,7 @@ export default function CompanyAssessmentsPage() {
                       onChange={(e) => setFormType(e.target.value as AssessmentType)}
                       className="w-full p-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-indigo-500/20"
                     >
-                      <option value={AssessmentType.PRACTICAL_CODING}>Practical Coding (Judge0 Sandbox)</option>
+                      <option value={AssessmentType.PRACTICAL_CODING}>Coding — โจทย์อิสระ (AI ช่วยประเมิน)</option>
                       <option value={AssessmentType.THEORY}>Theory Assessment (ปรนัย Multiple Choice)</option>
                     </select>
                   </div>
@@ -1104,7 +1104,7 @@ export default function CompanyAssessmentsPage() {
                                 โค้ดเฉลยตัวอย่าง (Reference Solution Code - ไม่บังคับ)
                               </label>
                               <span className="text-[10px] text-slate-400">
-                                สำหรับเก็บไว้ตรวจสอบ Test Cases (ไม่แสดงให้ผู้สมัครเห็น)
+                                สำหรับบริษัทใช้อ้างอิงตรวจคำตอบ (ไม่แสดงให้ผู้สมัครเห็น)
                               </span>
                             </div>
                             <textarea
@@ -1131,14 +1131,6 @@ export default function CompanyAssessmentsPage() {
                           (q.evaluationMethod || QuestionEvaluationMethod.OPEN_ENDED) ===
                             QuestionEvaluationMethod.OPEN_ENDED && (
                             <div className="p-3.5 rounded-xl bg-purple-50/70 border border-purple-200 text-xs text-purple-900 space-y-2.5">
-                              <div className="flex items-center gap-1.5 font-bold text-purple-950">
-                                <Sparkles className="h-4 w-4 text-purple-600" />
-                                <span>เกณฑ์การประเมิน 4 มิติ (AI 4-Dimension Rubric)</span>
-                              </div>
-                              <p className="text-[11px] text-purple-800 leading-relaxed">
-                                ผู้สมัครสามารถออกแบบโค้ดได้อย่างอิสระ โค้ดจะถูกรันใน Judge0 Sandbox เพื่อตรวจสอบ Output แล้วส่งให้ AI ตรวจประเมินตามเกณฑ์ 4 มิติ
-                              </p>
-
                               {/* Custom AI Rubric Guidelines */}
                               <div>
                                 <label className="block text-[11px] font-bold text-purple-950 mb-1">
