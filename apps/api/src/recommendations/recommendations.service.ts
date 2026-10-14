@@ -40,6 +40,40 @@ export class RecommendationsService {
 
   constructor(private prisma: PrismaService) {}
 
+  async getDevelopmentPlan(candidateUserId: string) {
+    const candidate = await this.prisma.candidateProfile.findUnique({ where: { userId: candidateUserId } });
+    if (!candidate) throw new NotFoundException('Candidate profile not found');
+    const evaluations = await this.prisma.companyEvaluation.findMany({
+      where: { candidateId: candidate.id },
+      include: { company: { select: { name: true } }, application: { include: { job: { select: { title: true } } } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    const skills = await this.prisma.skill.findMany();
+    const courses = await this.prisma.course.findMany({ include: { skills: { include: { skill: true } } }, orderBy: { createdAt: 'desc' } });
+    return { evaluations: evaluations.map(evaluation => {
+      const development = evaluation.areasForImprovement as any;
+      const explicit = development?.version === 1 && Array.isArray(development.skillIds);
+      return {
+        id: evaluation.id, applicationId: evaluation.applicationId, company: evaluation.company.name,
+        job: evaluation.application.job.title, updatedAt: explicit ? development.updatedAt : evaluation.createdAt,
+        overallFeedback: evaluation.overallFeedback,
+        scores: { technical: evaluation.technicalScore, problemSolving: evaluation.problemSolvingScore, communication: evaluation.communicationScore, teamwork: evaluation.teamworkScore },
+        strengths: explicit && Array.isArray(evaluation.strengths) ? evaluation.strengths : [],
+        note: explicit ? development.note : '', legacy: !explicit,
+        skills: explicit ? skills.filter(skill => development.skillIds.includes(skill.id)).map(skill => {
+          const seen = new Set<string>();
+          const recommendedCourses = courses.map(courseWithSupportedSkills).filter(course => {
+            if (!/^https?:\/\//i.test(course.url) || seen.has(course.url)) return false;
+            if (!course.skills.some(link => link.skillId === skill.id) && !mentionsSkill(`${course.title} ${course.description || ''}`, skill.name)) return false;
+            seen.add(course.url); return true;
+          }).slice(0, 3).map(course => ({ id: course.id, title: course.title, url: course.url, provider: course.provider }));
+          return { id: skill.id, name: skill.name, recommendedCourses,
+            steps: [`ทบทวนข้อเสนอแนะเรื่อง ${skill.name}`, `เรียนและทำแบบฝึกหัด ${skill.name}`, `สร้างผลงานที่แสดง ${skill.name} แล้วเพิ่มใน GitHub`, 'ทบทวนผลกับบริษัทหรือทำแบบทดสอบที่เกี่ยวข้อง'] };
+        }) : [],
+      };
+    }) };
+  }
+
   async getSkillGapsAndRecommendations(candidateUserId: string): Promise<{
     targetCareer: string;
     gaps: SkillGapItem[];

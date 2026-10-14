@@ -11,6 +11,13 @@ export class RecommendationsController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.CANDIDATE)
+  @Get('development-plan')
+  async getDevelopmentPlan(@Request() req: any) {
+    return this.recommendationsService.getDevelopmentPlan(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.CANDIDATE)
   @Get('skill-gaps')
   async getSkillGaps(@Request() req: any) {
     return this.recommendationsService.getSkillGapsAndRecommendations(req.user.id);

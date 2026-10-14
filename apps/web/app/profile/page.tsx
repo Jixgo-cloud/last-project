@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import CompanyDevelopmentPlan from '@/components/CompanyDevelopmentPlan';
 import { useAuth } from '@/lib/auth-context';
 import { apiRequest } from '@/lib/api';
 import {
@@ -647,6 +648,7 @@ function ProfileHubContent() {
             {/* ======================================================== */}
             {/* TAB 1: EDIT PROFILE FORM                                 */}
             {/* ======================================================== */}
+            {activeTab === 'skills' && <CompanyDevelopmentPlan />}
             {activeTab === 'edit' && (
               <form
                 onSubmit={handleSaveProfile}

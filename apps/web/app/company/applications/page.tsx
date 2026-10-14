@@ -80,6 +80,11 @@ function CompanyApplicationsContent() {
   const [communicationScore, setCommunicationScore] = useState(4);
   const [teamworkScore, setTeamworkScore] = useState(4);
   const [overallFeedback, setOverallFeedback] = useState('');
+  const [developmentSkills, setDevelopmentSkills] = useState<any[]>([]);
+  const [developmentSkillIds, setDevelopmentSkillIds] = useState<string[]>([]);
+  const [developmentNote, setDevelopmentNote] = useState('');
+  const [strengthsText, setStrengthsText] = useState('');
+  const [evaluationError, setEvaluationError] = useState('');
   const [evalSubmitting, setEvalSubmitting] = useState(false);
   const [evalToast, setEvalToast] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
@@ -260,6 +265,13 @@ function CompanyApplicationsContent() {
   };
 
   const handleOpenEvaluation = (app: any) => {
+    setEvaluationError('');
+    setDevelopmentSkills([]);
+    apiRequest('/skills').then(setDevelopmentSkills).catch(() => setEvaluationError('โหลดทักษะไม่ได้ กรุณาปิดแล้วเปิดฟอร์มใหม่'));
+    const development = app.evaluation?.areasForImprovement;
+    setDevelopmentSkillIds(development?.version === 1 ? development.skillIds : []);
+    setDevelopmentNote(development?.version === 1 ? development.note : '');
+    setStrengthsText(development?.version === 1 && Array.isArray(app.evaluation?.strengths) ? app.evaluation.strengths.join('\n') : '');
     setSelectedAppForEval(app);
     if (app.evaluation) {
       setTechnicalScore(app.evaluation.technicalScore || 4);
@@ -289,8 +301,9 @@ function CompanyApplicationsContent() {
           communicationScore,
           teamworkScore,
           overallFeedback,
-          strengths: ['Technical competency', 'Communication'],
-          areasForImprovement: ['System scalability'],
+          strengths: strengthsText.split('\n').map(s => s.trim()).filter(Boolean),
+          developmentSkillIds,
+          developmentNote,
         }),
       });
       setSelectedAppForEval(null);
@@ -298,7 +311,7 @@ function CompanyApplicationsContent() {
       setTimeout(() => setEvalToast(null), 4000);
       fetchApps();
     } catch (err: any) {
-      alert(`Evaluation failed: ${err.message}`);
+      setEvaluationError(err.message || 'บันทึกผลประเมินไม่สำเร็จ กรุณาลองใหม่');
     } finally {
       setEvalSubmitting(false);
     }
@@ -993,6 +1006,24 @@ function CompanyApplicationsContent() {
                 </div>
 
                 {/* Qualitative Feedback */}
+                <fieldset className="space-y-3 rounded-xl border p-4">
+                  <legend className="font-bold">แผนพัฒนาของผู้สมัคร</legend>
+                  <p className="text-sm">เลือกทักษะที่ควรพัฒนาได้ไม่เกิน 10 ทักษะ ระบบจะจับคู่คอร์สตามทักษะที่เลือก โดยไม่เปลี่ยนคะแนนสอบ</p>
+                  <div className="max-h-48 overflow-auto grid grid-cols-2 gap-2">
+                    {developmentSkills.map(skill => <label key={skill.id} className="text-sm flex gap-2">
+                      <input type="checkbox" checked={developmentSkillIds.includes(skill.id)}
+                        disabled={!developmentSkillIds.includes(skill.id) && developmentSkillIds.length >= 10}
+                        onChange={e => setDevelopmentSkillIds(ids => e.target.checked ? [...ids, skill.id] : ids.filter(id => id !== skill.id))} />{skill.name}
+                    </label>)}
+                  </div>
+                  <label className="block">จุดแข็ง (บรรทัดละหนึ่งข้อ)
+                    <textarea className="block w-full border rounded p-2" value={strengthsText} onChange={e => setStrengthsText(e.target.value)} rows={2} maxLength={3000} />
+                  </label>
+                  <label className="block">สิ่งที่ควรฝึกและเป้าหมายที่คาดหวัง
+                    <textarea className="block w-full border rounded p-2" value={developmentNote} onChange={e => setDevelopmentNote(e.target.value)} rows={3} maxLength={3000} />
+                  </label>
+                  {evaluationError && <p role="alert" className="text-red-700">{evaluationError}</p>}
+                </fieldset>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1.5">
                     ข้อเสนอแนะเชิงสร้างสรรค์ (Qualitative Feedback)

@@ -410,7 +410,7 @@ export default function ApplicationsPage() {
 
                     <div className="mt-3.5 flex justify-end">
                       <Link
-                        href="/courses"
+                        href={`/learning-plan#evaluation-${app.evaluation.id}`}
                         className="inline-flex items-center gap-1.5 text-xs font-bold text-[#4f46e5] hover:underline"
                       >
                         ดูคอร์สเรียนแนะนำเพิ่มเติมจากฟีดแบ็กนี้ <ArrowRight className="h-3 w-3" />

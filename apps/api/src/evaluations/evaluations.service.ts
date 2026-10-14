@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -16,8 +16,20 @@ export class EvaluationsService {
       overallFeedback: string;
       strengths?: string[];
       areasForImprovement?: string[];
+      developmentSkillIds?: string[];
+      developmentNote?: string;
     },
   ) {
+    if (!data || !['technicalScore', 'problemSolvingScore', 'communicationScore', 'teamworkScore'].every(key => Number.isInteger(data[key]) && data[key] >= 1 && data[key] <= 5)
+      || typeof data.overallFeedback !== 'string' || !data.overallFeedback.trim() || data.overallFeedback.length > 5000) {
+      throw new BadRequestException('กรุณาให้คะแนน 1–5 และกรอกข้อเสนอแนะไม่เกิน 5,000 ตัวอักษร');
+    }
+    const ids = data.developmentSkillIds ?? [];
+    if (!Array.isArray(ids) || ids.length > 10 || ids.some(id => typeof id !== 'string' || !id.trim()) || new Set(ids).size !== ids.length
+      || (data.developmentNote != null && (typeof data.developmentNote !== 'string' || data.developmentNote.length > 3000))
+      || (data.strengths != null && (!Array.isArray(data.strengths) || data.strengths.length > 10 || data.strengths.some(s => typeof s !== 'string' || s.length > 300)))) {
+      throw new BadRequestException('ข้อมูลแผนพัฒนาไม่ถูกต้อง เลือกได้สูงสุด 10 ทักษะ');
+    }
     const member = await this.prisma.companyMember.findFirst({
       where: { userId: companyUserId },
     });
@@ -31,6 +43,10 @@ export class EvaluationsService {
       throw new ForbiddenException('Cannot evaluate application for another company');
     }
 
+    const skills = await this.prisma.skill.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
+    if (skills.length !== ids.length) throw new BadRequestException('มีทักษะที่ไม่พบในระบบ กรุณาเลือกใหม่');
+    const development = { version: 1, updatedAt: new Date().toISOString(), skillIds: ids, note: data.developmentNote?.trim() || '' };
+
     const evaluation = await this.prisma.companyEvaluation.upsert({
       where: { applicationId },
       update: {
@@ -38,9 +54,9 @@ export class EvaluationsService {
         problemSolvingScore: data.problemSolvingScore,
         communicationScore: data.communicationScore,
         teamworkScore: data.teamworkScore,
-        overallFeedback: data.overallFeedback,
+        overallFeedback: data.overallFeedback.trim(),
         strengths: data.strengths || [],
-        areasForImprovement: data.areasForImprovement || [],
+        areasForImprovement: development,
       },
       create: {
         applicationId,
@@ -50,9 +66,9 @@ export class EvaluationsService {
         problemSolvingScore: data.problemSolvingScore,
         communicationScore: data.communicationScore,
         teamworkScore: data.teamworkScore,
-        overallFeedback: data.overallFeedback,
+        overallFeedback: data.overallFeedback.trim(),
         strengths: data.strengths || [],
-        areasForImprovement: data.areasForImprovement || [],
+        areasForImprovement: development,
       },
     });
 
