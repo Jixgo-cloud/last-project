@@ -113,13 +113,14 @@ export class AssessmentsController {
   @Post(':id/submit-coding')
   async submitCoding(
     @Request() req: any,
-    @Body() body: { attemptId: string; questionId: string; sourceCode: string },
+    @Body() body: { attemptId: string; questionId: string; sourceCode: string; candidateExplanation?: string },
   ) {
     const result = await this.assessmentsService.submitCodingSolution(
       body.attemptId,
       body.questionId,
       req.user.id,
       body.sourceCode,
+      body.candidateExplanation,
     );
     return this.assessmentsService.discloseCandidateResponse(result, body.attemptId);
   }

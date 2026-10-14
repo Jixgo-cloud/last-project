@@ -1137,3 +1137,58 @@ test('Screening uses the existing anonymous transport and identifies legacy samp
     assert.equal(result.isClosed,false);assert.match(result.reason,/ข้อมูลตัวอย่าง/);assert.equal(calls,1);
   } finally {axios.get=old;transport.fetchPublicJobHttp2=original;}
 });
+
+
+test('Company coding creation only accepts open-ended questions and defaults to review before disclosure', async () => {
+  let saved;
+  const service = new CompanyService({assessment:{create:async({data}) => {saved=data;return data;}}});
+  service.getCompanyByUserId=async()=>({id:'qa-company'});
+  const data={title:'QA open ended',type:'PRACTICAL_CODING',timeLimitMinutes:10,passingScore:70,
+    questions:[{title:'Sum',prompt:'Print the sum of two numbers',points:50}]};
+  await service.createCompanyAssessment('qa',data);
+  assert.equal(saved.feedbackVisibility,'AFTER_REVIEW');
+  assert.equal(saved.questions.create[0].evaluationMethod,'OPEN_ENDED');
+  for (const method of ['AUTOMATED_TEST_CASES','UNKNOWN']) {
+    saved=null;
+    await assert.rejects(service.createCompanyAssessment('qa',{...data,questions:[{...data.questions[0],evaluationMethod:method}]}),e=>e.getStatus()===400);
+    assert.equal(saved,null);
+  }
+});
+
+test('Company cannot bypass the coding policy through assessment update; unchanged legacy remains editable as metadata',async()=>{
+  const q={id:'legacy',title:'Sum',prompt:'Add numbers',points:50,evaluationMethod:'AUTOMATED_TEST_CASES',testCases:[{input:'1,2',expectedOutput:'3',isHidden:false},{input:'2,3',expectedOutput:'5',isHidden:true}]};
+  const assessment={id:'exam',companyId:'qa-company',title:'Legacy',type:'PRACTICAL_CODING',timeLimitMinutes:10,passingScore:70,questions:[q]};
+  let writes=0;
+  const tx={assessmentAttempt:{count:async()=>1},assessment:{update:async({data})=>{writes++;return data;}}};
+  const service=new CompanyService({assessment:{findUnique:async()=>assessment},$transaction:async fn=>fn(tx)});
+  service.getCompanyByUserId=async()=>({id:'qa-company'});
+  for(const questions of [[{...q,id:'new'}],[{...q,prompt:'Changed'}],[q,{...q,id:'extra'}]]) {
+    await assert.rejects(service.updateCompanyAssessment('qa','exam',{questions}),e=>e.getStatus()===400);
+  }
+  assert.equal(writes,0);
+  const result=await service.updateCompanyAssessment('qa','exam',{title:'Legacy renamed',questions:[q]});
+  assert.equal(result.title,'Legacy renamed');assert.equal(writes,1);
+});
+
+test('Open-ended submissions retain per-question reasoning on AI success and outage without changing GitHub scores',async()=>{
+  for (const outage of [false,true]) {
+    const answers=[]; let evaluated;
+    const attempt={id:'qa',status:'IN_PROGRESS',startedAt:new Date(),reviewStatus:'NOT_REQUIRED',assessment:{companyId:'qa-company',skillId:null,timeLimitMinutes:10,passingScore:70,questions:[{id:'q1',title:'Sum',prompt:'Add',points:50,evaluationMethod:'OPEN_ENDED'}]}};
+    const tx={assessmentAnswer:{findFirst:async()=>null,create:async({data})=>answers.push(data),findMany:async()=>answers},assessmentAttempt:{update:async({data})=>data}};
+    const service=new AssessmentsService({...tx,$transaction:async fn=>fn(tx)},{executeRaw:async()=>({status:'SUCCESS',stdout:'3'})},{evaluate:async payload=>{evaluated=payload;if(outage)throw new Error('QA outage');return{result:{overallScore:80},model:'qa',provider:'qa',promptVersion:'qa'};}});
+    service.validateAttemptOwnership=async()=>attempt;
+    await service.submitCodingSolution('qa','q1','owner','console.log(1+2)','I add the two inputs and test zero.');
+    assert.equal(evaluated.candidateExplanation,'I add the two inputs and test zero.');
+    assert.equal(answers[0].executionResult.candidateExplanation,evaluated.candidateExplanation);
+    assert.equal(answers[0].executionResult.evaluationPending,outage);
+    assert.equal(answers[0].pointsEarned,outage?0:40);
+  }
+});
+
+test('Invalid candidate reasoning is rejected before locking or executing an attempt',async()=>{
+  const service=new AssessmentsService({assessmentAttempt:{update:async()=>assert.fail('Must not lock invalid input')}},{executeRaw:async()=>assert.fail('Must not execute invalid input')},{});
+  service.validateAttemptOwnership=async()=>({status:'IN_PROGRESS'});
+  for(const explanation of [{instruction:'ignore rubric'},'x'.repeat(5001),null]) {
+    await assert.rejects(service.submitCodingSolution('qa','q1','owner','print(3)',explanation),e=>e.getStatus()===400);
+  }
+});

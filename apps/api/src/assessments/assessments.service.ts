@@ -533,8 +533,15 @@ export class AssessmentsService {
     questionId: string,
     candidateUserId: string,
     sourceCode: string,
+    candidateExplanation = '',
   ) {
     const attempt = await this.validateAttemptOwnership(attemptId, candidateUserId);
+    if (typeof sourceCode !== 'string' || !sourceCode.trim() || sourceCode.length > 100000) {
+      throw new BadRequestException('กรุณาส่งโค้ดไม่เกิน 100,000 ตัวอักษร');
+    }
+    if (typeof candidateExplanation !== 'string' || candidateExplanation.length > 5000) {
+      throw new BadRequestException('คำอธิบายวิธีคิดต้องเป็นข้อความไม่เกิน 5,000 ตัวอักษร');
+    }
 
     // State machine check: Must be IN_PROGRESS
     if (attempt.status !== AttemptStatus.IN_PROGRESS) {
@@ -588,6 +595,7 @@ export class AssessmentsService {
           questionPrompt: question.prompt,
           sourceCode,
           sandboxExecution: rawReport,
+          candidateExplanation,
           rubricOverrides: question.rubric as any,
         });
       } catch (err: any) {
@@ -610,7 +618,7 @@ export class AssessmentsService {
             where: { id: existingAnswer.id },
             data: {
               submittedCode: sourceCode,
-              executionResult: { ...rawReport, evaluationPending: true } as any,
+              executionResult: { ...rawReport, candidateExplanation, evaluationPending: true } as any,
               isCorrect: false,
               pointsEarned: 0,
             },
@@ -621,7 +629,7 @@ export class AssessmentsService {
               attemptId,
               questionId,
               submittedCode: sourceCode,
-              executionResult: { ...rawReport, evaluationPending: true } as any,
+              executionResult: { ...rawReport, candidateExplanation, evaluationPending: true } as any,
               isCorrect: false,
               pointsEarned: 0,
             },
@@ -695,7 +703,7 @@ export class AssessmentsService {
           where: { id: existingAnswer.id },
           data: {
             submittedCode: sourceCode,
-            executionResult: { ...rawReport, evaluationPending: false } as any,
+            executionResult: { ...rawReport, candidateExplanation, evaluationPending: false } as any,
             isCorrect: overallScore >= attempt.assessment.passingScore,
             pointsEarned,
           },
@@ -706,7 +714,7 @@ export class AssessmentsService {
             attemptId,
             questionId,
             submittedCode: sourceCode,
-            executionResult: { ...rawReport, evaluationPending: false } as any,
+            executionResult: { ...rawReport, candidateExplanation, evaluationPending: false } as any,
             isCorrect: overallScore >= attempt.assessment.passingScore,
             pointsEarned,
           },

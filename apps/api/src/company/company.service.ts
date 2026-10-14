@@ -630,6 +630,12 @@ export class CompanyService {
 
   async createCompanyAssessment(userId: string, data: any) {
     const company = await this.getCompanyByUserId(userId);
+    if ((data.type || 'PRACTICAL_CODING') === 'PRACTICAL_CODING') {
+      if (Array.isArray(data.questions) && data.questions.some((q: any) => q.evaluationMethod && q.evaluationMethod !== 'OPEN_ENDED')) {
+        throw new BadRequestException('ข้อสอบ Coding ใหม่ของบริษัทต้องเป็นโจทย์อิสระ (AI) เท่านั้น');
+      }
+      data = { ...data, questions: Array.isArray(data.questions) ? data.questions.map((q: any) => ({ ...q, evaluationMethod: 'OPEN_ENDED' })) : [] };
+    }
     const validationError = getAssessmentValidationError({
       title: data.title,
       type: data.type || 'PRACTICAL_CODING',
@@ -661,7 +667,7 @@ export class CompanyService {
         skillId: data.skillId || null,
         timeLimitMinutes: data.timeLimitMinutes ? parseInt(data.timeLimitMinutes) : 30,
         passingScore: data.passingScore != null ? Number(data.passingScore) : 70,
-        feedbackVisibility: data.feedbackVisibility || 'IMMEDIATE',
+        feedbackVisibility: data.feedbackVisibility || 'AFTER_REVIEW',
         isActive: data.isActive !== false,
         version: 1,
         questions: {
@@ -702,6 +708,16 @@ export class CompanyService {
     });
     if (!assessment || assessment.companyId !== company.id) {
       throw new ForbiddenException('You are not authorized to edit this assessment');
+    }
+
+    if ((data.type ?? assessment.type) === 'PRACTICAL_CODING' && Array.isArray(data.questions)) {
+      data = { ...data, questions: data.questions.map((q: any) => ({ ...q, evaluationMethod: q.evaluationMethod || 'OPEN_ENDED' })) };
+      const legacyQuestions = assessment.questions.filter((q) => q.evaluationMethod === 'AUTOMATED_TEST_CASES');
+      const incomingLegacy = data.questions.filter((q: any) => q.evaluationMethod !== 'OPEN_ENDED');
+      if (incomingLegacy.length && (assessment.type !== 'PRACTICAL_CODING' ||
+        !assessmentQuestionsMatch(legacyQuestions, incomingLegacy))) {
+        throw new BadRequestException('ข้อสอบ Test Cases เดิมเก็บไว้ใช้งานได้ แต่การเพิ่มหรือแก้โจทย์ Coding ให้สร้างเป็นโจทย์อิสระ (AI)');
+      }
     }
 
     const validationError = getAssessmentValidationError({

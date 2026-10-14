@@ -66,6 +66,7 @@ export default function AssessmentRunnerPage() {
 
   // Practical Coding state (Multi-question support)
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
+  const [explanations, setExplanations] = useState<Record<string, string>>({});
   const [codes, setCodes] = useState<Record<string, string>>({});
   const [runningCode, setRunningCode] = useState(false);
   const [submittingCoding, setSubmittingCoding] = useState(false);
@@ -115,6 +116,7 @@ export default function AssessmentRunnerPage() {
       setSubmittedQuestions({});
       setActiveQuestionIndex(0);
       setSelectedChoices({});
+      setExplanations({});
       setTestRunResults({});
       setTabSwitchCount(0);
       setShowAntiCheatBanner(false);
@@ -158,6 +160,7 @@ export default function AssessmentRunnerPage() {
           const parsed = typeof attemptData.draftCode === 'string'
             ? JSON.parse(attemptData.draftCode)
             : attemptData.draftCode;
+          if (parsed.explanations) setExplanations(parsed.explanations);
           if (parsed.codes) setCodes((prev) => ({ ...prev, ...parsed.codes }));
           if (parsed.selectedChoices) setSelectedChoices((prev) => ({ ...prev, ...parsed.selectedChoices }));
           if (!parsed.codes && !parsed.selectedChoices && typeof parsed === 'object') {
@@ -220,6 +223,7 @@ export default function AssessmentRunnerPage() {
       try {
         const draftCode = {
           codes,
+          explanations,
           selectedChoices,
         };
         await apiRequest(`/assessments/${id}/autosave`, {
@@ -236,7 +240,7 @@ export default function AssessmentRunnerPage() {
     return () => {
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
     };
-  }, [codes, selectedChoices, attempt, id, theoryResult, codingFinalResult, submittingTheory, submittingCoding, finalizingAttempt]);
+  }, [codes, explanations, selectedChoices, attempt, id, theoryResult, codingFinalResult, submittingTheory, submittingCoding, finalizingAttempt]);
 
   // Record only transitions where the assessment page is actually hidden.
   useEffect(() => {
@@ -385,6 +389,7 @@ export default function AssessmentRunnerPage() {
           attemptId: attempt.id,
           questionId: currentQuestion.id,
           sourceCode: currentCode,
+          candidateExplanation: explanations[currentQuestion.id] || '',
         }),
       });
 
@@ -732,6 +737,7 @@ export default function AssessmentRunnerPage() {
                     onClick={() => {
                       setTheoryResult(null);
                       setSelectedChoices({});
+      setExplanations({});
                       initAssessment(true);
                     }}
                     className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-6 py-2.5 rounded-full border border-slate-200/90 bg-white text-slate-700 font-semibold text-xs hover:bg-slate-50 transition"
@@ -1305,6 +1311,18 @@ export default function AssessmentRunnerPage() {
                       />
                     </div>
 
+                    {currentQuestion?.evaluationMethod === QuestionEvaluationMethod.OPEN_ENDED && (
+                      <div className="space-y-1 text-slate-200">
+                        <label htmlFor="candidate-explanation" className="text-sm font-bold">อธิบายวิธีคิด (ไม่บังคับ)</label>
+                        <textarea id="candidate-explanation" rows={3} maxLength={5000}
+                          value={explanations[currentQuestion.id] || ''}
+                          onChange={(e) => setExplanations((prev) => ({ ...prev, [currentQuestion.id]: e.target.value }))}
+                          disabled={submittingCoding || finalizingAttempt}
+                          placeholder="อธิบายแนวทาง เหตุผลที่เลือก วิธีทดสอบ และข้อจำกัดของคำตอบ"
+                          className="w-full rounded-lg border border-slate-600 bg-slate-800 p-3 text-sm" />
+                        <p className="text-xs text-slate-400">{(explanations[currentQuestion.id] || '').length}/5,000 ตัวอักษร — บันทึกพร้อมโค้ดเพื่อให้บริษัทอ่านประกอบการประเมิน</p>
+                      </div>
+                    )}
                     {/* Bottom Action Controls */}
                     <div className="flex items-center justify-between pt-2">
                       <span className="text-[11px] text-slate-400 hidden sm:inline">

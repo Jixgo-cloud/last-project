@@ -62,7 +62,7 @@ export default function CompanyAssessmentsPage() {
   const [formSkillId, setFormSkillId] = useState('');
   const [formTimeLimit, setFormTimeLimit] = useState(45);
   const [formPassingScore, setFormPassingScore] = useState(70);
-  const [formFeedbackVisibility, setFormFeedbackVisibility] = useState<FeedbackVisibility>(FeedbackVisibility.IMMEDIATE);
+  const [formFeedbackVisibility, setFormFeedbackVisibility] = useState<FeedbackVisibility>(FeedbackVisibility.AFTER_REVIEW);
   const [formQuestions, setFormQuestions] = useState<any[]>([
     {
       title: '',
@@ -131,7 +131,7 @@ export default function CompanyAssessmentsPage() {
     setFormSkillId(skills[0]?.id || '');
     setFormTimeLimit(45);
     setFormPassingScore(70);
-    setFormFeedbackVisibility(FeedbackVisibility.IMMEDIATE);
+    setFormFeedbackVisibility(FeedbackVisibility.AFTER_REVIEW);
     setFormQuestions([
       {
         title: '',
@@ -200,7 +200,7 @@ export default function CompanyAssessmentsPage() {
                       text: c.text || '',
                       isCorrect: !!c.isCorrect,
                     }))
-                  : [
+                  : data.type === AssessmentType.PRACTICAL_CODING ? [] : [
                       { text: '', isCorrect: true },
                       { text: '', isCorrect: false },
                     ],
@@ -927,48 +927,12 @@ export default function CompanyAssessmentsPage() {
                         {/* Mode Selector & Language Switcher for Practical Coding */}
                         {formType === AssessmentType.PRACTICAL_CODING && (
                           <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200/60">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[11px] font-bold text-slate-600">วิธีประเมิน:</span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setFormQuestions((prev) =>
-                                    prev.map((item, idx) =>
-                                      idx === qIdx
-                                        ? { ...item, evaluationMethod: QuestionEvaluationMethod.OPEN_ENDED }
-                                        : item,
-                                    ),
-                                  );
-                                }}
-                                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                                  (q.evaluationMethod || QuestionEvaluationMethod.OPEN_ENDED) ===
-                                  QuestionEvaluationMethod.OPEN_ENDED
-                                    ? 'bg-purple-600 text-white shadow-xs'
-                                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-                                }`}
-                              >
-                                <Sparkles className="h-3 w-3" />
-                                โจทย์อิสระ (AI Rubric 4 มิติ)
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setFormQuestions((prev) =>
-                                    prev.map((item, idx) =>
-                                      idx === qIdx
-                                        ? { ...item, evaluationMethod: QuestionEvaluationMethod.AUTOMATED_TEST_CASES }
-                                        : item,
-                                    ),
-                                  );
-                                }}
-                                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                                  q.evaluationMethod === QuestionEvaluationMethod.AUTOMATED_TEST_CASES
-                                    ? 'bg-indigo-600 text-white shadow-xs'
-                                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-                                }`}
-                              >
-                                Test Cases (Judge0)
-                              </button>
+                            <div className="text-xs text-slate-600 space-y-1">
+                              <p className="font-bold">{q.evaluationMethod === QuestionEvaluationMethod.AUTOMATED_TEST_CASES
+                                ? 'ข้อสอบ Test Cases เดิม — ยังใช้งานได้ กรุณาสร้างชุดใหม่หากต้องการเปลี่ยนโจทย์'
+                                : 'โจทย์อิสระ — AI ช่วยประเมิน และบริษัทตรวจผลได้'}</p>
+                              <p>รองรับโปรแกรม JavaScript หรือ Python ที่รันได้ในตัวเอง ไม่รองรับเว็บทั้งระบบหรือการติดตั้งแพ็กเกจเพิ่มเติม</p>
+                              <p>ระบุสิ่งที่ต้องทำ ผลลัพธ์ที่คาดหวัง ตัวอย่าง และเกณฑ์ให้คะแนน ผู้สมัครแนบคำอธิบายวิธีคิดพร้อมโค้ดได้</p>
                             </div>
 
                             {/* Language Switcher */}
@@ -1081,7 +1045,7 @@ export default function CompanyAssessmentsPage() {
                                 โค้ดเริ่มต้น (Starter Code)
                               </label>
                               <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                                💡 สำคัญ: ต้องมีฟังก์ชัน <code>function solution(...)</code> สำหรับระบบ Test Runner
+                                {q.evaluationMethod === QuestionEvaluationMethod.AUTOMATED_TEST_CASES ? 'ใช้ฟังก์ชัน solution ตามรูปแบบข้อสอบเดิม' : 'ให้ผู้สมัครเรียกใช้ฟังก์ชันและแสดงผลด้วย console.log หรือ print'}
                               </span>
                             </div>
                             <textarea
@@ -1719,11 +1683,14 @@ export default function CompanyAssessmentsPage() {
                       <FileCode className="h-4 w-4 text-indigo-600" /> โค้ดของผู้สมัคร (Candidate Source Code)
                     </span>
                   </div>
-                  <pre className="p-4 rounded-2xl bg-slate-900 text-slate-100 font-mono text-xs overflow-x-auto max-h-64 leading-relaxed border border-slate-800">
-                    {selectedAttemptForReview.sourceCode ||
-                      selectedAttemptForReview.answers?.[0]?.submittedCode ||
-                      '(ไม่มีโค้ดที่ส่งมา)'}
-                  </pre>
+                  {(selectedAttemptForReview.answers?.length ? selectedAttemptForReview.answers : [{ submittedCode: selectedAttemptForReview.sourceCode }]).map((answer: any, index: number) => (
+                    <section key={answer.questionId || index} className="space-y-2 mb-4">
+                      <h4 className="font-bold text-sm">ข้อ {index + 1}: {answer.question?.title || selectedAttemptForReview.assessment?.questions?.find((q: any) => q.id === answer.questionId)?.title || ''}</h4>
+                      <pre className="p-4 rounded-2xl bg-slate-900 text-slate-100 font-mono text-xs overflow-x-auto max-h-64 whitespace-pre-wrap">{answer.submittedCode || '(ไม่มีโค้ดที่ส่งมา)'}</pre>
+                      <p className="text-sm font-bold">คำอธิบายวิธีคิดของผู้สมัคร</p>
+                      <p className="text-sm whitespace-pre-wrap break-words">{answer.executionResult?.candidateExplanation || '(ไม่ได้ระบุ)'}</p>
+                    </section>
+                  ))}
                 </div>}
 
                 {/* AI Evaluation Snapshot (4-dimension rubric) */}
