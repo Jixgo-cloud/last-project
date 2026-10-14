@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SkillGapItem, SkillCategory, CourseSource } from '@smartcareer/shared';
 import { CAREER_DEFINITIONS } from '../jobs/jobs.service';
@@ -40,6 +40,40 @@ export class RecommendationsService {
 
   constructor(private prisma: PrismaService) {}
 
+  async updateLearningProgress(userId: string, evaluationId: string, skillId: string, input: any) {
+    if (!input || !['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED'].includes(input.status)
+      || typeof input.note !== 'string' || input.note.length > 2000
+      || typeof input.evidenceUrl !== 'string' || input.evidenceUrl.length > 2000
+      || typeof input.revision !== 'string' || (input.expectedUpdatedAt !== null && typeof input.expectedUpdatedAt !== 'string')
+      || Object.keys(input).some(key => !['status','note','evidenceUrl','revision','expectedUpdatedAt'].includes(key))) {
+      throw new BadRequestException('ข้อมูลความคืบหน้าไม่ถูกต้อง');
+    }
+    const evidenceUrl = input.evidenceUrl.trim();
+    if (evidenceUrl) {
+      try { const url = new URL(evidenceUrl); if (url.protocol !== 'https:' || url.username || url.password) throw new Error(); }
+      catch { throw new BadRequestException('ลิงก์ผลงานต้องเป็น HTTPS และไม่มีชื่อผู้ใช้หรือรหัสผ่านในลิงก์'); }
+    }
+    return this.prisma.$transaction(async tx => {
+      const owned = await tx.companyEvaluation.findFirst({ where: { id: evaluationId, candidate: { userId } } });
+      if (!owned) throw new NotFoundException('ไม่พบแผนการเรียนรู้');
+      await tx.$queryRaw`SELECT id FROM job_applications WHERE id = ${owned.applicationId} FOR UPDATE`;
+      const evaluation = await tx.companyEvaluation.findUnique({ where: { id: evaluationId } });
+      const development = evaluation?.areasForImprovement as any;
+      if (development?.version !== 1 || !development.skillIds?.includes(skillId)) throw new NotFoundException('ไม่พบทักษะในแผนนี้');
+      const previous = development.progress?.[skillId];
+      if (development.updatedAt !== input.revision || (previous?.updatedAt || null) !== input.expectedUpdatedAt) {
+        throw new ConflictException('แผนหรือความคืบหน้ามีการเปลี่ยนแปลง กรุณาโหลดข้อมูลล่าสุดก่อนบันทึก');
+      }
+      const now = new Date(Math.max(Date.now(), (Date.parse(previous?.updatedAt) || 0) + 1)).toISOString();
+      const progress = { status: input.status, note: input.note.trim(), evidenceUrl, updatedAt: now,
+        completedAt: input.status === 'COMPLETED' ? (previous?.completedAt || now) : null, reviewedRevision: development.updatedAt };
+      await tx.companyEvaluation.update({ where: { id: evaluationId }, data: {
+        areasForImprovement: { ...development, progress: { ...(development.progress || {}), [skillId]: progress } },
+      } });
+      return progress;
+    });
+  }
+
   async getDevelopmentPlan(candidateUserId: string) {
     const candidate = await this.prisma.candidateProfile.findUnique({ where: { userId: candidateUserId } });
     if (!candidate) throw new NotFoundException('Candidate profile not found');
@@ -67,7 +101,9 @@ export class RecommendationsService {
             if (!course.skills.some(link => link.skillId === skill.id) && !mentionsSkill(`${course.title} ${course.description || ''}`, skill.name)) return false;
             seen.add(course.url); return true;
           }).slice(0, 3).map(course => ({ id: course.id, title: course.title, url: course.url, provider: course.provider }));
-          return { id: skill.id, name: skill.name, recommendedCourses,
+          const progress = development.progress?.[skill.id] || { status: 'NOT_STARTED', note: '', evidenceUrl: '', updatedAt: null, completedAt: null };
+          return { id: skill.id, name: skill.name, recommendedCourses, progress,
+            needsReview: !!progress.updatedAt && progress.reviewedRevision !== development.updatedAt,
             steps: [`ทบทวนข้อเสนอแนะเรื่อง ${skill.name}`, `เรียนและทำแบบฝึกหัด ${skill.name}`, `สร้างผลงานที่แสดง ${skill.name} แล้วเพิ่มใน GitHub`, 'ทบทวนผลกับบริษัทหรือทำแบบทดสอบที่เกี่ยวข้อง'] };
         }) : [],
       };

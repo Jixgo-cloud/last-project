@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiRequest } from '@/lib/api';
+import LearningProgressForm from './LearningProgressForm';
 
 export default function CompanyDevelopmentPlan() {
   const [data, setData] = useState<any>(null);
@@ -30,12 +31,18 @@ export default function CompanyDevelopmentPlan() {
         {evaluation.note && <p className="whitespace-pre-wrap">เป้าหมายจากบริษัท: {evaluation.note}</p>}
         {evaluation.legacy && <p className="text-amber-800">ผลประเมินเดิมยังไม่มีการระบุทักษะพัฒนาแบบใหม่ จึงยังไม่สร้างแผนเฉพาะทักษะจากข้อมูลนี้</p>}
         {!evaluation.legacy && !evaluation.skills.length && <p>บริษัทไม่ได้ระบุทักษะเพิ่มเติม โปรดใช้ข้อเสนอแนะด้านบนประกอบการพัฒนา</p>}
+        {!!evaluation.skills.length && <p>ความคืบหน้า: เสร็จแล้ว {evaluation.skills.filter((s: any) => s.progress?.status === 'COMPLETED').length} / {evaluation.skills.length} ทักษะ (ผู้สมัครบันทึกเอง)</p>}
         {evaluation.skills.map((skill: any) => <div key={skill.id} className="bg-slate-50 rounded-xl p-4 space-y-2">
           <h4 className="font-bold">แผนการเรียนรู้: {skill.name}</h4>
           <p className="text-xs">ขั้นตอนแนะนำ ยังไม่ใช่หลักฐานว่าเรียนสำเร็จ</p>
           <ol className="list-decimal pl-5">{skill.steps.map((step: string) => <li key={step}>{step}</li>)}</ol>
           {skill.recommendedCourses.length ? <ul className="list-disc pl-5">{skill.recommendedCourses.map((course: any) => <li key={course.id}><a href={course.url} target="_blank" rel="noopener noreferrer" className="text-indigo-700 underline">{course.title} ({course.provider})</a></li>)}</ul>
             : <p>ยังไม่มีคอร์สที่ตรงทักษะนี้ในระบบ</p>}
+          {skill.progress && <LearningProgressForm key={`${evaluation.id}-${skill.id}-${evaluation.updatedAt}`} evaluation={evaluation} skill={skill}
+            onReload={() => setRetry(n => n + 1)}
+            onSaved={progress => setData((current: any) => ({ ...current, evaluations: current.evaluations.map((item: any) => item.id !== evaluation.id ? item : {
+              ...item, skills: item.skills.map((s: any) => s.id !== skill.id ? s : { ...s, progress, needsReview: false }),
+            }) }))} />}
         </div>)}
       </article>)}
     <Link href="/courses" className="text-indigo-700 underline">ดูคอร์สและช่องว่างทักษะตามเป้าหมายอาชีพ</Link>
