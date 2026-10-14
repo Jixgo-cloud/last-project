@@ -1,4 +1,5 @@
 export * from './assessment-score';
+export * from './candidate-screening';
 export * from './job-salary';
 // User & Role Types
 export enum UserRole {

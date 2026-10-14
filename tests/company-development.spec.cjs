@@ -89,3 +89,43 @@ test('Personal development plan uses only owned explicit feedback, matches cours
   assert.equal(plan.evaluations[0].skills[0].steps.length,4);
   assert.equal(plan.evaluations[1].legacy,true);assert.deepEqual(plan.evaluations[1].skills,[]);
 });
+const {codingScreeningResult,filterCodingApplications,evidenceWeightedScore}=require('@smartcareer/shared');
+test('Radar has no invented baseline and only evidenced GitHub scores contribute',()=>{
+  assert.equal(evidenceWeightedScore({practicalScore:100,theoryScore:0,codingScore:0,evidences:[]}),0);
+  assert.equal(evidenceWeightedScore({practicalScore:80,theoryScore:50,codingScore:100,evidences:[{repositoryId:'r'}]}),80);
+  assert.equal(evidenceWeightedScore({codingScore:50}),15);
+  assert.equal(evidenceWeightedScore({practicalScore:100,evidences:[{repositoryId:'r'},{repositoryId:'r'}]}),50);
+  assert.equal(evidenceWeightedScore({theoryScore:NaN,codingScore:-5}),0);
+});
+test('Coding screening uses graded real percentages, includes zero, and scopes assigned exams',()=>{
+ const attempt=(id,score,status='COMPLETED',type='PRACTICAL_CODING')=>({id,assessmentId:id,startedAt:'2026-10-14',status,score,maxScore:50,assessment:{type,title:id}});
+ const attempts=[attempt('theory',50,'COMPLETED','THEORY'),attempt('pending',50,'IN_PROGRESS'),{...attempt('review',50),reviewStatus:'PENDING_HUMAN_REVIEW'},attempt('coding',25),attempt('zero',0)];
+ assert.equal(codingScreeningResult(attempts).percentage,50);
+ assert.equal(codingScreeningResult(attempts,{id:'zero',type:'PRACTICAL_CODING'}).percentage,0);
+ assert.equal(codingScreeningResult(attempts,{id:'missing',type:'PRACTICAL_CODING'}),null);
+ assert.equal(codingScreeningResult([{...attempt('human',0),humanScore:90}]).percentage,90);
+});
+test('Coding filters distinguish absent from zero and sort absent last without mutating input',()=>{
+ const apps=[{id:'none',codingResult:null},{id:'zero',codingResult:{percentage:0}},{id:'high',codingResult:{percentage:100}},{id:'mid',codingResult:{percentage:50}}];
+ assert.deepEqual(filterCodingApplications(apps,'','ASC').map(a=>a.id),['zero','mid','high','none']);
+ assert.deepEqual(filterCodingApplications(apps,'','DESC').map(a=>a.id),['high','mid','zero','none']);
+ assert.deepEqual(filterCodingApplications(apps,'70','DESC').map(a=>a.id),['high']);
+ assert.deepEqual(filterCodingApplications(apps,'NONE','LATEST').map(a=>a.id),['none']);
+ assert.equal(filterCodingApplications(apps,'0','LATEST').length,3);
+ assert.equal(apps[0].id,'none');
+});
+test('Radar averages measured skill scores per category and leaves absent categories at zero',async()=>{
+ const {CandidateService}=require('../apps/api/dist/candidate/candidate.service');
+ const service=new CandidateService({candidateProfile:{findUnique:async()=>({skills:[
+  {skill:{category:'FRONTEND'},codingScore:100,theoryScore:50,practicalScore:100,evidences:[]},
+  {skill:{category:'FRONTEND'},codingScore:0,theoryScore:0,practicalScore:100,evidences:[]}
+ ]})}});
+ const radar=await service.getRadarData('qa');
+ assert.equal(radar.length,5);assert.equal(radar.find(p=>p.category==='FRONTEND').score,20);
+ assert.equal(radar.find(p=>p.category==='BACKEND').score,0);
+});
+test('Coding result survives more than five newer unrelated exams',()=>{
+ const attempts=Array.from({length:8},(_,i)=>({id:'t'+i,assessmentId:'t'+i,startedAt:'2026-10-14',status:'COMPLETED',percentage:100,assessment:{type:'THEORY'}}));
+ attempts.push({id:'coding',assessmentId:'coding',startedAt:'2026-10-01',status:'COMPLETED',percentage:65,assessment:{type:'PRACTICAL_CODING'}});
+ assert.equal(codingScreeningResult(attempts).percentage,65);
+});

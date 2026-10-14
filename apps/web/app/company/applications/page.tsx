@@ -40,7 +40,7 @@ import {
   PolarRadiusAxis,
   ResponsiveContainer,
 } from 'recharts';
-import { ApplicationStatus, getAttemptPercentage, formatAttemptScore } from '@smartcareer/shared';
+import { ApplicationStatus, getAttemptPercentage, formatAttemptScore, filterCodingApplications } from '@smartcareer/shared';
 import { useLanguage } from '@/lib/use-language';
 import { applicationStatusLabel } from '@/lib/application-status';
 
@@ -67,6 +67,9 @@ function CompanyApplicationsContent() {
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+
+  const [codingMinimum, setCodingMinimum] = useState('');
+  const [codingOrder, setCodingOrder] = useState('LATEST');
 
   // Candidate Profile Dossier Modal states
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
@@ -319,15 +322,15 @@ function CompanyApplicationsContent() {
 
   // Filtered applications
   const filteredApps = useMemo(() => {
-    return applications.filter((app) => {
+    return filterCodingApplications(applications.filter((app) => {
       const matchSearch =
         searchQuery === '' ||
         app.candidate?.fullName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         app.job?.title?.toLowerCase().includes(searchQuery.toLowerCase());
       const matchStatus = statusFilter === 'ALL' || app.status === statusFilter;
       return matchSearch && matchStatus;
-    });
-  }, [applications, searchQuery, statusFilter]);
+    }), codingMinimum, codingOrder);
+  }, [applications, searchQuery, statusFilter, codingMinimum, codingOrder]);
 
   // Counts
   const counts = useMemo(() => {
@@ -484,6 +487,26 @@ function CompanyApplicationsContent() {
           </div>
         </div>
 
+        <section aria-label="คัดกรองคะแนน Coding" className="bg-white border rounded-2xl p-4 mb-6 space-y-3">
+          <div className="flex flex-wrap gap-4">
+            <label className="text-sm">คะแนน Coding ขั้นต่ำ
+              <select className="block border rounded-lg p-2" value={codingMinimum} onChange={e => setCodingMinimum(e.target.value)}>
+                <option value="">ทุกคะแนน รวมยังไม่มีผล</option>
+                <option value="0">มีผลสอบแล้ว (รวม 0%)</option>
+                <option value="50">ตั้งแต่ 50%</option><option value="70">ตั้งแต่ 70%</option><option value="80">ตั้งแต่ 80%</option><option value="100">100%</option>
+                <option value="NONE">ยังไม่มีผล Coding ที่ตรวจแล้ว</option>
+              </select>
+            </label>
+            <label className="text-sm">เรียงผู้สมัคร
+              <select className="block border rounded-lg p-2" value={codingOrder} onChange={e => setCodingOrder(e.target.value)}>
+                <option value="LATEST">ใบสมัครล่าสุด</option><option value="DESC">คะแนน Coding สูงไปต่ำ</option><option value="ASC">คะแนน Coding ต่ำไปสูง</option>
+              </select>
+            </label>
+            <button className="text-sm underline" onClick={() => { setCodingMinimum(''); setCodingOrder('LATEST'); setSearchQuery(''); setStatusFilter('ALL'); }}>ล้างตัวกรองทั้งหมด</button>
+          </div>
+          <p className="text-xs text-slate-600">ใช้ผล Coding ที่ตรวจแล้วล่าสุดของข้อสอบที่มอบหมายหรือแนบงาน หากไม่มีข้อสอบ Coding เฉพาะ ใช้ผลล่าสุดที่บริษัทมีสิทธิ์ดู ผู้ไม่มีผลอยู่ท้ายรายการทั้งสองลำดับ คะแนนจากคนละข้อสอบอาจเทียบกันโดยตรงไม่ได้</p>
+          <p className="text-xs text-slate-600">แสดง {filteredApps.length} จาก {applications.length} ใบสมัคร · CSV ส่งออกทุกใบสมัครในขอบเขตงาน ไม่ใช้ตัวกรองบนหน้านี้</p>
+        </section>
         {/* Content Section */}
         {loading ? (
           <div className="py-24 text-center">
@@ -561,6 +584,7 @@ function CompanyApplicationsContent() {
                       </div>
                     </div>
 
+                    <p className="text-sm font-semibold text-indigo-700 mb-3">Coding: {app.codingResult ? `${app.codingResult.percentage}% · ${app.codingResult.assessmentTitle}` : 'ยังไม่มีผล Coding ที่ตรวจแล้ว'}</p>
                     {/* Cover Letter Quote */}
                     {app.coverLetter && (
                       <div className="bg-slate-50/80 p-3 rounded-2xl border border-slate-100/90 mb-4 text-xs text-slate-600 italic line-clamp-2 leading-relaxed">
@@ -1224,6 +1248,7 @@ function CompanyApplicationsContent() {
                               </span>
                               <span className="text-[10px] text-slate-400 font-semibold">คะแนนเต็ม 100</span>
                             </div>
+                            <p className="text-xs text-slate-500">เฉลี่ยคะแนนทักษะในแต่ละด้าน: GitHub ที่มีหลักฐาน 50% + ทฤษฎี 20% + Coding 30% ไม่มีคะแนนตั้งต้น; 0 อาจหมายถึงไม่มีหลักฐาน ไม่ใช่ข้อสรุปว่าไม่มีความสามารถ</p>
                             <div className="h-64 sm:h-72 w-full">
                               <ResponsiveContainer width="100%" height="100%">
                                 <RadarChart data={candidateProfile.radarData || []}>

@@ -1,7 +1,7 @@
 import { candidateFeedback } from '../assessments/candidate-feedback';
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { RadarChartDataPoint, SkillCategory } from '@smartcareer/shared';
+import { RadarChartDataPoint, SkillCategory, evidenceWeightedScore } from '@smartcareer/shared';
 
 @Injectable()
 export class CandidateService {
@@ -125,51 +125,10 @@ export class CandidateService {
       SkillCategory.TESTING,
     ];
 
-    const skillCountMap = new Map<
-      string,
-      { count: number; category: SkillCategory; totalWeight: number; bonus: number }
-    >();
-
-    for (const cs of profile.skills) {
-      const evidences = cs.evidences || [];
-      const uniqueRepoCount = new Set(evidences.map((e) => e.repositoryId)).size || 1;
-      const totalWeight = uniqueRepoCount * 20;
-      const bonus = Math.round((cs.theoryScore || 0) * 0.2 + (cs.codingScore || 0) * 0.3);
-
-      skillCountMap.set(cs.skill.name, {
-        count: uniqueRepoCount,
-        category: cs.skill.category as unknown as SkillCategory,
-        totalWeight,
-        bonus,
-      });
-    }
-
-    const radarPoints: RadarChartDataPoint[] = categories.map((cat) => {
-      const skillsInCat = Array.from(skillCountMap.entries()).filter(
-        ([_, data]) => data.category === cat,
-      );
-
-      if (skillsInCat.length === 0) {
-        return {
-          category: cat,
-          subject: cat,
-          score: 0, // No evidence in this category
-          fullMark: 100,
-        };
-      }
-
-      const totalScore = skillsInCat.reduce((acc, [_, d]) => acc + d.totalWeight + d.count * 12, 0);
-      const avgScore = Math.min(95, Math.max(45, Math.round(50 + totalScore / (skillsInCat.length * 1.5))));
-      const bonusAvg = Math.round(
-        skillsInCat.reduce((acc, [_, d]) => acc + d.bonus, 0) / skillsInCat.length,
-      );
-
-      return {
-        category: cat,
-        subject: cat,
-        score: Math.min(100, avgScore + bonusAvg),
-        fullMark: 100,
-      };
+    const radarPoints: RadarChartDataPoint[] = categories.map(category => {
+      const skills = profile.skills.filter(cs => cs.skill.category === category);
+      const score = skills.length ? Math.round(skills.reduce((sum, cs) => sum + evidenceWeightedScore(cs), 0) / skills.length) : 0;
+      return { category, subject: category, score, fullMark: 100 };
     });
 
     return radarPoints;

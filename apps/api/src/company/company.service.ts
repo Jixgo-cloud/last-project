@@ -6,6 +6,7 @@ import { companyEvaluationView } from '../evaluations/company-evaluation-view';
 import { CandidateService } from '../candidate/candidate.service';
 import {
   assessmentQuestionsMatch,
+  codingScreeningResult,
   getAssessmentValidationError,
   VerificationStatus,
   ApplicationStatus,
@@ -321,7 +322,6 @@ export class CompanyService {
             assessmentAttempts: {
               where: { assessment: { OR: [{ companyId: company.id }, { companyId: null }] } },
               orderBy: { startedAt: 'desc' },
-              take: 5,
               select: attemptSummarySelect,
             },
           },
@@ -331,7 +331,9 @@ export class CompanyService {
       },
       orderBy: { createdAt: 'desc' },
     });
-    return applications.map(application => ({ ...application, evaluation: companyEvaluationView(application.evaluation) }));
+    return applications.map(application => ({ ...application,
+      codingResult: codingScreeningResult(application.candidate.assessmentAttempts, application.assignedAssessment || application.job.customAssessment),
+      evaluation: companyEvaluationView(application.evaluation) }));
   }
 
   async updateApplicationStatus(
