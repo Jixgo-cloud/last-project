@@ -711,7 +711,8 @@ async function run() {
     assert.deepEqual(metadata.questions,[]);
     assert.equal((await requestResult(`/assessments/${companyAssessment.id}/start`,'POST',{},candidateToken)).status,403);
     await goto('/assessments/'+companyAssessment.id);
-    await page.waitForFunction(()=>document.body.innerText.includes('คะแนนการประเมินผล:')&&document.body.innerText.includes('50%'));
+    await page.waitForFunction(()=>document.body.innerText.includes('คะแนนหลังบริษัท/ผู้ตรวจประเมิน:')&&document.body.innerText.includes('50%'));
+    assert(!(await page.$eval('body',e=>e.innerText)).includes('(5 / 10 คะแนน)'), 'Reviewed percentages must not be presented as raw automated points');
     assert(!(await page.$eval('body',e=>e.innerText)).includes('(Retake)'));
     assert.equal(await db.assessmentAttempt.count(),count,'Viewing a result must not create a timed attempt');
     await db.assessment.update({where:{id:companyAssessment.id},data:{feedbackVisibility:'PRIVATE_TO_COMPANY'}});
