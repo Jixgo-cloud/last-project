@@ -12,7 +12,7 @@ import { fetchPublicJobHttp2 } from './public-job-http2';
 import { fetchBlognonePublicJobs } from './blognone-public-jobs';
 import { validateLocalJobBatch } from './local-job-batch';
 import { honestJobContent } from '../jobs/job-content';
-import { youtubeDurationFromHtml } from './youtube-duration';
+import { youtubeDurationFromHtml, youtubeDurationFromIso } from './youtube-duration';
 
 @Injectable()
 export class IngestionService {
@@ -384,7 +384,9 @@ export class IngestionService {
       for (const c of coursesToProcess) {
         try {
           let course = await this.prisma.course.findFirst({
-            where: { provider, externalId: c.externalId },
+            where: provider === CourseSource.YOUTUBE
+              ? { provider, OR: [{ externalId: c.externalId }, { url: c.url }] }
+              : { provider, externalId: c.externalId },
           });
 
           if (course) {
@@ -407,6 +409,7 @@ export class IngestionService {
                 rating: c.rating,
                 source: c.source || (provider === CourseSource.YOUTUBE ? 'YouTube' : 'Udemy'),
                 externalId: c.externalId,
+                publishedAt: c.publishedAt,
               },
             });
             createdCount++;
@@ -992,9 +995,82 @@ export class IngestionService {
   }
 
   // =========================================================================
-  // 7. YOUTUBE LIVE OEMBED CONNECTOR
+  // 7. YouTube Data API with the existing catalog as an availability fallback.
   // =========================================================================
   private async fetchYouTubeCourses(limit = 10, targetSkillName?: string, keyword?: string): Promise<any[]> {
+    const apiKey = process.env.YOUTUBE_API_KEY?.trim();
+    const quota = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 10;
+    if (!quota) return [];
+    if (!apiKey) {
+      this.logger.warn('[YouTube] YOUTUBE_API_KEY not configured; using the existing course catalog');
+      return this.fetchYouTubeCatalog(quota, targetSkillName, keyword);
+    }
+    const courses: any[] = [];
+    const seen = new Set<string>();
+    const tokens = new Set<string>();
+    const searchTerms = [targetSkillName?.trim(), keyword?.trim()]
+      .filter((value, index, values) => value && values.indexOf(value) === index);
+    const query = `${searchTerms.join(' ') || 'programming'} course tutorial`;
+    let pageToken: string | undefined;
+    try {
+      // Bound pagination even if an upstream response repeats IDs or tokens.
+      for (let page = 0; page < Math.ceil(quota / 50) + 2 && courses.length < quota; page++) {
+        const search = await axios.get('https://www.googleapis.com/youtube/v3/search', {
+          timeout: 10000,
+          params: {
+            key: apiKey, part: 'snippet', type: 'video', q: query,
+            maxResults: Math.min(50, quota - courses.length), pageToken,
+          },
+        });
+        if (!Array.isArray(search.data?.items)) throw new Error('Invalid search response');
+        const ids: string[] = [];
+        for (const item of search.data.items) {
+          const id = item.id?.videoId;
+          if (typeof id === 'string' && /^[\w-]{11}$/.test(id) && !seen.has(id)) { seen.add(id); ids.push(id); }
+        }
+        if (ids.length) {
+          const details = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
+            timeout: 10000,
+            params: { key: apiKey, part: 'snippet,contentDetails,status', id: ids.join(',') },
+          });
+          if (!Array.isArray(details.data?.items)) throw new Error('Invalid video response');
+          const byId = new Map<string, any>(details.data.items.map((video: any) => [video.id, video]));
+          for (const id of ids) {
+            const video = byId.get(id);
+            const snippet = video?.snippet;
+            const duration = youtubeDurationFromIso(video?.contentDetails?.duration);
+            if (!snippet?.title || !duration || video.status?.privacyStatus !== 'public' || (snippet.liveBroadcastContent && snippet.liveBroadcastContent !== 'none')) continue;
+            const date = new Date(snippet.publishedAt);
+            courses.push({
+              externalId: id,
+              title: snippet.title,
+              description: snippet.description || '',
+              url: `https://www.youtube.com/watch?v=${id}`,
+              thumbnailUrl: snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || snippet.thumbnails?.default?.url || null,
+              duration,
+              durationVerified: true,
+              level: 'All Levels',
+              rating: null,
+              source: snippet.channelTitle || 'YouTube',
+              publishedAt: Number.isNaN(date.getTime()) ? undefined : date,
+            });
+          }
+        }
+        const next = search.data.nextPageToken;
+        if (typeof next !== 'string' || !next || tokens.has(next)) break;
+        tokens.add(next); pageToken = next;
+      }
+      return courses.slice(0, quota);
+    } catch {
+      // Axios errors can contain the API key in request parameters. Never log them.
+      this.logger.warn('[YouTube] Data API unavailable; using the existing course catalog');
+      const fallback = await this.fetchYouTubeCatalog(quota, targetSkillName, keyword);
+      const urls = new Set(courses.map(course => course.url));
+      return [...courses, ...fallback.filter(course => !urls.has(course.url))].slice(0, quota);
+    }
+  }
+
+  private async fetchYouTubeCatalog(limit = 10, targetSkillName?: string, keyword?: string): Promise<any[]> {
     let rawCatalog = this.getCuratedCourses(CourseSource.YOUTUBE);
     const filterTerm = (keyword || targetSkillName || '').trim().toLowerCase();
 

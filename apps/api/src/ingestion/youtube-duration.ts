@@ -30,3 +30,12 @@ export function youtubeDurationFromHtml(html: string, videoId: string): { second
   }
   return null;
 }
+/** YouTube Data API contentDetails.duration uses ISO 8601. */
+export function youtubeDurationFromIso(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const match = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(value);
+  if (!match) return null;
+  const seconds = Number(match[1] || 0) * 86400 + Number(match[2] || 0) * 3600 + Number(match[3] || 0) * 60 + Number(match[4] || 0);
+  if (!Number.isSafeInteger(seconds) || seconds <= 0) return null;
+  return [Math.floor(seconds / 3600) ? `${Math.floor(seconds / 3600)} ชั่วโมง` : '', Math.floor(seconds % 3600 / 60) ? `${Math.floor(seconds % 3600 / 60)} นาที` : '', seconds % 60 ? `${seconds % 60} วินาที` : ''].filter(Boolean).join(' ');
+}
