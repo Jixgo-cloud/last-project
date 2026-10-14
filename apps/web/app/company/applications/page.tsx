@@ -1315,7 +1315,7 @@ function CompanyApplicationsContent() {
                               <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-3.5 text-center">
                                 <span className="text-[10px] font-bold text-slate-400 uppercase block">GitHub Skills</span>
                                 <span className="text-lg font-black text-slate-900 mt-1 block">
-                                  {candidateProfile.skills?.length || 0}
+                                  {candidateProfile.skills?.filter((skill: any) => githubEvidenceScore(skill) > 0).length || 0}
                                 </span>
                               </div>
                               <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-3.5 text-center">
