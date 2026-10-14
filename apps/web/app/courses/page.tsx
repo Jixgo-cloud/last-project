@@ -155,7 +155,7 @@ export default function CoursesPage() {
                       ทักษะสำคัญที่ควรพัฒนาเร่งด่วน (Priority Skill Gaps)
                     </h2>
                     <p className="text-xs text-[#667085] mt-1">
-                      เปรียบเทียบระหว่างคะแนนที่ได้รับการยืนยันของคุณกับเกณฑ์มาตรฐานของตำแหน่ง {data.targetCareer}
+                      เปรียบเทียบคะแนนหลักฐาน GitHub ของคุณกับเป้าหมายของตำแหน่ง (ไม่รวมผลสอบ) {data.targetCareer}
                     </p>
                   </div>
                 </div>
