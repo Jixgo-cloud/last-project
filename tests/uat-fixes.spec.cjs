@@ -258,7 +258,7 @@ test('An inactive exam permits only an owned finished result while active assign
 test('Job cleanup keeps closed internal jobs and expired external jobs even for legacy DELETE requests', async () => {
   const jobs=[{id:'hired',source:'INTERNAL',isActive:false},{id:'external',source:'JSEARCH',isActive:true,expiresAt:new Date(0)}];
   let writes;
-  const service=new JobScreeningService({job:{findMany:async()=>jobs,delete:async()=>assert.fail('Cleanup must never cascade-delete applications'),updateMany:async args=>{writes=args;return{count:1};}},ingestionLog:{create:async()=>{}}});
+  const service=new JobScreeningService({job:{findMany:async()=>jobs,delete:async()=>assert.fail('Cleanup must never cascade-delete applications'),updateMany:async args=>{writes=args;return{count:1};}},ingestionLog:{findFirst:async()=>null,create:async()=>{}}});
   const result=await service.scanAndCleanJobs({deleteMode:'DELETE'});
   assert.equal(result.deletedCount,0);
   assert.equal(result.deactivatedCount,1);
@@ -1065,4 +1065,30 @@ test('JSearch refresh updates only the matching source and external ID', async (
     assert.equal(updates.length,row.id==='one'?1:0);
     if(updates.length)assert.deepEqual(updates[0].data,{sourceUrl:'https://www.google.com/search?ibp=htl;jobs'});
   }
+});
+
+test('Job screening ignores hidden status text and treats unavailable sources as unknown', async () => {
+  const original=axios.get;const service=new JobScreeningService({});
+  const job={source:'JSEARCH',isActive:true,sourceUrl:'https://example.test/job'};
+  try {
+    for(const html of ['<main><a href="/apply">Apply now</a><script>"this job is closed"</script></main>','<main><a href="/apply">Apply now</a><div hidden>This job is closed</div><div style="display:none">this job is closed</div></main>']){
+      axios.get=async()=>({status:200,data:html});const result=await service.evaluateJob(job);assert.equal(result.isClosed,false);assert(!result.unchecked);
+    }
+    for(const status of [403,429,500,503]){axios.get=async()=>({status,data:'<main>This job is closed</main>'});const result=await service.evaluateJob(job);assert.equal(result.isClosed,false);assert.equal(result.unchecked,true);}
+    axios.get=async()=>{throw new Error('network failure');};assert.equal((await service.evaluateJob(job)).unchecked,true);
+    for(const status of [404,410]){axios.get=async()=>({status,data:''});assert.equal((await service.evaluateJob(job)).reasonCode,'DEAD_LINK_HTTP');}
+    axios.get=async()=>({status:200,data:'<main><p>This job is closed</p></main>'});assert.equal((await service.evaluateJob(job)).reasonCode,'CLOSED_CONTENT');
+    axios.get=async()=>({status:200,data:'<title>Just a moment</title><main>this job is closed</main>'});assert.equal((await service.evaluateJob(job)).unchecked,true);
+    axios.get=async()=>({status:200,data:'<main>Google Jobs loading...</main>'});assert.equal((await service.evaluateJob(job)).unchecked,true);
+  }finally{axios.get=original;}
+});
+
+test('Screening persists rotation, wraps through active jobs and leaves preview and unknown jobs unchanged', async () => {
+  let log=null;const writes=[];const rows=['a','b','c'].map(id=>({id,title:id,source:'INTERNAL',isActive:true}));
+  const prisma={job:{findMany:async q=>{assert.equal(q.where.isActive,true);assert.deepEqual(q.orderBy,{id:'asc'});return rows.filter(r=>!q.where.id||(q.where.id.gt?r.id>q.where.id.gt:r.id<=q.where.id.lte)).slice(0,q.take);},updateMany:async q=>{writes.push(q);return{count:0};}},ingestionLog:{findFirst:async()=>log,create:async({data})=>{log=data;return data;}}};
+  const service=new JobScreeningService(prisma);const seen=[];
+  service.evaluateJob=async job=>{seen.push(job.id);return {isClosed:false,unchecked:true,reason:'test unavailable'};};
+  const preview=await service.previewClosedJobs('ALL',2);assert.equal(preview.uncheckedCount,2);assert.equal(log,null);
+  seen.length=0;await service.scanAndCleanJobs({limit:2});assert.deepEqual(seen,['a','b']);assert.equal(log.status,'FAILED');assert.equal(log.metadata.lastScannedId,'b');
+  seen.length=0;await service.scanAndCleanJobs({limit:2});assert.deepEqual(seen,['c','a']);assert.equal(log.metadata.lastScannedId,'a');assert.equal(writes.length,0);
 });

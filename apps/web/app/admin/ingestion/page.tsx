@@ -330,7 +330,7 @@ export default function AdminIngestionPage() {
       setResultType('JOBS');
       setShowResultModal(true);
       showMessage(
-        `คัดกรองงานเสร็จสิ้น! สแกน ${res.scannedCount} ตำแหน่ง, พบปิดรับ ${res.closedCount} ตำแหน่ง, ปิดประกาศเพิ่ม ${res.deactivatedCount} ตำแหน่ง โดยเก็บใบสมัครและประวัติไว้`,
+        `คัดกรองงานเสร็จสิ้น! สแกน ${res.scannedCount} ตำแหน่ง, พบปิดรับ ${res.closedCount} ตำแหน่ง, ปิดประกาศเพิ่ม ${res.deactivatedCount} ตำแหน่ง, ตรวจไม่ได้ ${res.uncheckedCount || 0} ตำแหน่ง โดยเก็บใบสมัครและประวัติไว้`,
       );
       fetchLogs();
     } catch (err: any) {
@@ -1122,6 +1122,16 @@ export default function AdminIngestionPage() {
                 </div>
               </div>
 
+              {resultType === 'JOBS' && screeningResult.uncheckedCount > 0 && (
+                <div role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+                  <p>ตรวจสถานะไม่ได้ {screeningResult.uncheckedCount} รายการ — เก็บประกาศเหล่านี้ไว้ ยังไม่ถือว่างานเปิดหรือปิด</p>
+                  <ul className="mt-2 space-y-1">
+                    {screeningResult.uncheckedItems?.map((item: any) => (
+                      <li key={item.id}>{item.title}: {item.reason}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {/* Reasons Breakdown */}
               <div className="p-4 rounded-2xl bg-slate-50/70 border border-slate-200/80">
                 <div className="text-xs font-bold text-slate-700 mb-2">จำแนกตามสาเหตุ:</div>
