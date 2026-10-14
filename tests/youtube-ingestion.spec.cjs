@@ -169,3 +169,18 @@ test('Udemy requests expanded metadata and maps source labels without inventing 
   assert.deepEqual(result[0].sourceTags,['Docker']);
   assert.deepEqual(result[1].sourceTags,[]);
 });
+
+test('Udemy rejects placeholder credentials locally and reports permission failures without leaking secrets', async t => {
+  const service = harness(t); const warnings=[]; service.logger.warn=m=>warnings.push(m);
+  const saved=[process.env.UDEMY_CLIENT_ID,process.env.UDEMY_CLIENT_SECRET];
+  t.after(()=>{for(const [i,key] of ['UDEMY_CLIENT_ID','UDEMY_CLIENT_SECRET'].entries()){if(saved[i]===undefined)delete process.env[key];else process.env[key]=saved[i];}});
+  process.env.UDEMY_CLIENT_ID='your_client_id';process.env.UDEMY_CLIENT_SECRET='your_client_secret';
+  axios.get=async()=>assert.fail('Do not send placeholder credentials');
+  await service.fetchUdemyCourses('React',1);
+  assert(warnings.some(m=>m.includes('Placeholder credentials')));
+  process.env.UDEMY_CLIENT_ID=' qa-real-id ';process.env.UDEMY_CLIENT_SECRET=' qa-real-secret ';
+  axios.get=async(_url,options)=>{assert.equal(options.headers.Accept,'application/json');assert.equal(options.headers.Authorization,'Basic '+Buffer.from('qa-real-id:qa-real-secret').toString('base64'));throw {response:{status:403},message:'qa-real-secret'};};
+  await service.fetchUdemyCourses('React',1);
+  assert(warnings.some(m=>m.includes('Access denied (403)')));
+  assert(!warnings.join(' ').includes('qa-real-secret'));
+});

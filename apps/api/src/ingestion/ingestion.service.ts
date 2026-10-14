@@ -269,6 +269,11 @@ export class IngestionService {
           });
 
           if (existing) {
+            // Refresh only the same JSearch listing, never a title-matched job from another source.
+            if (source === JobSource.JSEARCH && existing.source === source
+              && existing.externalId === externalId && existing.sourceUrl !== raw.url) {
+              await this.prisma.job.update({ where: { id: existing.id }, data: { sourceUrl: raw.url } });
+            }
             duplicateCount++;
             continue;
           }
@@ -620,9 +625,10 @@ export class IngestionService {
           this.logger.log(`[JSearch API] Successfully fetched ${response.data.data.length} real live jobs from Google Jobs/JSearch!`);
           for (const item of response.data.data) {
             if (jobs.length >= limit) break;
+            const googleLink = typeof item?.job_google_link === 'string' ? item.job_google_link.trim() : '';
             if (!item?.job_id || typeof item.job_title !== 'string' || !item.job_title.trim()
               || typeof item.employer_name !== 'string' || !item.employer_name.trim()
-              || !(item.job_apply_link || item.job_google_link)) continue;
+              || !googleLink) continue;
             jobs.push({
               id: String(item.job_id),
               title: item.job_title,
@@ -647,7 +653,7 @@ export class IngestionService {
               salaryMin: item.job_min_salary ?? null,
               salaryMax: item.job_max_salary ?? null,
               salaryCurrency: item.job_salary_currency || 'THB',
-              url: item.job_apply_link || item.job_google_link,
+              url: googleLink,
             });
           }
         }
@@ -951,11 +957,12 @@ export class IngestionService {
   // 6. UDEMY API CONNECTOR & VERIFIED COURSE CATALOG
   // =========================================================================
   private async fetchUdemyCourses(searchQuery: string, limit = 10, targetSkillName?: string): Promise<any[]> {
-    const clientId = process.env.UDEMY_CLIENT_ID;
-    const clientSecret = process.env.UDEMY_CLIENT_SECRET;
+    const clientId = process.env.UDEMY_CLIENT_ID?.trim();
+    const clientSecret = process.env.UDEMY_CLIENT_SECRET?.trim();
+    const placeholder = /your[_-]|placeholder|example|changeme/i.test(`${clientId || ''} ${clientSecret || ''}`);
 
     // A) If Official Udemy Affiliate / Enterprise API credentials are provided:
-    if (clientId && clientSecret) {
+    if (clientId && clientSecret && !placeholder) {
       try {
         this.logger.log(`[Udemy API] Connecting to https://www.udemy.com/api-2.0/courses with client credentials for query "${searchQuery}" (limit: ${limit})...`);
         const token = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
@@ -965,6 +972,7 @@ export class IngestionService {
           {
             headers: {
               Authorization: `Basic ${token}`,
+              Accept: 'application/json',
               'User-Agent': 'SmartCareer-App/1.0',
             },
             timeout: 8000,
@@ -989,10 +997,16 @@ export class IngestionService {
           return mapped.slice(0, limit);
         }
       } catch (err: any) {
-        this.logger.warn('[Udemy API] Official endpoint unavailable. Falling back to verified course registry.');
+        const status = err?.response?.status;
+        const reason = status === 401 ? 'Authentication rejected (401); check the API client credentials.'
+          : status === 403 ? 'Access denied (403); the API client must have permission for the Affiliate course catalog.'
+          : status === 429 ? 'Rate limit exceeded (429); retry later.'
+          : 'Official endpoint unavailable.';
+        // Never log upstream error bodies, headers or Axios request configuration.
+        this.logger.warn(`[Udemy API] ${reason} Using the fallback catalog; live API import was not verified.`);
       }
     } else {
-      this.logger.log(`[Udemy API] UDEMY_CLIENT_ID / SECRET not configured. Synchronizing verified industry course registry (limit: ${limit}, filter: "${searchQuery}")...`);
+      this.logger.warn(`[Udemy API] ${placeholder ? 'Placeholder credentials detected' : 'API credentials missing'}. Using the fallback catalog; live API import was not verified.`);
     }
 
     // B) Verified Tech Courses from Udemy with Direct Enrollment Links

@@ -652,7 +652,7 @@ test('JSearch prioritizes its trimmed dedicated key and falls back only when it 
     axios.get=async(_url,options)=>{
       assert.equal(options.timeout,30000);
       requested.push(options.headers['X-RapidAPI-Key']);
-      return {data:{data:[{job_id:'qa-key-selection',job_title:'QA Developer',employer_name:'QA Employer',job_apply_link:'https://example.com/qa-job'}]}};
+      return {data:{data:[{job_id:'qa-key-selection',job_title:'QA Developer',employer_name:'QA Employer',job_apply_link:'https://example.com/qa-job',job_google_link:'https://www.google.com/search?ibp=htl;jobs'}]}};
     };
     process.env.RAPIDAPI_KEY='  legacy-qa-key  ';
     process.env.JSEARCH_API_KEY='  dedicated-qa-key  ';
@@ -1038,4 +1038,31 @@ test('Duplicate course refresh only changes verified duration on the same video 
     incoming={...incoming,...patch};await service.syncCourses('YOUTUBE',1);
   }
   assert.equal(writes.length,1);
+});
+
+test('JSearch uses only the provider Google Jobs link and skips jobs without it', async () => {
+  const previous=process.env.JSEARCH_API_KEY, original=axios.get;
+  process.env.JSEARCH_API_KEY='qa-test-key';
+  const service=new IngestionService({}, {}, {});
+  const base={job_id:'qa-google',job_title:'Developer',employer_name:'QA',job_apply_link:'https://employer.example/apply'};
+  try {
+    axios.get=async()=>({data:{data:[base,{...base,job_id:'valid',job_google_link:' https://www.google.com/search?ibp=htl;jobs '}]}});
+    const jobs=await service.fetchJSearchJobs('QA',5);
+    assert.equal(jobs.length,1);
+    assert.equal(jobs[0].url,'https://www.google.com/search?ibp=htl;jobs');
+    axios.get=async()=>({data:{data:[base]}});
+    await assert.rejects(service.fetchJSearchJobs('QA',5),/JSEARCH_EMPTY_RESPONSE/);
+  } finally {axios.get=original;if(previous===undefined)delete process.env.JSEARCH_API_KEY;else process.env.JSEARCH_API_KEY=previous;}
+});
+
+test('JSearch refresh updates only the matching source and external ID', async () => {
+  for(const row of [{id:'one',source:'JSEARCH',externalId:'qa'},{id:'two',source:'INTERNAL',externalId:'qa'},{id:'three',source:'JSEARCH',externalId:'other'}]) {
+    const updates=[];
+    const service=new IngestionService({job:{findFirst:async()=>row,update:async x=>updates.push(x)},ingestionLog:{create:async({data})=>data}}, {}, {getQuotaForSource:()=>1});
+    service.fetchJSearchJobs=async()=>[{id:'qa',title:'QA',company:'QA',url:'https://www.google.com/search?ibp=htl;jobs'}];
+    const result=await service.performJobsSync('JSEARCH',1);
+    assert.equal(result.errorCount,0);
+    assert.equal(updates.length,row.id==='one'?1:0);
+    if(updates.length)assert.deepEqual(updates[0].data,{sourceUrl:'https://www.google.com/search?ibp=htl;jobs'});
+  }
 });
