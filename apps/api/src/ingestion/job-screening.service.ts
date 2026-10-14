@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { structuredJobExpiry, hasJobsDbApply } from './job-page-evidence';
+import { fetchBlognonePublicJobs } from './blognone-public-jobs';
 import { IngestionStatus, JobSource } from '@smartcareer/shared';
 
 export interface ScreeningResultItem {
@@ -18,7 +20,7 @@ export interface ScreeningResultItem {
 export interface ScreeningSummary {
   scannedCount: number;
   uncheckedCount: number;
-  uncheckedItems: { id: string; title: string; reason: string }[];
+  uncheckedItems: { id: string; title: string; reason: string; source?: string; sourceUrl?: string | null }[];
   closedCount: number;
   deletedCount: number;
   deactivatedCount: number;
@@ -33,6 +35,29 @@ export interface ScreeningSummary {
 
 @Injectable()
 export class JobScreeningService {
+  private blognoneSnapshot?: { at: number; jobs: Promise<any[]> };
+  private jsearchChecks = 0;
+
+  private async checkJSearchListing(job: any) {
+    const key = (process.env.JSEARCH_API_KEY?.trim() || process.env.RAPIDAPI_KEY?.trim());
+    if (!key || !job.externalId || this.jsearchChecks >= 5) return null;
+    this.jsearchChecks++;
+    try {
+      const response = await axios.get('https://jsearch.p.rapidapi.com/job-details', {
+        params: { job_id: job.externalId }, timeout: 12000,
+        headers: { 'X-RapidAPI-Key': key, 'X-RapidAPI-Host': 'jsearch.p.rapidapi.com' },
+      });
+      const match = Array.isArray(response.data?.data) && response.data.data.find((item: any) => item.job_id === job.externalId);
+      if (match && typeof match.job_google_link === 'string' && match.job_google_link.trim()
+        && typeof match.job_title === 'string' && match.job_title.trim()) {
+        return { isClosed: false, reason: 'JSearch ส่งประกาศรหัสเดียวกันพร้อมลิงก์ Google Jobs ในการตรวจรอบนี้' };
+      }
+    } catch (error: any) {
+      if ([401, 403, 429].includes(error?.response?.status)) this.jsearchChecks = 5;
+      // Do not expose provider credentials or treat a missing result as closed.
+    }
+    return null;
+  }
   private readonly logger = new Logger(JobScreeningService.name);
 
   // Indicators that an external job post is closed or expired
@@ -49,6 +74,7 @@ export class JobScreeningService {
 
   private readonly CLOSED_KEYWORDS_EN = [
     'this job has expired',
+    'this job is no longer advertised',
     'no longer accepting applications',
     'this job is closed',
     'job is closed',
@@ -68,17 +94,28 @@ export class JobScreeningService {
     try {
       const response = await axios.get(url, {
         headers: { 'User-Agent': 'SmartCareer/1.0', Accept: 'text/html' },
-        timeout: 6000, validateStatus: () => true, maxRedirects: 4,
+        timeout: 12000, validateStatus: () => true, maxRedirects: 4,
       });
       if (response.status === 404 || response.status === 410) {
         return { isClosed: true, reason: 'ลิงก์ต้นทางไม่พบประกาศ (HTTP ' + response.status + ')', reasonCode: 'DEAD_LINK_HTTP' };
       }
-      if (response.status !== 200) return unknown('ต้นทางตอบ HTTP ' + response.status + ' — ยังสรุปว่างานปิดไม่ได้');
+      if (response.status !== 200) {
+        if ([403, 405].includes(response.status) && new URL(url).hostname === 'jobs.blognone.com') {
+          if (!this.blognoneSnapshot || Date.now() - this.blognoneSnapshot.at > 60000) {
+            this.blognoneSnapshot = { at: Date.now(), jobs: fetchBlognonePublicJobs(60).catch(() => []) };
+          }
+          const listings = await this.blognoneSnapshot.jobs;
+          if (listings.some(job => job.url === url)) return { isClosed: false, reason: 'พบประกาศเดียวกันในรายการงานสาธารณะของ Blognone' };
+        }
+        return unknown('ต้นทางตอบ HTTP ' + response.status + ' — ยังสรุปว่างานปิดไม่ได้');
+      }
       if (typeof response.data !== 'string') return unknown('ต้นทางไม่ได้ส่งหน้าเนื้อหาประกาศ');
       const $ = cheerio.load(response.data);
       if ($('title').text().match(/just a moment|access denied|captcha/i) || $('[class*="captcha"], #challenge-form').length) {
         return unknown('ต้นทางต้องยืนยันการเข้าถึง');
       }
+      const expiry = structuredJobExpiry(response.data, url);
+      if (expiry === 'CLOSED') return { isClosed: true, reason: 'ข้อมูล JobPosting ของประกาศนี้ระบุว่าหมดอายุแล้ว', reasonCode: 'EXPIRED_DATE' };
       $('script, style, template, noscript, nav, footer, aside, [hidden], [aria-hidden="true"]').remove();
       $('[style]').each((_i, element) => {
         if (/display\s*:\s*none|visibility\s*:\s*hidden/i.test($(element).attr('style') || '')) $(element).remove();
@@ -93,8 +130,9 @@ export class JobScreeningService {
         .filter(word => !['no longer available', 'page not found', 'ปิดรับสมัคร'].includes(word));
       const closed = statusTexts.find(text => keywords.some(word => text.includes(word)));
       if (closed) return { isClosed: true, reason: 'พบข้อความสถานะปิดรับสมัครในเนื้อหาประกาศ', reasonCode: 'CLOSED_CONTENT' };
+      if (expiry === 'OPEN' || hasJobsDbApply($.html(), url)) return { isClosed: false };
       const apply = main.find('a[href], button:not([disabled])').toArray().some(el =>
-        /^(apply now|apply for this job|สมัครงาน|สมัครงานนี้)$/i.test($(el).text().trim()));
+        /^(apply now|apply for this job|apply for this position|สมัครงาน|สมัครงานนี้)$/i.test($(el).text().trim()));
       if (apply) return { isClosed: false };
       return unknown('ไม่พบหลักฐานสถานะประกาศที่ยืนยันได้ — เก็บงานไว้');
     } catch {
@@ -129,6 +167,10 @@ export class JobScreeningService {
     // 3. For External Jobs, verify Source URL health
     if (job.source !== JobSource.INTERNAL && job.sourceUrl) {
       const urlCheck = await this.checkExternalUrl(job.sourceUrl);
+      if (urlCheck.unchecked && job.source === JobSource.JSEARCH) {
+        const providerCheck = await this.checkJSearchListing(job);
+        if (providerCheck) return providerCheck;
+      }
       if (urlCheck.isClosed || urlCheck.unchecked) {
         return urlCheck;
       }
@@ -177,6 +219,7 @@ export class JobScreeningService {
     deleteMode: 'DELETE' | 'DEACTIVATE';
   }): Promise<ScreeningSummary> {
     const startedAt = new Date();
+    this.jsearchChecks = 0;
     const where: any = { isActive: true };
 
     if (params.source && params.source !== 'ALL') {
@@ -200,6 +243,7 @@ export class JobScreeningService {
         companyName: true,
         source: true,
         sourceUrl: true,
+        externalId: true,
         expiresAt: true,
         isActive: true,
       },
@@ -236,7 +280,7 @@ export class JobScreeningService {
           const evalResult = await this.evaluateJob(job);
           if (evalResult.unchecked) {
             summary.uncheckedCount++;
-            summary.uncheckedItems.push({ id: job.id, title: job.title, reason: evalResult.reason || 'ตรวจไม่ได้' });
+            summary.uncheckedItems.push({ id: job.id, title: job.title, source: job.source, sourceUrl: job.sourceUrl, reason: evalResult.reason || 'ตรวจไม่ได้' });
           }
           if (evalResult.isClosed) {
             summary.closedCount++;

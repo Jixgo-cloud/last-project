@@ -1127,7 +1127,7 @@ export default function AdminIngestionPage() {
                   <p>ตรวจสถานะไม่ได้ {screeningResult.uncheckedCount} รายการ — เก็บประกาศเหล่านี้ไว้ ยังไม่ถือว่างานเปิดหรือปิด</p>
                   <ul className="mt-2 space-y-1">
                     {screeningResult.uncheckedItems?.map((item: any) => (
-                      <li key={item.id}>{item.title}: {item.reason}</li>
+                      <li key={item.id}>{item.title}: {item.reason} {item.sourceUrl && /^https?:\/\//i.test(item.sourceUrl) && <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline">ตรวจต้นทาง ({item.source})</a>}</li>
                     ))}
                   </ul>
                 </div>

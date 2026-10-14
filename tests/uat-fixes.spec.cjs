@@ -1077,7 +1077,7 @@ test('Job screening ignores hidden status text and treats unavailable sources as
     for(const status of [403,429,500,503]){axios.get=async()=>({status,data:'<main>This job is closed</main>'});const result=await service.evaluateJob(job);assert.equal(result.isClosed,false);assert.equal(result.unchecked,true);}
     axios.get=async()=>{throw new Error('network failure');};assert.equal((await service.evaluateJob(job)).unchecked,true);
     for(const status of [404,410]){axios.get=async()=>({status,data:''});assert.equal((await service.evaluateJob(job)).reasonCode,'DEAD_LINK_HTTP');}
-    axios.get=async()=>({status:200,data:'<main><p>This job is closed</p></main>'});assert.equal((await service.evaluateJob(job)).reasonCode,'CLOSED_CONTENT');
+    for (const text of ['This job is closed','This job is no longer advertised']) { axios.get=async()=>({status:200,data:'<main><p>'+text+'</p></main>'});assert.equal((await service.evaluateJob(job)).reasonCode,'CLOSED_CONTENT'); }
     axios.get=async()=>({status:200,data:'<title>Just a moment</title><main>this job is closed</main>'});assert.equal((await service.evaluateJob(job)).unchecked,true);
     axios.get=async()=>({status:200,data:'<main>Google Jobs loading...</main>'});assert.equal((await service.evaluateJob(job)).unchecked,true);
   }finally{axios.get=original;}
@@ -1091,4 +1091,33 @@ test('Screening persists rotation, wraps through active jobs and leaves preview 
   const preview=await service.previewClosedJobs('ALL',2);assert.equal(preview.uncheckedCount,2);assert.equal(log,null);
   seen.length=0;await service.scanAndCleanJobs({limit:2});assert.deepEqual(seen,['a','b']);assert.equal(log.status,'FAILED');assert.equal(log.metadata.lastScannedId,'b');
   seen.length=0;await service.scanAndCleanJobs({limit:2});assert.deepEqual(seen,['c','a']);assert.equal(log.metadata.lastScannedId,'a');assert.equal(writes.length,0);
+});
+
+test('Job-specific metadata and JobsDB apply links confirm only the matching listing', () => {
+  const {structuredJobExpiry,hasJobsDbApply}=require('../apps/api/dist/ingestion/job-page-evidence');
+  const url='https://example.test/jobs/123';const json=(data)=>'<script type="application/ld+json">'+JSON.stringify(data)+'</script>';
+  const job={'@type':'JobPosting',url,validThrough:'2099-01-01'};
+  assert.equal(structuredJobExpiry(json(job),url),'OPEN');
+  assert.equal(structuredJobExpiry(json({...job,validThrough:'2000-01-01'}),url),'CLOSED');
+  assert.equal(structuredJobExpiry(json({...job,url:'https://example.test/jobs/other'}),url),null);
+  assert.equal(structuredJobExpiry(json({...job,validThrough:'unknown'}),url),null);
+  assert.equal(structuredJobExpiry(json({'@graph':[job]}),url),'OPEN');
+  const apply='<a data-automation="job-detail-apply" href="/job/123/apply">Quick apply</a>';
+  assert.equal(hasJobsDbApply(apply,'https://th.jobsdb.com/job/123'),true);
+  assert.equal(hasJobsDbApply(apply,'https://th.jobsdb.com/job/999'),false);
+  assert.equal(hasJobsDbApply('<div hidden>'+apply+'</div>','https://th.jobsdb.com/job/123'),false);
+});
+
+test('JSearch screening accepts only a matching provider ID and stops on quota denial', async () => {
+  const old=axios.get,key=process.env.JSEARCH_API_KEY;process.env.JSEARCH_API_KEY='qa-key';
+  const service=new JobScreeningService({});let calls=0;
+  try{
+    axios.get=async()=>{calls++;return{data:{data:[{job_id:'other',job_title:'Wrong',job_google_link:'https://google.com/'}]}};};
+    assert.equal(await service.checkJSearchListing({externalId:'wanted'}),null);
+    axios.get=async()=>({data:{data:[{job_id:'wanted',job_title:'QA',job_google_link:'https://google.com/'}]}});
+    assert.equal((await service.checkJSearchListing({externalId:'wanted'})).isClosed,false);
+    axios.get=async()=>{calls++;throw {response:{status:429}};};
+    assert.equal(await service.checkJSearchListing({externalId:'wanted'}),null);
+    const before=calls;assert.equal(await service.checkJSearchListing({externalId:'wanted'}),null);assert.equal(calls,before);
+  }finally{axios.get=old;if(key===undefined)delete process.env.JSEARCH_API_KEY;else process.env.JSEARCH_API_KEY=key;}
 });
