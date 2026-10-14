@@ -1183,7 +1183,9 @@ export default function AdminIngestionPage() {
 
                 {screeningResult.items?.length === 0 ? (
                   <div className="py-8 text-center text-xs text-slate-400 bg-slate-50 rounded-2xl border border-slate-200">
-                    ยอดเยี่ยม! ไม่พบรายการที่ผิดปกติในรอบการสแกนนี้
+                    {resultType === 'JOBS' && screeningResult.uncheckedCount > 0
+                      ? 'ไม่พบงานที่ยืนยันว่าปิดรับสมัคร แต่ยังมีงานที่ตรวจสถานะไม่ได้ตามรายการด้านบน'
+                      : 'ไม่พบรายการที่เข้าข่ายปิดหรือไม่พร้อมใช้งานในรอบการสแกนนี้'}
                   </div>
                 ) : (
                   <div className="overflow-x-auto rounded-2xl border border-slate-200">
