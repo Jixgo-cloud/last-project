@@ -7,6 +7,7 @@ import { IngestionStatus, JobSource, CourseSource, JobType } from '@smartcareer/
 import { GeminiExtractorService } from './gemini-extractor.service';
 import { IngestionConfigService } from './ingestion-config.service';
 import { mentionsSkill } from '../recommendations/course-skill-evidence';
+import { sourceTags, udemySourceTags } from './course-source-tags';
 import { fetchRenderedJobHtml } from './rendered-job-html';
 import { fetchPublicJobHttp2 } from './public-job-http2';
 import { fetchBlognonePublicJobs } from './blognone-public-jobs';
@@ -453,6 +454,22 @@ export class IngestionService {
                   },
                 });
               }
+            }
+          }
+
+          // Provider tags also apply to existing courses, without replacing their content.
+          for (const skill of allSkills) {
+            if (course && sourceTags(c.sourceTags).some(tag => mentionsSkill(tag, skill.name))) {
+              await this.prisma.courseSkill.upsert({
+                where: { courseId_skillId: { courseId: course.id, skillId: skill.id } },
+                update: {},
+                create: { courseId: course.id, skillId: skill.id, relevanceScore: 0.95 },
+              });
+              // Upgrade only inferred evidence; preserve explicit target/manual weights.
+              await this.prisma.courseSkill.updateMany({
+                where: { courseId: course.id, skillId: skill.id, relevanceScore: 0.9 },
+                data: { relevanceScore: 0.95 },
+              });
             }
           }
 
@@ -951,6 +968,7 @@ export class IngestionService {
               'User-Agent': 'SmartCareer-App/1.0',
             },
             timeout: 8000,
+            params: { 'fields[course]': '@all' },
           },
         );
 
@@ -966,11 +984,12 @@ export class IngestionService {
             level: 'All Levels',
             rating: c.rating ? parseFloat(c.rating.toFixed(1)) : 4.8,
             source: 'Udemy Official API',
+            sourceTags: udemySourceTags(c),
           }));
           return mapped.slice(0, limit);
         }
       } catch (err: any) {
-        this.logger.warn(`[Udemy API] Official endpoint error: ${err.message}. Falling back to verified course registry.`);
+        this.logger.warn('[Udemy API] Official endpoint unavailable. Falling back to verified course registry.');
       }
     } else {
       this.logger.log(`[Udemy API] UDEMY_CLIENT_ID / SECRET not configured. Synchronizing verified industry course registry (limit: ${limit}, filter: "${searchQuery}")...`);
@@ -1052,6 +1071,7 @@ export class IngestionService {
               level: 'All Levels',
               rating: null,
               source: snippet.channelTitle || 'YouTube',
+              sourceTags: sourceTags(snippet.tags),
               publishedAt: Number.isNaN(date.getTime()) ? undefined : date,
             });
           }

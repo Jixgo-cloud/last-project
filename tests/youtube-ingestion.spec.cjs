@@ -128,3 +128,44 @@ test('A later API failure keeps fetched courses and merges fallback without dupl
   assert.equal(result[0].externalId,id);
   assert.equal(result[1].externalId,'other');
 });
+
+test('Provider tags normalize optional labels and omit malformed values', () => {
+  const {sourceTags, udemySourceTags} = require('../apps/api/dist/ingestion/course-source-tags');
+  assert.deepEqual(sourceTags([' React ', 'react', null, 12, {}, '']), ['react']);
+  assert.deepEqual(udemySourceTags({course_has_labels:[{label:{display_name:'React'}}],primary_subcategory:{title:'Web Development'},topics:[{title:'TypeScript'}]}), ['TypeScript','React','Web Development']);
+  assert.deepEqual(udemySourceTags({}), []);
+});
+
+test('YouTube provider tags link existing courses even without title evidence and preserve explicit weights', async t => {
+  const links = []; const upgrades = [];
+  const service = harness(t, {
+    skill:{findMany:async()=>[{id:'react',name:'React'},{id:'java',name:'Java'}]},
+    course:{findFirst:async()=>({id:'old',title:'Lesson',description:'',url:`https://www.youtube.com/watch?v=${id}`,duration:'1 ชั่วโมง 2 นาที 3 วินาที'})},
+    courseSkill:{upsert:async x=>links.push(x),updateMany:async x=>upgrades.push(x)},
+    ingestionLog:{create:async ({data})=>data},
+  });
+  const v = video(); v.snippet.tags = ['ReactJS tutorial','JavaScript'];
+  axios.get = async url=>({data:{items:url.endsWith('/search')?[{id:{videoId:id}}]:[v]}});
+  const mapped = await service.fetchYouTubeCourses(1);
+  assert.deepEqual(mapped[0].sourceTags, v.snippet.tags);
+  const result = await service.syncCourses('YOUTUBE',1);
+  assert.equal(result.duplicateCount,1);
+  assert.equal(result.errorCount,0);
+  assert.deepEqual(links.map(x=>x.create.skillId),['react']);
+  assert.equal(upgrades[0].where.relevanceScore,0.9);
+  assert.equal(upgrades[0].data.relevanceScore,0.95);
+});
+
+test('Udemy requests expanded metadata and maps source labels without inventing absent tags', async t => {
+  const service = harness(t);
+  const saved = [process.env.UDEMY_CLIENT_ID,process.env.UDEMY_CLIENT_SECRET];
+  process.env.UDEMY_CLIENT_ID='qa-id';process.env.UDEMY_CLIENT_SECRET='qa-secret';
+  t.after(()=>{for(const [i,key] of ['UDEMY_CLIENT_ID','UDEMY_CLIENT_SECRET'].entries()){if(saved[i]===undefined) delete process.env[key]; else process.env[key]=saved[i];}});
+  axios.get = async (_url,options)=>{
+    assert.equal(options.params['fields[course]'],'@all');
+    return {data:{results:[{id:1,title:'Lesson',url:'/course/lesson/',course_has_labels:[{label:{display_name:'Docker'}}]},{id:2,title:'Other',url:'/course/other/'}]}};
+  };
+  const result = await service.fetchUdemyCourses('Docker',2);
+  assert.deepEqual(result[0].sourceTags,['Docker']);
+  assert.deepEqual(result[1].sourceTags,[]);
+});
