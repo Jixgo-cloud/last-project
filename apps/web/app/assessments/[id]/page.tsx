@@ -885,11 +885,11 @@ export default function AssessmentRunnerPage() {
                       {codingFinalResult.passed ? '🎉 ยินดีด้วย! คุณผ่านการทดสอบโค้ดดิ้ง' : 'ส่งผลการทดสอบโค้ดดิ้งเรียบร้อย'}
                     </h2>
                     <p className="text-sm text-[#667085] mt-2">
-                      คะแนนการประเมินผล:{' '}
+                      {codingFinalResult.reviewStatus === 'HUMAN_REVIEWED' ? 'คะแนนหลังบริษัท/ผู้ตรวจประเมิน:' : 'คะแนนการประเมินผล:'}{' '}
                       <span className="font-extrabold text-[#4f46e5] text-2xl">
                         {codingFinalResult.percentage ?? codingFinalResult.score ?? codingFinalResult.aiScore}%
                       </span>
-                      {codingFinalResult.maxScore ? (
+                      {codingFinalResult.reviewStatus === 'HUMAN_REVIEWED' ? null : codingFinalResult.maxScore && (codingFinalResult.totalPointsEarned ?? codingFinalResult.score) != null ? (
                         <span className="text-xs ml-1 text-slate-500">
                           ({codingFinalResult.totalPointsEarned ?? codingFinalResult.score} / {codingFinalResult.maxScore} คะแนน)
                         </span>
@@ -985,7 +985,7 @@ export default function AssessmentRunnerPage() {
                               ได้รับเหรียญทักษะเฉพาะ: {assessment.title}
                             </div>
                             <div className="text-[11px] text-indigo-700 mt-0.5">
-                              ผ่านการทดสอบโค้ดดิ้งภาคปฏิบัติและยืนยันใน Verified Skills แล้ว
+                              เหรียญแสดงผลผ่านข้อสอบนี้ โดยไม่เพิ่มคะแนนหลักฐาน GitHub
                             </div>
                           </div>
                         </div>
@@ -1295,7 +1295,7 @@ export default function AssessmentRunnerPage() {
 
                     <div className="flex-1 my-3 overflow-hidden rounded-xl border border-slate-800">
                       <Editor
-                        height="100%"
+                        height="360px"
                         language={isQuestionPython(currentQuestion) ? 'python' : 'javascript'}
                         theme="vs-dark"
                         value={currentCode}

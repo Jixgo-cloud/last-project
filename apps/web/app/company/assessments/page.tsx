@@ -932,7 +932,7 @@ export default function CompanyAssessmentsPage() {
                                 ? 'ข้อสอบ Test Cases เดิม — ยังใช้งานได้ กรุณาสร้างชุดใหม่หากต้องการเปลี่ยนโจทย์'
                                 : 'โจทย์อิสระ — AI ช่วยประเมิน และบริษัทตรวจผลได้'}</p>
                               <p>รองรับโปรแกรม JavaScript หรือ Python ที่รันได้ในตัวเอง ไม่รองรับเว็บทั้งระบบหรือการติดตั้งแพ็กเกจเพิ่มเติม</p>
-                              <p>ระบุสิ่งที่ต้องทำ ผลลัพธ์ที่คาดหวัง ตัวอย่าง และเกณฑ์ให้คะแนน ผู้สมัครแนบคำอธิบายวิธีคิดพร้อมโค้ดได้</p>
+                              {q.evaluationMethod !== QuestionEvaluationMethod.AUTOMATED_TEST_CASES && <p>ระบุสิ่งที่ต้องทำ ผลลัพธ์ที่คาดหวัง ตัวอย่าง และเกณฑ์ให้คะแนน ผู้สมัครแนบคำอธิบายวิธีคิดพร้อมโค้ดได้</p>}
                             </div>
 
                             {/* Language Switcher */}
@@ -1686,7 +1686,7 @@ export default function CompanyAssessmentsPage() {
                 </div>}
 
                 {/* AI Evaluation Snapshot (4-dimension rubric) */}
-                {selectedAttemptForReview.assessment?.type !== AssessmentType.THEORY && selectedAttemptForReview.evaluationSnapshot && (
+                {selectedAttemptForReview.assessment?.type !== AssessmentType.THEORY && selectedAttemptForReview.evaluationSnapshot?.rubricBreakdown && (
                   <div className="p-4 rounded-2xl bg-purple-50/60 border border-purple-200 text-xs space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-purple-900 flex items-center gap-1.5 text-xs">
