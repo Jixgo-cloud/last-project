@@ -4,6 +4,8 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { structuredJobExpiry, hasJobsDbApply } from './job-page-evidence';
 import { fetchBlognonePublicJobs } from './blognone-public-jobs';
+import { fetchPublicJobHttp2 } from './public-job-http2';
+import { isLegacySampleJob } from '../jobs/legacy-sample-jobs';
 import { IngestionStatus, JobSource } from '@smartcareer/shared';
 
 export interface ScreeningResultItem {
@@ -92,10 +94,14 @@ export class JobScreeningService {
   private async checkExternalUrl(url: string): Promise<{ isClosed: boolean; reason?: string; reasonCode?: any; unchecked?: boolean }> {
     const unknown = (reason: string) => ({ isClosed: false, unchecked: true, reason });
     try {
-      const response = await axios.get(url, {
+      let response = await axios.get(url, {
         headers: { 'User-Agent': 'SmartCareer/1.0', Accept: 'text/html' },
         timeout: 12000, validateStatus: () => true, maxRedirects: 4,
       });
+      if (response.status === 403 && ['th.jobsdb.com', 'jobs.blognone.com'].includes(new URL(url).hostname)) {
+        try { response = { ...response, status: 200, data: await fetchPublicJobHttp2(url) }; }
+        catch { /* Keep the original refusal; no missing data is evidence of closure. */ }
+      }
       if (response.status === 404 || response.status === 410) {
         return { isClosed: true, reason: 'ลิงก์ต้นทางไม่พบประกาศ (HTTP ' + response.status + ')', reasonCode: 'DEAD_LINK_HTTP' };
       }
@@ -144,6 +150,7 @@ export class JobScreeningService {
    * Evaluates if a given job record should be considered closed
    */
   async evaluateJob(job: any): Promise<{ isClosed: boolean; reason?: string; reasonCode?: any; unchecked?: boolean }> {
+    if (isLegacySampleJob(job)) return { isClosed: false, unchecked: true, reason: 'ข้อมูลตัวอย่างเก่าที่ระบบซ่อนจากผู้สมัครอยู่แล้ว — ไม่มีประกาศจริงให้ยืนยันสถานะ' };
     const now = new Date();
 
     // 1. Date Expiration Check

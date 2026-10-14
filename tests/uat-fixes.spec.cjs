@@ -1121,3 +1121,19 @@ test('JSearch screening accepts only a matching provider ID and stops on quota d
     const before=calls;assert.equal(await service.checkJSearchListing({externalId:'wanted'}),null);assert.equal(calls,before);
   }finally{axios.get=old;if(key===undefined)delete process.env.JSEARCH_API_KEY;else process.env.JSEARCH_API_KEY=key;}
 });
+
+test('Screening uses the existing anonymous transport and identifies legacy samples without network access', async () => {
+  const transport=require('../apps/api/dist/ingestion/public-job-http2');
+  const original=transport.fetchPublicJobHttp2, old=axios.get;
+  const service=new JobScreeningService({});let calls=0;
+  try {
+    axios.get=async()=>({status:403,data:''});
+    transport.fetchPublicJobHttp2=async()=>{calls++;return '<main><p>This job is no longer advertised</p></main>';};
+    assert.equal((await service.evaluateJob({source:'JOBSDB',sourceUrl:'https://th.jobsdb.com/job/123',isActive:true})).isClosed,true);
+    transport.fetchPublicJobHttp2=async()=>{throw new Error('denied');};
+    assert.equal((await service.evaluateJob({source:'JOBSDB',sourceUrl:'https://th.jobsdb.com/job/123',isActive:true})).unchecked,true);
+    axios.get=async()=>{throw new Error('must not request samples');};
+    const result=await service.evaluateJob({source:'JOBTHAI',externalId:'jobthai-ptt-data-analyst',sourceUrl:'https://example.test',expiresAt:'2000-01-01'});
+    assert.equal(result.isClosed,false);assert.match(result.reason,/ข้อมูลตัวอย่าง/);assert.equal(calls,1);
+  } finally {axios.get=old;transport.fetchPublicJobHttp2=original;}
+});
