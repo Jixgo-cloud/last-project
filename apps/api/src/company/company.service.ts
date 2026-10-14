@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException, 
 import { VerificationDocumentsDto } from './dto/company-profile.dto';
 import { validateVerificationDocuments, streamVerificationDocument } from './verification-documents';
 import { PrismaService } from '../prisma/prisma.service';
+import { companyEvaluationView } from '../evaluations/company-evaluation-view';
 import { CandidateService } from '../candidate/candidate.service';
 import {
   assessmentQuestionsMatch,
@@ -279,7 +280,7 @@ export class CompanyService {
       throw new NotFoundException("Job not found or unauthorized");
     }
 
-    return this.prisma.jobApplication.findMany({
+    const applications = await this.prisma.jobApplication.findMany({
       where: {
         job: {
           companyId: company.id,
@@ -330,6 +331,7 @@ export class CompanyService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    return applications.map(application => ({ ...application, evaluation: companyEvaluationView(application.evaluation) }));
   }
 
   async updateApplicationStatus(
@@ -1064,7 +1066,7 @@ export class CompanyService {
       ...candidate,
       assessmentAttempts: attemptsWithIntegrity,
       radarData,
-      application,
+      application: { ...application, evaluation: companyEvaluationView(application.evaluation) },
     };
   }
 }

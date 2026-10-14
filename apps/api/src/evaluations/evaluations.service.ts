@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { companyEvaluationView } from './company-evaluation-view';
 
 @Injectable()
 export class EvaluationsService {
@@ -55,7 +56,7 @@ export class EvaluationsService {
       value.technicalScore, value.problemSolvingScore, value.communicationScore, value.teamworkScore,
       value.overallFeedback.trim(), value.strengths || [], [...(plan?.skillIds || [])].sort(), plan?.note || '',
     ]);
-    if (previous && oldDevelopment?.version === 1 && comparable(previous, oldDevelopment) === comparable(data, development)) return previous;
+    if (previous && oldDevelopment?.version === 1 && comparable(previous, oldDevelopment) === comparable(data, development)) return companyEvaluationView(previous);
     const savedDevelopment = { ...development,
       updatedAt: new Date(Math.max(Date.now(), (Date.parse(oldDevelopment?.updatedAt) || 0) + 1)).toISOString(),
       progress: oldDevelopment?.version === 1 ? (oldDevelopment.progress || {}) : {} };
@@ -92,7 +93,7 @@ export class EvaluationsService {
       link: `/learning-plan#evaluation-${evaluation.id}`,
       metadata: { kind: 'COMPANY_EVALUATION', evaluationId: evaluation.id, action: previous ? 'UPDATED' : 'CREATED' },
     } });
-    return evaluation;
+    return companyEvaluationView(evaluation);
     });
   }
 

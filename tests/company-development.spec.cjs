@@ -2,6 +2,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EvaluationsService } = require('../apps/api/dist/evaluations/evaluations.service');
 const { RecommendationsService } = require('../apps/api/dist/recommendations/recommendations.service');
+const { companyEvaluationView } = require('../apps/api/dist/evaluations/company-evaluation-view');
+
+test('Company responses exclude private candidate journals without modifying stored progress', () => {
+  const stored={id:'e',areasForImprovement:{version:1,skillIds:['react'],note:'Company goal',updatedAt:'revision',progress:{react:{note:'Private journal',evidenceUrl:'https://example.test/private'}}}};
+  const output=companyEvaluationView(stored);
+  assert.equal(output.areasForImprovement.progress,undefined);
+  assert.equal(output.areasForImprovement.note,'Company goal');
+  assert.equal(stored.areasForImprovement.progress.react.note,'Private journal');
+});
 
 test('Company feedback validates scores and skills, enforces ownership and saves real development inputs', async () => {
   let saved, owner = 'c1', persisted = null;
