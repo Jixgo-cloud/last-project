@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const assert = require('assert/strict');
 const { PrismaClient } = require('@prisma/client');
 const dotenv = require('dotenv');
-const { fetchJobDetail, jobText, jobSections } = require('../apps/api/dist/ingestion/job-detail-content');
+const { fetchJobDetail, parseJobDetail, jobText, jobSections } = require('../apps/api/dist/ingestion/job-detail-content');
 const { GeminiExtractorService } = require('../apps/api/dist/ingestion/gemini-extractor.service');
 const { mentionsSkill } = require('../apps/api/dist/recommendations/course-skill-evidence');
 const args = process.argv.slice(2);
@@ -51,7 +51,16 @@ async function main() {
       }else if(job.source==='REMOTIVE'){
         const row=remotive.find(r=>String(r.id)===job.externalId);
         if(row){detail={description:jobText(row.description),location:row.candidate_required_location,logoUrl:row.company_logo};status='SOURCE_DETAILS_READ';}
-        else status='SOURCE_LISTING_NOT_IN_CURRENT_FEED';
+        else {
+          status='SOURCE_LISTING_NOT_IN_CURRENT_FEED';
+          try {
+            const url=new URL(job.sourceUrl);
+            if(url.origin==='https://remotive.com') {
+              const response=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(20000)});
+              if(response.ok){detail=parseJobDetail(await response.text(),url.href);status='SOURCE_DETAILS_READ';}
+            }
+          }catch{}
+        }
       }else if(job.source==='JSEARCH'){
         status=!jsearchKey?'SOURCE_KEY_UNAVAILABLE':jsearchBlocked?'SOURCE_QUOTA_OR_ACCESS_UNAVAILABLE':'SOURCE_UNAVAILABLE';
         if(jsearchKey&&!jsearchBlocked)try{
@@ -80,7 +89,9 @@ async function main() {
       const final={...job,...data};
       const found=extractor.fallbackRuleBasedExtractor(final.title,jobText(final.description),final.requirements||'');
       const evidence=`${final.title}\n${jobText(final.description)}\n${final.requirements||''}`;
-      for(const skill of catalog)if(mentionsSkill(evidence,skill.name)&&!found.some(s=>s.name.toLowerCase()===skill.name.toLowerCase()))found.push({...skill,isRequired:true,minimumScore:70});
+      for(const skill of catalog)if(mentionsSkill(evidence,skill.name)&&
+        (skill.name.toLowerCase()!=='c'||/(?<![\p{L}\p{N}_])C(?![\p{L}\p{N}_#+])/u.test(evidence))&&
+        !found.some(s=>s.name.toLowerCase()===skill.name.toLowerCase()))found.push({...skill,isRequired:true,minimumScore:70});
       // All 180 inspected; no inferred skills from role names. Existing internal QA requirements stay intact.
       const desired=new Map(found.map(s=>[s.name.toLowerCase(),s]));
       const removed=status!=='SOURCE_DETAILS_READ'||job.source==='INTERNAL'?[]:job.skills.filter(s=>!desired.has(s.skill.name.toLowerCase())).map(s=>s.skillId);
