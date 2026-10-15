@@ -1340,7 +1340,7 @@ export default function AssessmentRunnerPage() {
                           disabled={submittingCoding || finalizingAttempt}
                           placeholder="อธิบายแนวทาง เหตุผลที่เลือก วิธีทดสอบ และข้อจำกัดของคำตอบ"
                           className="w-full rounded-lg border border-slate-600 bg-slate-800 p-3 text-sm" />
-                        <p className="text-xs text-slate-400">{(explanations[currentQuestion.id] || '').length}/5,000 ตัวอักษร — บันทึกพร้อมโค้ดเพื่อให้บริษัทอ่านประกอบการประเมิน</p>
+                        <p className="text-xs text-slate-400">{(explanations[currentQuestion.id] || '').length}/5,000 ตัวอักษร — {assessment.companyId ? 'บันทึกพร้อมโค้ดเพื่อให้บริษัทอ่านประกอบการประเมิน' : 'บันทึกพร้อมโค้ดเพื่อให้ AI อ่านประกอบการประเมิน'}</p>
                       </div>
                     )}
                     {/* Bottom Action Controls */}
