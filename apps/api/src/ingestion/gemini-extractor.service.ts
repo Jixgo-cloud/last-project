@@ -113,7 +113,7 @@ Include items such as: CSS/CSS3, HTML5, JavaScript, TypeScript, React, Angular, 
 
 For each skill:
 - "name": Canonical official skill name (e.g. "React", "REST APIs", "CSS3", "HTML5", "Angular", "JavaScript", "Redux", "Postman", "Spring Boot", "Git", "Linux", "OpenShift", "CI/CD").
-- "category": Must be exactly one of: "FRONTEND", "BACKEND", "DATABASE", "DEVOPS", "TESTING", "MOBILE", "AI_ML", "SECURITY".
+- "category": Must be exactly one of: "FRONTEND", "BACKEND", "DATABASE", "DEVOPS", "TESTING", "MOBILE", "AI_ML", "SECURITY", "SALES", "COORDINATION", "WRITING".
 - "isRequired": boolean (true if mandatory / essential / core requirement; false if optional / nice-to-have / bonus / a plus).
 - "minimumScore": number (expected minimum proficiency score between 50 and 85).
 
@@ -171,6 +171,9 @@ Return ONLY a valid JSON array of objects.`;
       return upper as SkillCategory;
     }
     if (/TEST|QA|QUALITY/i.test(upper)) return SkillCategory.TESTING;
+    if (/SALES|PRESALES/i.test(upper)) return SkillCategory.SALES;
+    if (/COORDINAT|COMMUNICAT|NEGOTIAT/i.test(upper)) return SkillCategory.COORDINATION;
+    if (/WRITING|EDITORIAL|COPYWRIT/i.test(upper)) return SkillCategory.WRITING;
     if (/FRONT|UI|UX|WEB|STYLE|DESIGN/i.test(upper)) return SkillCategory.FRONTEND;
     if (/DATA|SQL|DB/i.test(upper)) return SkillCategory.DATABASE;
     if (/CLOUD|OPS|DOCKER|K8S|INFRA|SERVER|SYS/i.test(upper)) return SkillCategory.DEVOPS;
@@ -192,6 +195,16 @@ Return ONLY a valid JSON array of objects.`;
     const skillsMap = new Map<string, ExtractedSkill>();
 
     const rules: Array<{ name: string; category: SkillCategory; regex: RegExp; isReq?: boolean; minScore?: number }> = [
+      // Match published responsibilities, not an assumed skill set for a job title.
+      { name: 'Sales Proposal Writing', category: SkillCategory.SALES, regex: /จัดทำข้อเสนอ|\b(?:prepare|write|develop) sales proposals?\b/i },
+      { name: 'Sales Quotation', category: SkillCategory.SALES, regex: /ใบเสนอราคา|\bsales quotations?\b/i },
+      { name: 'Customer Relationship Management', category: SkillCategory.SALES, regex: /ดูแลฐานลูกค้า|\bcustomer relationship management\b/i },
+      { name: 'Coordination', category: SkillCategory.COORDINATION, regex: /ประสานงาน|\bcoordination skills\b/i },
+      { name: 'Communication', category: SkillCategory.COORDINATION, regex: /ทักษะในการสื่อสาร|\b(?:good|strong|excellent) communication skills\b/i },
+      { name: 'Negotiation', category: SkillCategory.COORDINATION, regex: /เจรจาต่อรอง|\bnegotiation skills\b/i },
+      { name: 'Content Writing', category: SkillCategory.WRITING, regex: /\bcontent writ(?:ers?|ing)\b|\b(?:write|create) articles\b/i },
+      { name: 'Microsoft Word', category: SkillCategory.WRITING, regex: /\bmicrosoft word\b/i },
+      { name: 'OpenOffice', category: SkillCategory.WRITING, regex: /\bopen ?office\b/i },
       // Frontend
       { name: 'React', category: SkillCategory.FRONTEND, regex: /\b(react|react\.js|reactjs)\b/i },
       { name: 'Next.js', category: SkillCategory.FRONTEND, regex: /\b(next\.js|nextjs)\b/i },

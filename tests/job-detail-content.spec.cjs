@@ -8,7 +8,20 @@ test('Infrastructure evidence is tagged without inferring development tools or t
   assert.deepEqual(extract('Presales', 'Knowledge of Network Security and Cyber Security'), ['Network Security','Cybersecurity']);
   for(const skill of ['Technical Support','Network Switching','Structured Cabling','Server Hardware']) assert.ok(extract('Project Engineer','Technical support, network switches, structured cabling and server hardware').includes(skill));
   assert.deepEqual(extract('Project Sales Engineer', 'HVAC and Chinese language'), []);
-  assert.deepEqual(extract('Freelance Writer', 'Microsoft Word or Open Office'), []);
+  assert.deepEqual(extract('Freelance Writer', 'No tool requirements specified'), []);
+});
+test('Nontechnical categories require explicit evidence, including Thai responsibilities', () => {
+  const { GeminiExtractorService } = require('../apps/api/dist/ingestion/gemini-extractor.service');
+  const extract = (title, text) => new GeminiExtractorService().fallbackRuleBasedExtractor(title, text);
+  const sales=extract('Project Sales Engineer', 'ดูแลฐานลูกค้า จัดทำข้อเสนอ ใบเสนอราคา');
+  assert.deepEqual(sales.map(s=>s.name), ['Sales Proposal Writing','Sales Quotation','Customer Relationship Management']);
+  assert.ok(sales.every(s=>s.category==='SALES'));
+  const coordination=extract('Coordinator', 'ทักษะในการสื่อสาร เจรจาต่อรอง และประสานงาน');
+  assert.equal(coordination.length,3);assert.ok(coordination.every(s=>s.category==='COORDINATION'));
+  const writing=extract('Freelance Writer', 'content writers to create articles using Microsoft Word or Open Office');
+  assert.deepEqual(writing.map(s=>s.name),['Content Writing','Microsoft Word','OpenOffice']);
+  assert.ok(writing.every(s=>s.category==='WRITING'));
+  assert.deepEqual(extract('Sales Coordinator Writer', 'No requirements specified'), []);
 });
 test('Next serialized JobPosting retains full details, qualifications and location without executing scripts', () => {
   const data = {'@type':'JobPosting', description:'<p>React development '.repeat(100)+'</p>', qualifications:'Docker and SQL',jobLocation:{address:{addressLocality:'Bangkok'}},baseSalary:{currency:'THB',value:{unitText:'MONTH',minValue:30000,maxValue:50000}}};

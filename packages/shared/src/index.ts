@@ -154,7 +154,10 @@ export enum SkillCategory {
   TESTING = 'TESTING',
   MOBILE = 'MOBILE',
   AI_ML = 'AI_ML',
-  SECURITY = 'SECURITY'
+  SECURITY = 'SECURITY',
+  SALES = 'SALES',
+  COORDINATION = 'COORDINATION',
+  WRITING = 'WRITING'
 }
 
 export enum CareerTrack {

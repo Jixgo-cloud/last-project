@@ -106,6 +106,9 @@ enum SkillCategory {
   MOBILE
   AI_ML
   SECURITY
+  SALES
+  COORDINATION
+  WRITING
 }
 
 enum NotificationType {
