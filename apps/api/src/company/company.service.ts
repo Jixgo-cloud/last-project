@@ -1,3 +1,4 @@
+import { frameworkMetadata, frameworkReferenceChanged, getFrameworkCoverage } from '@smartcareer/shared';
 import { BadRequestException, ConflictException, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { VerificationDocumentsDto } from './dto/company-profile.dto';
 import { validateVerificationDocuments, streamVerificationDocument } from './verification-documents';
@@ -602,7 +603,7 @@ export class CompanyService {
     });
     return assessments.map(({ questions, ...assessment }) => {
       const readinessError = getAssessmentValidationError({ ...assessment, questions });
-      return { ...assessment, isReady: !readinessError, readinessError };
+      return { ...assessment, frameworkCoverage: getFrameworkCoverage({ ...assessment, questions }), isReady: !readinessError, readinessError };
     });
   }
 
@@ -625,7 +626,7 @@ export class CompanyService {
     if (!assessment || assessment.companyId !== company.id) {
       throw new ForbiddenException('You are not authorized to view this assessment');
     }
-    return assessment;
+    return { ...assessment, frameworkCoverage: getFrameworkCoverage(assessment) };
   }
 
   async createCompanyAssessment(userId: string, data: any) {
@@ -637,6 +638,7 @@ export class CompanyService {
       data = { ...data, questions: Array.isArray(data.questions) ? data.questions.map((q: any) => ({ ...q, evaluationMethod: 'OPEN_ENDED' })) : [] };
     }
     const validationError = getAssessmentValidationError({
+      ...frameworkMetadata(data),
       title: data.title,
       type: data.type || 'PRACTICAL_CODING',
       timeLimitMinutes: data.timeLimitMinutes ?? 30,
@@ -659,6 +661,7 @@ export class CompanyService {
 
     return this.prisma.assessment.create({
       data: {
+        ...frameworkMetadata(data),
         companyId: company.id,
         title: data.title,
         slug,
@@ -680,6 +683,8 @@ export class CompanyService {
             testCases: q.testCases || null,
             evaluationMethod: q.evaluationMethod || 'AUTOMATED_TEST_CASES',
             rubric: q.rubric || null,
+            frameworkTopicId: q.frameworkTopicId || null,
+            frameworkMappingNote: q.frameworkMappingNote?.trim() || null,
             solutionCode: q.solutionCode || null,
             explanation: q.explanation || null,
             version: 1,
@@ -721,6 +726,7 @@ export class CompanyService {
     }
 
     const validationError = getAssessmentValidationError({
+      ...frameworkMetadata(data, assessment),
       title: data.title ?? assessment.title,
       type: data.type ?? assessment.type,
       timeLimitMinutes: data.timeLimitMinutes ?? assessment.timeLimitMinutes,
@@ -730,6 +736,7 @@ export class CompanyService {
     if (validationError) throw new BadRequestException(validationError);
 
     const metadataUpdate = {
+      ...frameworkMetadata(data, assessment),
       title: data.title ?? assessment.title,
       description: data.description ?? assessment.description,
       type: data.type ?? assessment.type,
@@ -744,12 +751,13 @@ export class CompanyService {
     return this.prisma.$transaction(async (tx) => {
       const attemptCount = await tx.assessmentAttempt.count({ where: { assessmentId: id } });
       const scoringSettingsChanged =
+        frameworkReferenceChanged(assessment, data) ||
         (data.type !== undefined && data.type !== assessment.type) ||
         (data.timeLimitMinutes !== undefined && Number(data.timeLimitMinutes) !== assessment.timeLimitMinutes) ||
         (data.passingScore !== undefined && Number(data.passingScore) !== assessment.passingScore);
       if (attemptCount > 0 && scoringSettingsChanged) {
         throw new BadRequestException(
-          'แบบทดสอบนี้มีผู้สมัครเริ่มทำแล้ว จึงแก้ประเภท เวลา หรือคะแนนผ่านไม่ได้ กรุณาสร้างชุดใหม่เพื่อรักษาผลเดิม',
+          'แบบทดสอบนี้มีผู้สมัครเริ่มทำแล้ว จึงแก้กรอบอ้างอิง ประเภท เวลา หรือคะแนนผ่านไม่ได้ กรุณาสร้างชุดใหม่เพื่อรักษาผลเดิม',
         );
       }
 
@@ -783,6 +791,8 @@ export class CompanyService {
                 testCases: q.testCases || null,
                 evaluationMethod: q.evaluationMethod || 'AUTOMATED_TEST_CASES',
                 rubric: q.rubric || null,
+                frameworkTopicId: q.frameworkTopicId || null,
+                frameworkMappingNote: q.frameworkMappingNote?.trim() || null,
                 solutionCode: q.solutionCode || null,
                 explanation: q.explanation || null,
                 version: 1,
@@ -811,6 +821,8 @@ export class CompanyService {
                   testCases: q.testCases || null,
                   evaluationMethod: q.evaluationMethod || 'AUTOMATED_TEST_CASES',
                   rubric: q.rubric || null,
+                  frameworkTopicId: q.frameworkTopicId || null,
+                  frameworkMappingNote: q.frameworkMappingNote?.trim() || null,
                   solutionCode: q.solutionCode || null,
                   explanation: q.explanation || null,
                   version: { increment: 1 },
@@ -865,6 +877,8 @@ export class CompanyService {
                   testCases: q.testCases || null,
                   evaluationMethod: q.evaluationMethod || 'AUTOMATED_TEST_CASES',
                   rubric: q.rubric || null,
+                  frameworkTopicId: q.frameworkTopicId || null,
+                  frameworkMappingNote: q.frameworkMappingNote?.trim() || null,
                   solutionCode: q.solutionCode || null,
                   explanation: q.explanation || null,
                   version: 1,

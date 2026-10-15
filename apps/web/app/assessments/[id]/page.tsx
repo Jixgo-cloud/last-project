@@ -1,5 +1,7 @@
 'use client';
 
+import { AssessmentFrameworkCoverage } from '@/components/AssessmentFramework';
+
 import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
@@ -666,6 +668,10 @@ export default function AssessmentRunnerPage() {
             )}
           </div>
         </div>
+
+        {assessment.frameworkCode && <div className="mb-6">
+          <AssessmentFrameworkCoverage assessment={assessment} report={assessment.frameworkCoverage} />
+        </div>}
 
         {/* 1. THEORY ASSESSMENT FLOW */}
         {assessment.type === AssessmentType.THEORY ? (

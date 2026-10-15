@@ -14,6 +14,8 @@ class ChoiceDto {
 }
 
 class QuestionDto {
+  @IsOptional() @IsString() @MaxLength(100) frameworkTopicId?: string | null;
+  @IsOptional() @IsString() @MaxLength(2000) frameworkMappingNote?: string | null;
   @IsOptional() @IsUUID() id?: string;
   @ValidateIf((_o, value) => value !== undefined) @IsString() @MaxLength(500) title?: string;
   @IsString() @MaxLength(50000) prompt!: string;
@@ -29,6 +31,9 @@ class QuestionDto {
 }
 
 export class CompanyAssessmentDto {
+  @IsOptional() @IsIn(['AZ-204']) frameworkCode?: string | null;
+  @IsOptional() @IsIn(['2026-01-14']) frameworkVersion?: string | null;
+  @IsOptional() @IsIn(['TOPIC_PRACTICE', 'FULL_BLUEPRINT']) frameworkScope?: string | null;
   @ValidateIf((_o, value) => value !== undefined) @IsString() @MaxLength(200) title?: string;
   @IsOptional() @IsString() @MaxLength(30000) description?: string;
   @IsOptional() @IsString() @MaxLength(200) slug?: string;

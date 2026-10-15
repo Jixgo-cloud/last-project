@@ -1,4 +1,6 @@
-type AssessmentQuestionInput = {
+import { FrameworkAssessment, FrameworkQuestion, getFrameworkValidationError } from './assessment-framework';
+
+type AssessmentQuestionInput = FrameworkQuestion & {
   id?: string;
   title?: unknown;
   prompt?: unknown;
@@ -13,7 +15,7 @@ type AssessmentQuestionInput = {
   choices?: Array<{ id?: string; text?: unknown; isCorrect?: unknown; order?: unknown }>;
 };
 
-type AssessmentInput = {
+type AssessmentInput = FrameworkAssessment & {
   title?: unknown;
   type?: unknown;
   timeLimitMinutes?: unknown;
@@ -64,6 +66,8 @@ function normalizedQuestion(question: AssessmentQuestionInput) {
     testCases: question.evaluationMethod === 'OPEN_ENDED' ? null : normalizeJson(question.testCases),
     evaluationMethod: question.evaluationMethod ?? 'AUTOMATED_TEST_CASES',
     rubric: normalizeRubric(question.rubric),
+    frameworkTopicId: question.frameworkTopicId || null,
+    frameworkMappingNote: textValue(question.frameworkMappingNote) || null,
     explanation: textValue(question.explanation) || null,
     choices: (question.choices ?? []).map((choice) => ({
       text: textValue(choice.text),
@@ -95,8 +99,8 @@ export function getAssessmentValidationError(input: AssessmentInput): string | n
     const prefix = `ข้อที่ ${index + 1}: `;
     if (!textValue(question.title)) return `${prefix}กรุณาระบุหัวข้อคำถาม`;
     if (!textValue(question.prompt)) return `${prefix}กรุณาเขียนโจทย์ให้ผู้สมัครเข้าใจว่าต้องทำอะไร`;
-    if (!Number.isFinite(Number(question.points)) || Number(question.points) <= 0) {
-      return `${prefix}คะแนนของข้อต้องมากกว่า 0`;
+    if (!Number.isInteger(Number(question.points)) || Number(question.points) <= 0 || Number(question.points) > 10000) {
+      return `${prefix}คะแนนของข้อต้องเป็นจำนวนเต็มตั้งแต่ 1 ถึง 10,000`;
     }
 
     if (input.type === 'THEORY') {
@@ -132,7 +136,7 @@ export function getAssessmentValidationError(input: AssessmentInput): string | n
     }
   }
 
-  return null;
+  return getFrameworkValidationError(input);
 }
 
 /** Compare the actual scoring content while ignoring database-only IDs. */

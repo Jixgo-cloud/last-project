@@ -682,7 +682,7 @@ test('Unavailable HTML sources report the actual HTTP reason while preserving ex
 
 test('Public vacancies quarantine exact legacy sample IDs without deleting any stored job', async () => {
   const sample={source:'BLOGNONE',externalId:legacySampleJobIds[0]};
-  await assert.rejects(new JobsService({job:{findUnique:async()=>sample}},{}).findOne('qa'),/ข้อมูลตัวอย่างเดิม/);
+  await assert.rejects(new JobsService({job:{findUnique:async()=>sample}},{}).findOne('qa'), error => error.getStatus() === 404);
   let query;
   const prisma={job:{findMany:async(args)=>{query=args.where;return [];},count:async()=>0}};
   await new JobsService(prisma,{}).findAll();

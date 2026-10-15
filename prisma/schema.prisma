@@ -471,6 +471,9 @@ model Assessment {
   title            String
   slug             String              @unique
   description      String?
+  frameworkCode    String?
+  frameworkVersion String?
+  frameworkScope   String?
   type             AssessmentType      @default(THEORY)
   skillId          String?
   skill            Skill?              @relation(fields: [skillId], references: [id], onDelete: SetNull)
@@ -497,6 +500,8 @@ model Question {
   assessment       Assessment               @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   title            String
   prompt           String
+  frameworkTopicId String?
+  frameworkMappingNote String?
   difficulty       QuestionDifficulty       @default(MEDIUM)
   points           Int                      @default(10)
   starterCode      String?

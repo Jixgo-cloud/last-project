@@ -24,9 +24,10 @@
     "prisma:studio": "npx prisma studio",
     "admin:create": "npx ts-node scripts/create-superadmin.ts",
     "test": "npm run test:security && npm run test:uat",
-    "test:uat": "node --test tests/uat-fixes.spec.cjs tests/attempt-review.spec.cjs tests/youtube-ingestion.spec.cjs tests/company-development.spec.cjs",
+    "test:uat": "node --test tests/uat-fixes.spec.cjs tests/attempt-review.spec.cjs tests/youtube-ingestion.spec.cjs tests/company-development.spec.cjs tests/assessment-framework.spec.cjs",
     "test:security": "node --test tests/security.spec.cjs",
-    "test:regression": "node scripts/verify-core-regression.cjs"
+    "test:regression": "node scripts/verify-core-regression.cjs",
+    "test:framework:integration": "node scripts/verify-az204-framework.cjs --ui"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",

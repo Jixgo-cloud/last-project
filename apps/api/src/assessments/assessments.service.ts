@@ -1,3 +1,4 @@
+import { AZ204_FRAMEWORK, frameworkMetadata, getFrameworkCoverage, getFrameworkTopic } from '@smartcareer/shared';
 import { candidateFeedback } from './candidate-feedback';
 import { codingAttemptTotals } from './coding-attempt-totals';
 import {
@@ -48,7 +49,7 @@ export class AssessmentsService {
       },
       orderBy: { createdAt: 'asc' },
     });
-    return assessments.filter(assessment => !getAssessmentValidationError(assessment)).map(({ questions, ...assessment }) => assessment);
+    return assessments.filter(assessment => !getAssessmentValidationError(assessment)).map(({ questions, ...assessment }) => ({ ...assessment, frameworkCoverage: getFrameworkCoverage({ ...assessment, questions }) }));
   }
 
   async findOne(id: string, candidateUserId: string) {
@@ -75,7 +76,7 @@ export class AssessmentsService {
 
     // STRICT ZERO-LEAKAGE: Mask hidden test cases completely and omit solutionCode
     const sanitizedQuestions = assessment.questions.map((q) => {
-      const { solutionCode, ...restQ } = q;
+      const { solutionCode, frameworkMappingNote, ...restQ } = q;
       let sanitizedTestCases: any = restQ.testCases;
       if (Array.isArray(restQ.testCases)) {
         sanitizedTestCases = (restQ.testCases as any[]).map((tc, idx) => {
@@ -104,6 +105,7 @@ export class AssessmentsService {
     return {
       ...assessment,
       canStartAttempt,
+      frameworkCoverage: getFrameworkCoverage(assessment),
       questions: canStartAttempt ? sanitizedQuestions : [],
     };
   }
@@ -155,6 +157,7 @@ export class AssessmentsService {
     }
     await this.assertCandidateAccess(assessment, candidateUserId);
     const validationError = getAssessmentValidationError({
+      ...frameworkMetadata(assessment),
       title: assessment.title,
       type: assessment.type,
       timeLimitMinutes: assessment.timeLimitMinutes,
@@ -212,6 +215,8 @@ export class AssessmentsService {
 
     // Version Snapshotting
     const snapshot = {
+      ...frameworkMetadata(assessment),
+      frameworkCoverage: getFrameworkCoverage(assessment),
       version: assessment.version,
       assessmentVersion: assessment.version,
       timeLimitMinutes: assessment.timeLimitMinutes,
@@ -221,6 +226,7 @@ export class AssessmentsService {
         id: q.id,
         title: q.title,
         difficulty: q.difficulty,
+        frameworkTopicId: q.frameworkTopicId,
         points: q.points,
         version: q.version,
       })),
@@ -597,6 +603,12 @@ export class AssessmentsService {
           sandboxExecution: rawReport,
           candidateExplanation,
           rubricOverrides: question.rubric as any,
+          frameworkReference: attempt.assessment.frameworkCode === AZ204_FRAMEWORK.code &&
+            attempt.assessment.frameworkVersion === AZ204_FRAMEWORK.version && getFrameworkTopic(question.frameworkTopicId)
+            ? { code: AZ204_FRAMEWORK.code, version: AZ204_FRAMEWORK.version,
+                topic: getFrameworkTopic(question.frameworkTopicId)!.name,
+                authorMappingNote: question.frameworkMappingNote || '' }
+            : undefined,
         });
       } catch (err: any) {
         this.logger.error(`AI Evaluation failed for attempt ${attemptId}: ${err.message}`);

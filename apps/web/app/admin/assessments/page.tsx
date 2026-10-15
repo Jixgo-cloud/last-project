@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { frameworkMetadata } from '@smartcareer/shared';
+import { AssessmentFrameworkEditor, QuestionFrameworkEditor } from '@/components/AssessmentFramework';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import DeleteConfirmation from '@/components/DeleteConfirmation';
@@ -55,6 +57,8 @@ export default function AdminAssessmentsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const formErrorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => { if (formError) formErrorRef.current?.focus(); }, [formError]);
 
   // Modal State: Attempts & Admin Review
   const [showAttemptsModal, setShowAttemptsModal] = useState(false);
@@ -69,6 +73,8 @@ export default function AdminAssessmentsPage() {
   const [overriding, setOverriding] = useState(false);
 
   // Form State
+  const [formFramework, setFormFramework] = useState(() => frameworkMetadata({}));
+  const frameworkLocked = Boolean(editingId && assessments.find(a => a.id === editingId)?._count?.attempts);
   const [formTitle, setFormTitle] = useState('');
   const [formDescription, setFormDescription] = useState('');
   const [formType, setFormType] = useState<AssessmentType>(AssessmentType.THEORY);
@@ -126,6 +132,7 @@ export default function AdminAssessmentsPage() {
     setFormError(null);
     setEditingId(null);
     setFormTitle('');
+    setFormFramework(frameworkMetadata({}));
     setFormDescription('');
     setFormType(AssessmentType.THEORY);
     setFormSkillId(skills[0]?.id || '');
@@ -166,6 +173,7 @@ export default function AdminAssessmentsPage() {
       const data = await apiRequest(`/admin/assessments/${id}`);
       setEditingId(id);
       setFormTitle(data.title || '');
+      setFormFramework(frameworkMetadata(data));
       setFormDescription(data.description || '');
       setFormType(data.type || AssessmentType.THEORY);
       setFormSkillId(data.skillId || '');
@@ -179,6 +187,8 @@ export default function AdminAssessmentsPage() {
             const isPy = (q.starterCode || '').includes('def solution') || (q.starterCode || '').includes('import sys');
             return {
               id: q.id,
+              frameworkTopicId: q.frameworkTopicId || null,
+              frameworkMappingNote: q.frameworkMappingNote || null,
               title: q.title || `คำถามข้อที่ ${idx + 1}`,
               prompt: q.prompt || '',
               difficulty: q.difficulty || QuestionDifficulty.MEDIUM,
@@ -398,6 +408,7 @@ export default function AdminAssessmentsPage() {
     e.preventDefault();
     setFormError(null);
     const validationError = getAssessmentValidationError({
+      ...formFramework,
       title: formTitle,
       type: formType,
       timeLimitMinutes: formTimeLimit,
@@ -412,6 +423,7 @@ export default function AdminAssessmentsPage() {
     setSaving(true);
     try {
       const payload = {
+        ...formFramework,
         title: formTitle,
         description: formDescription,
         type: formType,
@@ -421,6 +433,8 @@ export default function AdminAssessmentsPage() {
         feedbackVisibility: formFeedbackVisibility,
         questions: formQuestions.map((q) => ({
           id: q.id,
+          frameworkTopicId: q.frameworkTopicId || null,
+          frameworkMappingNote: q.frameworkMappingNote || null,
           title: q.title,
           prompt: q.prompt,
           difficulty: q.difficulty || QuestionDifficulty.MEDIUM,
@@ -771,7 +785,12 @@ export default function AdminAssessmentsPage() {
               </div>
 
               <form onSubmit={handleSaveAssessment} className="space-y-6">
-                {formError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{formError}</p>}
+                <AssessmentFrameworkEditor value={formFramework} questions={formQuestions} disabled={frameworkLocked}
+                  onChange={value => {
+                    setFormFramework(value);
+                    if (!value.frameworkCode) setFormQuestions(prev => prev.map(q => ({ ...q, frameworkTopicId: null, frameworkMappingNote: null })));
+                  }} />
+                {formError && <p ref={formErrorRef} tabIndex={-1} role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{formError}</p>}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -1129,6 +1148,9 @@ export default function AdminAssessmentsPage() {
                             className="w-full p-2 rounded-lg border border-slate-200 text-xs bg-white"
                           />
                         </div>
+
+                        {formFramework.frameworkCode && <QuestionFrameworkEditor question={q} disabled={frameworkLocked}
+                          onChange={update => setFormQuestions(prev => prev.map((item, idx) => idx === qIdx ? { ...item, ...update } : item))} />}
 
                         {/* Starter Code Editor for Practical Coding */}
                         {formType === AssessmentType.PRACTICAL_CODING && (
