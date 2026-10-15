@@ -25,3 +25,11 @@ test('Unknown and annual salary never become monthly salary; sections keep line 
 test('Explicit expired page is not mistaken for a new sparse job', () => {
   assert.throws(()=>parseJobDetail('<body>This job is no longer advertised</body>','https://th.jobsdb.com/job/1'),/SOURCE_LISTING_CLOSED/);
 });
+test('Named testing and industrial skills are retained without inventing a testing tool', () => {
+  const { GeminiExtractorService } = require('../apps/api/dist/ingestion/gemini-extractor.service');
+  const skills = new GeminiExtractorService().fallbackRuleBasedExtractor('Software Tester', 'Functional Testing, Load Test, PLC, Test Case').map(s=>s.name);
+  for (const name of ['Functional Testing','Load Testing','PLC','Test Case Design']) assert.ok(skills.includes(name));
+  assert.ok(!skills.includes('Jest'));
+  const nonFunctional = new GeminiExtractorService().fallbackRuleBasedExtractor('Tester', 'Non-Functional Testing').map(s=>s.name);
+  assert.ok(!nonFunctional.includes('Functional Testing'));
+});

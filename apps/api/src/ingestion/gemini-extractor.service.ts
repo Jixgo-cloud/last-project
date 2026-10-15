@@ -245,6 +245,14 @@ Return ONLY a valid JSON array of objects.`;
       { name: 'Jest', category: SkillCategory.TESTING, regex: /\b(jest)\b/i },
       { name: 'Automated Testing', category: SkillCategory.TESTING, regex: /\b(automation test|automated test|automation testing)\b/i },
       { name: 'Manual Testing', category: SkillCategory.TESTING, regex: /\b(manual test|manual testing)\b/i },
+      { name: 'Functional Testing', category: SkillCategory.TESTING, regex: /(?<!non[- ])\bfunctional testing\b/i },
+      { name: 'Non-Functional Testing', category: SkillCategory.TESTING, regex: /\bnon[- ]functional testing\b/i },
+      { name: 'Integration Testing', category: SkillCategory.TESTING, regex: /\bintegration test(?:ing)?\b/i },
+      { name: 'Performance Testing', category: SkillCategory.TESTING, regex: /\bperformance test(?:ing)?\b/i },
+      { name: 'Load Testing', category: SkillCategory.TESTING, regex: /\bload test(?:ing)?\b/i },
+      { name: 'Security Testing', category: SkillCategory.TESTING, regex: /\bsecurity test(?:ing)?\b/i },
+      { name: 'Test Case Design', category: SkillCategory.TESTING, regex: /\btest cases?\b/i },
+      { name: 'PLC', category: SkillCategory.BACKEND, regex: /\bPLC\b/i },
 
       // Mobile
       { name: 'Flutter', category: SkillCategory.MOBILE, regex: /\b(flutter)\b/i },
