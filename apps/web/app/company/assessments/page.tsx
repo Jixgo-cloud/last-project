@@ -98,6 +98,7 @@ export default function CompanyAssessmentsPage() {
   const [selectedAttemptForReview, setSelectedAttemptForReview] = useState<any | null>(null);
   const [overrideScore, setOverrideScore] = useState<number | ''>('');
   const [overrideReason, setOverrideReason] = useState<string>('');
+  const [reviewFeedback, setReviewFeedback] = useState('');
   const [overriding, setOverriding] = useState(false);
 
   const loadData = () => {
@@ -470,6 +471,7 @@ export default function CompanyAssessmentsPage() {
       setSelectedAttemptForReview(reviewDetails);
       setOverrideScore(reviewDetails.humanScore ?? getAttemptPercentage(reviewDetails) ?? '');
       setOverrideReason(reviewDetails.reviewReason || '');
+      setReviewFeedback(reviewDetails.evaluationSnapshot?.companyReviewFeedback || '');
     } catch (err: any) {
       alert(`Failed to load review details: ${err.message}`);
     }
@@ -478,7 +480,7 @@ export default function CompanyAssessmentsPage() {
   const handleSubmitOverride = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedAttemptForReview || overriding) return;
-    if (!overrideReason.trim()) {
+    if (overrideScore === '' || !Number.isFinite(Number(overrideScore)) || !overrideReason.trim()) {
       alert('กรุณาระบุเหตุผลการตรวจ/ปรับคะแนน (Audit Reason)');
       return;
     }
@@ -490,6 +492,7 @@ export default function CompanyAssessmentsPage() {
         body: JSON.stringify({
           humanScore: Number(overrideScore),
           reviewReason: overrideReason,
+          reviewFeedback,
         }),
       }), (updated) => {
         setSelectedAttemptForReview((current: any) => current ? mergeAttemptReview(current, updated) : current);
@@ -718,7 +721,7 @@ export default function CompanyAssessmentsPage() {
                   <p className="text-xs text-slate-500">
                     {editingId
                       ? 'ปรับปรุงเนื้อหาโจทย์ เกณฑ์ผ่าน ตัวเลือก และ Test Cases (ระบบจะเพิ่มเลขเวอร์ชันอัตโนมัติ)'
-                      : 'ระบุโจทย์ ผลลัพธ์ที่คาดหวัง และเกณฑ์ประเมิน ให้ AI ช่วยตรวจโค้ดก่อนบริษัททบทวนผล'}
+                      : 'ระบุโจทย์ ผลลัพธ์ที่คาดหวัง และเกณฑ์ประเมิน บริษัทตรวจคำตอบและให้คะแนนเอง โดยไม่เรียก AI'}
                   </p>
                 </div>
                 <button
@@ -758,7 +761,7 @@ export default function CompanyAssessmentsPage() {
                       onChange={(e) => setFormType(e.target.value as AssessmentType)}
                       className="w-full p-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-indigo-500/20"
                     >
-                      <option value={AssessmentType.PRACTICAL_CODING}>Coding — โจทย์อิสระ (AI ช่วยประเมิน)</option>
+                      <option value={AssessmentType.PRACTICAL_CODING}>Coding — โจทย์อิสระ (บริษัทตรวจเอง)</option>
                       <option value={AssessmentType.THEORY}>Theory Assessment (ปรนัย Multiple Choice)</option>
                     </select>
                   </div>
@@ -824,8 +827,8 @@ export default function CompanyAssessmentsPage() {
                     onChange={(e) => setFormFeedbackVisibility(e.target.value as FeedbackVisibility)}
                     className="w-full p-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-indigo-500/20"
                   >
-                    <option value={FeedbackVisibility.IMMEDIATE}>ทันที (Candidate เห็นคะแนนและการวิเคราะห์ AI ทันที)</option>
-                    <option value={FeedbackVisibility.AFTER_REVIEW}>หลังตรวจเสร็จ (Candidate จะเห็นผลหลัง Tech Lead ตรวจประเมิน)</option>
+                    <option value={FeedbackVisibility.IMMEDIATE}>แสดงผลเมื่อบริษัทบันทึกคะแนนแล้ว</option>
+                    <option value={FeedbackVisibility.AFTER_REVIEW}>หลังบริษัทตรวจเสร็จ</option>
                     <option value={FeedbackVisibility.PRIVATE_TO_COMPANY}>ภายในเท่านั้น (Candidate ไม่เห็นคะแนน)</option>
                   </select>
                 </div>
@@ -949,7 +952,7 @@ export default function CompanyAssessmentsPage() {
                             <div className="text-xs text-slate-600 space-y-1">
                               <p className="font-bold">{q.evaluationMethod === QuestionEvaluationMethod.AUTOMATED_TEST_CASES
                                 ? 'ข้อสอบ Test Cases เดิม — ยังใช้งานได้ กรุณาสร้างชุดใหม่หากต้องการเปลี่ยนโจทย์'
-                                : 'โจทย์อิสระ — AI ช่วยประเมิน และบริษัทตรวจผลได้'}</p>
+                                : 'โจทย์อิสระ — บริษัทตรวจและให้คะแนนเอง'}</p>
                               <p>รองรับโปรแกรม JavaScript หรือ Python ที่รันได้ในตัวเอง ไม่รองรับเว็บทั้งระบบหรือการติดตั้งแพ็กเกจเพิ่มเติม</p>
                               {q.evaluationMethod !== QuestionEvaluationMethod.AUTOMATED_TEST_CASES && <p>ระบุสิ่งที่ต้องทำ ผลลัพธ์ที่คาดหวัง ตัวอย่าง และเกณฑ์ให้คะแนน ผู้สมัครแนบคำอธิบายวิธีคิดพร้อมโค้ดได้</p>}
                             </div>
@@ -1092,10 +1095,10 @@ export default function CompanyAssessmentsPage() {
                             <div className="p-3 rounded-xl bg-purple-50/70 border border-purple-200 text-xs text-purple-900 space-y-1.5">
                               <div className="flex items-center gap-1.5 font-bold text-purple-950">
                                 <Sparkles className="h-4 w-4 text-purple-600" />
-                                <span>เกณฑ์การประเมิน 4 มิติ (AI 4-Dimension Rubric)</span>
+                                <span>เกณฑ์แนะนำสำหรับบริษัทตรวจคำตอบ</span>
                               </div>
                               <p className="text-[11px] text-purple-800 leading-relaxed">
-                                ผู้สมัครสามารถออกแบบโค้ดได้อย่างอิสระ ไม่ต้องมี Test Cases ตายตัว — โค้ดจะถูกรันใน Judge0 Sandbox เพื่อตรวจสอบ Output แล้วส่งให้ AI ตรวจประเมินตามเกณฑ์:
+                                ผู้สมัครออกแบบโค้ดได้อย่างอิสระ ระบบรันโค้ดใน Sandbox เพื่อเก็บผลประกอบการตรวจ บริษัทอ่านโค้ด วิธีคิด และผลการรันก่อนให้คะแนนเอง ไม่มีการเรียก AI:
                               </p>
                               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px] font-medium">
                                 <div className="p-1.5 bg-white rounded-lg border border-purple-100 text-center">
@@ -1156,7 +1159,7 @@ export default function CompanyAssessmentsPage() {
                               {/* Custom AI Rubric Guidelines */}
                               <div>
                                 <label className="block text-[11px] font-bold text-purple-950 mb-1">
-                                  เกณฑ์เน้นย้ำพิเศษสำหรับ AI ตรวจ (Custom AI Evaluation Guidelines - Optional)
+                                  เกณฑ์เพิ่มเติมสำหรับผู้ตรวจของบริษัท (ไม่บังคับ)
                                 </label>
                                 <textarea
                                   rows={2}
@@ -1442,7 +1445,7 @@ export default function CompanyAssessmentsPage() {
                     <p className="text-xs text-slate-500 mt-0.5">
                       {selectedAssessmentForAttempts.type === AssessmentType.THEORY
                         ? 'ตรวจคำตอบปรนัย คะแนนรายข้อ และประเมินคะแนนขั้นสุดท้าย'
-                        : 'ตรวจสอบโค้ดของผู้สมัคร ดูผลวิเคราะห์จาก AI และประเมินคะแนนขั้นสุดท้าย'}
+                        : 'ตรวจโค้ด วิธีคิด และผลการรัน แล้วให้คะแนนพร้อมข้อเสนอแนะด้วยตนเอง'}
                     </p>
                   </div>
                   <button
@@ -1472,7 +1475,7 @@ export default function CompanyAssessmentsPage() {
                           <th className="py-3 px-3">ส่งเมื่อ</th>
                           <th className="py-3 px-3 text-center">สถานะการตรวจ</th>
                           <th className="py-3 px-3 text-center">Anti-Cheat</th>
-                          {selectedAssessmentForAttempts.type !== AssessmentType.THEORY && <th className="py-3 px-3 text-center">คะแนน AI เบื้องต้น</th>}
+                          {selectedAssessmentForAttempts.type !== AssessmentType.THEORY && <th className="py-3 px-3 text-center">คะแนน AI เดิม (ถ้ามี)</th>}
                           <th className="py-3 px-3 text-center">Final Score</th>
                           <th className="py-3 px-4 text-right">ดำเนินการ</th>
                         </tr>
@@ -1499,7 +1502,7 @@ export default function CompanyAssessmentsPage() {
                             <td className="py-3 px-3 text-center">
                               {att.reviewStatus === 'PENDING_HUMAN_REVIEW' && (
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                                  รอ Tech Lead รีวิว
+                                  รอบริษัทตรวจ
                                 </span>
                               )}
                               {att.reviewStatus === 'HUMAN_REVIEWED' && (
@@ -1601,7 +1604,7 @@ export default function CompanyAssessmentsPage() {
                   <p className="text-xs text-slate-500 mt-0.5">
                     {selectedAttemptForReview.assessment?.type === AssessmentType.THEORY
                       ? 'ดูคำตอบที่เลือก ผลตรวจรายข้อ และคะแนนรวมก่อนยืนยันผลให้ผู้สมัคร'
-                      : 'ตรวจโค้ดที่ส่งมา ผลการรันและรายงาน AI ก่อนระบุคะแนนขั้นสุดท้าย'}
+                      : 'ตรวจโค้ด วิธีคิด ผลการรัน และเกณฑ์ของโจทย์ก่อนบันทึกคะแนน'}
                   </p>
                 </div>
                 <button
@@ -1616,11 +1619,11 @@ export default function CompanyAssessmentsPage() {
                 {/* Score Summary Bar */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs">
                   <div>
-                    <span className="text-slate-400 block text-[10px]">{selectedAttemptForReview.assessment?.type === AssessmentType.THEORY ? 'คะแนนดิบ / คะแนนเต็ม' : 'คะแนน AI เบื้องต้น'}</span>
+                    <span className="text-slate-400 block text-[10px]">{selectedAttemptForReview.assessment?.type === AssessmentType.THEORY ? 'คะแนนดิบ / คะแนนเต็ม' : 'คะแนน AI เดิม (ถ้ามี)'}</span>
                     <strong className="text-base text-slate-800">
                       {selectedAttemptForReview.assessment?.type === AssessmentType.THEORY
                         ? (selectedAttemptForReview.score != null && selectedAttemptForReview.maxScore != null ? `${selectedAttemptForReview.score} / ${selectedAttemptForReview.maxScore}` : 'ยังไม่มีคะแนนดิบครบถ้วน')
-                        : (selectedAttemptForReview.aiScore != null ? `${selectedAttemptForReview.aiScore}%` : 'ยังไม่มีผล AI')}
+                        : (selectedAttemptForReview.aiScore != null ? `${selectedAttemptForReview.aiScore}%` : 'บริษัทตรวจเอง')}
                     </strong>
                   </div>
                   <div>
@@ -1635,7 +1638,7 @@ export default function CompanyAssessmentsPage() {
                       {selectedAttemptForReview.reviewStatus === 'HUMAN_REVIEWED' ? (
                         <span className="text-emerald-600">ตรวจแล้ว (Reviewed)</span>
                       ) : selectedAttemptForReview.reviewStatus === 'PENDING_HUMAN_REVIEW' ? (
-                        <span className="text-amber-600">รอ Tech Lead ยืนยัน</span>
+                        <span className="text-amber-600">รอบริษัทตรวจ</span>
                       ) : selectedAttemptForReview.reviewStatus === 'EVALUATION_PENDING' ? (
                         <span className="text-amber-600">กำลังประเมินผล</span>
                       ) : selectedAttemptForReview.reviewStatus === 'EVALUATION_FAILED' ? (
@@ -1703,6 +1706,11 @@ export default function CompanyAssessmentsPage() {
                       <pre className="p-4 rounded-2xl bg-slate-900 text-slate-100 font-mono text-xs overflow-x-auto max-h-64 whitespace-pre-wrap">{answer.submittedCode || '(ไม่มีโค้ดที่ส่งมา)'}</pre>
                       <p className="text-sm font-bold">คำอธิบายวิธีคิดของผู้สมัคร</p>
                       <p className="text-sm whitespace-pre-wrap break-words">{answer.executionResult?.candidateExplanation || '(ไม่ได้ระบุ)'}</p>
+                      <p className="text-sm font-bold">โจทย์และเกณฑ์ตรวจ</p>
+                      <p className="text-sm whitespace-pre-wrap">{selectedAttemptForReview.assessment?.questions?.find((q: any) => q.id === answer.questionId)?.prompt}</p>
+                      <p className="text-sm whitespace-pre-wrap">{selectedAttemptForReview.assessment?.questions?.find((q: any) => q.id === answer.questionId)?.rubric?.customGuidelines}</p>
+                      <p className="text-sm font-bold">ผลการรันประกอบการตรวจ (ไม่ใช่คะแนน)</p>
+                      <pre className="text-xs whitespace-pre-wrap break-words p-3 bg-slate-50 rounded-xl">{[answer.executionResult?.status, answer.executionResult?.stdout, answer.executionResult?.stderr, answer.executionResult?.compileOutput].filter(Boolean).join('\n') || 'ไม่มีผลการรัน'}</pre>
                     </section>
                   ))}
                 </div>}
@@ -1821,6 +1829,10 @@ export default function CompanyAssessmentsPage() {
                     </div>
                   </div>
 
+                  <label className="block text-sm font-bold">ข้อเสนอแนะให้ผู้สมัคร (แสดงตามการเปิดเผยผล)
+                    <textarea value={reviewFeedback} maxLength={5000} onChange={e => setReviewFeedback(e.target.value)}
+                      className="mt-2 w-full rounded-xl border p-3 text-sm" placeholder="จุดที่ทำได้ดี และสิ่งที่ควรฝึกเพิ่มเติม" />
+                  </label>
                   {selectedAttemptForReview.reviewedAt && (
                     <div className="text-[10px] text-slate-500 font-mono">
                       ประเมินครั้งล่าสุดเมื่อ: {new Date(selectedAttemptForReview.reviewedAt).toLocaleString('th-TH')} โดย{' '}

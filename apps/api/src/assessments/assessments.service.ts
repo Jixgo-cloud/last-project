@@ -8,6 +8,7 @@ import {
   BadRequestException,
   HttpException,
   HttpStatus,
+  ServiceUnavailableException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -29,6 +30,7 @@ export class AssessmentsService {
   private readonly logger = new Logger(AssessmentsService.name);
   private readonly runCodeRateLimit = new Map<string, number>();
   private readonly integrityEventRateLimit = new Map<string, number>();
+  private readonly aiRetryRateLimit = new Map<string, number>();
 
   constructor(
     private prisma: PrismaService,
@@ -202,9 +204,10 @@ export class AssessmentsService {
           data: {
             status: AttemptStatus.EXPIRED,
             completedAt: now,
-            passed: false,
-            score: 0,
-            percentage: 0,
+            passed: assessment.companyId ? null : false,
+            score: assessment.companyId ? null : 0,
+            percentage: assessment.companyId ? null : 0,
+            ...(assessment.companyId ? { reviewStatus: AssessmentReviewStatus.PENDING_HUMAN_REVIEW } : {}),
           },
         });
       } else {
@@ -215,6 +218,7 @@ export class AssessmentsService {
 
     // Version Snapshotting
     const snapshot = {
+      gradingMode: assessment.companyId ? 'COMPANY_MANUAL' : 'PLATFORM_AUTOMATED',
       ...frameworkMetadata(assessment),
       frameworkCoverage: getFrameworkCoverage(assessment),
       version: assessment.version,
@@ -240,6 +244,7 @@ export class AssessmentsService {
         status: AttemptStatus.IN_PROGRESS,
         assessmentVersion: assessment.version,
         snapshot,
+        maxScore: snapshot.totalPossiblePoints,
         integrityEvents: [],
       },
       include: {
@@ -442,11 +447,12 @@ export class AssessmentsService {
       );
     }
 
-    // Transition state to SUBMITTING to lock against concurrent submissions
-    await this.prisma.assessmentAttempt.update({
-      where: { id: attemptId },
+    // Compare-and-set prevents two requests from grading the same round.
+    const lock = await this.prisma.assessmentAttempt.updateMany({
+      where: { id: attemptId, status: AttemptStatus.IN_PROGRESS },
       data: { status: AttemptStatus.SUBMITTING },
     });
+    if (lock.count !== 1) throw new BadRequestException('Attempt is already being submitted');
 
     const now = new Date();
     const elapsedSeconds = Math.round((now.getTime() - attempt.startedAt.getTime()) / 1000);
@@ -481,7 +487,7 @@ export class AssessmentsService {
       for (const q of attempt.assessment.questions) {
         const candidateAns = answers.find((a) => a.questionId === q.id);
         const correctChoice = q.choices.find((c) => c.isCorrect);
-        const isCorrect = !isExpired && !!(
+        const isCorrect = !attempt.assessment.companyId && !isExpired && !!(
           candidateAns &&
           correctChoice &&
           candidateAns.selectedChoiceId === correctChoice.id
@@ -510,11 +516,15 @@ export class AssessmentsService {
           passed,
           timeSpentSeconds,
           completedAt: now,
+          ...(attempt.assessment.companyId ? {
+            score: null, percentage: null, passed: null, aiScore: null, finalScore: null,
+            reviewStatus: AssessmentReviewStatus.PENDING_HUMAN_REVIEW,
+          } : {}),
         },
       });
 
       // 3. Update CandidateSkill with LATEST score (only for platform tests or skill-bound tests)
-      if (attempt.assessment.skillId && !isExpired) {
+      if (attempt.assessment.skillId && !attempt.assessment.companyId && !isExpired) {
         await this.updateCandidateSkillScoreInTx(
           tx,
           attempt.candidateId,
@@ -560,10 +570,11 @@ export class AssessmentsService {
     if (!question) throw new NotFoundException('Question does not belong to this assessment');
 
     // Transition state to SUBMITTING to lock against concurrent submits
-    await this.prisma.assessmentAttempt.update({
-      where: { id: attemptId },
+    const lock = await this.prisma.assessmentAttempt.updateMany({
+      where: { id: attemptId, status: AttemptStatus.IN_PROGRESS },
       data: { status: AttemptStatus.SUBMITTING },
     });
+    if (lock.count !== 1) throw new BadRequestException('Attempt is already being submitted');
 
     const now = new Date();
     const elapsedSeconds = Math.round((now.getTime() - attempt.startedAt.getTime()) / 1000);
@@ -575,6 +586,35 @@ export class AssessmentsService {
     // BRANCH 1: OPEN-ENDED EVALUATION (Free-form / Plain text prompt)
     // =========================================================================
     const langId = this.detectLanguageId(sourceCode, question.starterCode);
+
+    // Company owns the grading decision. Execution is evidence only: never call AI,
+    // award points or issue a badge before a reviewer examines the saved answer.
+    if (attempt.assessment.companyId) {
+      let executionResult: any;
+      try {
+        executionResult = await this.judge0.executeRaw(sourceCode, langId);
+      } catch {
+        executionResult = { status: 'SYSTEM_ERROR', stdout: '', stderr: 'Sandbox unavailable; review the saved code manually.', compileOutput: null };
+      }
+      return this.prisma.$transaction(async tx => {
+        const answer = await tx.assessmentAnswer.findFirst({ where: { attemptId, questionId } });
+        const data = { submittedCode: sourceCode, executionResult: { ...executionResult, candidateExplanation, gradingMode: 'COMPANY_MANUAL' }, isCorrect: false, pointsEarned: 0 };
+        if (answer) await tx.assessmentAnswer.update({ where: { id: answer.id }, data });
+        else await tx.assessmentAnswer.create({ data: { attemptId, questionId, ...data } });
+        const answers = await tx.assessmentAnswer.findMany({ where: { attemptId } });
+        const finished = isExpired || attempt.assessment.questions.every(q => answers.some(a => a.questionId === q.id));
+        const status = isExpired ? AttemptStatus.EXPIRED : finished ? AttemptStatus.COMPLETED : AttemptStatus.IN_PROGRESS;
+        const totals = codingAttemptTotals(attempt.assessment, answers, isExpired);
+        await tx.assessmentAttempt.update({ where: { id: attemptId }, data: {
+          status, ...totals, humanScore: null, sourceCode, evaluationSnapshot: { gradingMode: 'COMPANY_MANUAL' },
+          evaluatorModel: null, evaluatorProvider: null, promptVersion: null,
+          timeSpentSeconds, completedAt: finished ? now : null,
+        } });
+        return { attemptId, questionId, status, ...totals, isFinished: finished,
+          totalQuestions: attempt.assessment.questions.length, answeredQuestions: answers.length,
+          message: 'ส่งคำตอบแล้ว รอบริษัทตรวจประเมิน' };
+      });
+    }
 
     if (question.evaluationMethod === QuestionEvaluationMethod.OPEN_ENDED) {
       let rawReport;
@@ -665,6 +705,7 @@ export class AssessmentsService {
             status: currentAttemptStatus,
             reviewStatus: AssessmentReviewStatus.EVALUATION_PENDING,
             score: null,
+            maxScore: attempt.assessment.questions.reduce((sum, q) => sum + q.points, 0),
             percentage: null,
             passed: null,
             aiScore: null,
@@ -906,6 +947,7 @@ export class AssessmentsService {
     if (attempt.status === AttemptStatus.COMPLETED || attempt.status === AttemptStatus.EXPIRED) {
       return attempt;
     }
+    if (attempt.status !== AttemptStatus.IN_PROGRESS) throw new BadRequestException('Attempt is currently being submitted');
 
     const now = new Date();
     const elapsedSeconds = Math.round((now.getTime() - attempt.startedAt.getTime()) / 1000);
@@ -914,6 +956,8 @@ export class AssessmentsService {
     const timeSpentSeconds = Math.min(elapsedSeconds, attempt.assessment.timeLimitMinutes * 60);
 
     return this.prisma.$transaction(async (tx) => {
+      const lock = await tx.assessmentAttempt.updateMany({ where: { id: attemptId, status: AttemptStatus.IN_PROGRESS }, data: { status: AttemptStatus.SUBMITTING } });
+      if (lock.count !== 1) throw new BadRequestException('Attempt is already being submitted');
       const allAnswers = await tx.assessmentAnswer.findMany({ where: { attemptId } });
       const totals = codingAttemptTotals(attempt.assessment, allAnswers, isExpired, attempt.reviewStatus);
       const currentAttemptStatus = isExpired ? AttemptStatus.EXPIRED : AttemptStatus.COMPLETED;
@@ -957,13 +1001,15 @@ export class AssessmentsService {
     reviewerUserId: string,
     humanScore: number,
     reviewReason: string,
+    reviewFeedback = '',
   ) {
-    if (humanScore < 0 || humanScore > 100) {
+    if (typeof humanScore !== 'number' || !Number.isFinite(humanScore) || humanScore < 0 || humanScore > 100) {
       throw new BadRequestException('Score must be between 0 and 100');
     }
-    if (!reviewReason || reviewReason.trim().length === 0) {
+    if (typeof reviewReason !== 'string' || !reviewReason.trim() || reviewReason.length > 5000) {
       throw new BadRequestException('Review reason is required for audit trail');
     }
+    if (typeof reviewFeedback !== 'string' || reviewFeedback.length > 5000) throw new BadRequestException('Feedback must be at most 5,000 characters');
 
     const attempt = await this.prisma.assessmentAttempt.findUnique({
       where: { id: attemptId },
@@ -1000,28 +1046,92 @@ export class AssessmentsService {
         'You are not authorized to review attempts for this assessment (Multi-tenancy isolation)',
       );
     }
+    if (![AttemptStatus.COMPLETED, AttemptStatus.EXPIRED].includes(attempt.status as any)) {
+      throw new BadRequestException('Review is available only after the candidate finishes');
+    }
 
     const passingScore = attempt.assessment.passingScore;
     const passed = humanScore >= passingScore;
     const now = new Date();
 
-    return this.prisma.assessmentAttempt.update({
-      where: { id: attemptId },
-      data: {
-        humanScore,
-        finalScore: humanScore,
-        percentage: humanScore,
-        passed,
-        reviewStatus: AssessmentReviewStatus.HUMAN_REVIEWED,
-        reviewedById: reviewerUserId,
-        reviewedAt: now,
-        reviewReason: reviewReason.trim(),
-      },
-      include: {
-        candidate: { select: { id: true, fullName: true, avatarUrl: true } },
-        assessment: { select: { id: true, title: true, passingScore: true, companyId: true } },
-      },
+    return this.prisma.$transaction(async tx => {
+      const saved = await tx.assessmentAttempt.updateMany({
+        where: { id: attemptId, status: { in: [AttemptStatus.COMPLETED, AttemptStatus.EXPIRED] } },
+        data: {
+          humanScore,
+          finalScore: humanScore,
+          percentage: humanScore,
+          passed,
+          reviewStatus: AssessmentReviewStatus.HUMAN_REVIEWED,
+          reviewedById: reviewerUserId,
+          reviewedAt: now,
+          reviewReason: reviewReason.trim(),
+          evaluationSnapshot: { ...(attempt.evaluationSnapshot as any || {}), companyReviewFeedback: reviewFeedback.trim() },
+          ...((attempt.snapshot as any)?.gradingMode === 'COMPANY_MANUAL' ? { score: Math.round(humanScore / 100 * attempt.maxScore * 10) / 10 } : {}),
+        },
+      });
+      if (saved.count !== 1) throw new BadRequestException('Attempt is currently being evaluated');
+      const updated = await tx.assessmentAttempt.findUnique({ where: { id: attemptId }, include: {
+          candidate: { select: { id: true, fullName: true, avatarUrl: true } },
+          assessment: { select: { id: true, title: true, passingScore: true, companyId: true } },
+        },
+      });
+      const candidate = await tx.candidateProfile.findUnique({ where: { id: attempt.candidateId }, select: { userId: true } });
+      if (candidate && attempt.assessment.feedbackVisibility !== 'PRIVATE_TO_COMPANY') {
+        await tx.notification.create({ data: { userId: candidate.userId, type: 'SYSTEM_ANNOUNCEMENT',
+          title: 'ผลการตรวจข้อสอบพร้อมแล้ว', message: `ผู้ตรวจบันทึกผลข้อสอบ ${attempt.assessment.title} แล้ว`,
+          link: `/assessments/${attempt.assessmentId}`, metadata: { attemptId, event: 'ASSESSMENT_REVIEWED' } } });
+      }
+      return updated;
     });
+  }
+
+  /** Retry only immutable saved answers for an unresolved platform assessment. */
+  async retryPlatformEvaluation(attemptId: string, userId: string) {
+    const attempt = await this.validateAttemptOwnership(attemptId, userId);
+    if (attempt.assessment.companyId || attempt.status !== AttemptStatus.COMPLETED ||
+        attempt.reviewStatus !== AssessmentReviewStatus.EVALUATION_PENDING || attempt.humanScore !== null) {
+      throw new BadRequestException('Only a pending platform AI evaluation can be retried');
+    }
+    const last = this.aiRetryRateLimit.get(attemptId) || 0;
+    if (Date.now() - last < 30000) throw new HttpException('กรุณารอ 30 วินาทีก่อนประเมินซ้ำ', HttpStatus.TOO_MANY_REQUESTS);
+    const lock = await this.prisma.assessmentAttempt.updateMany({ where: { id: attemptId,
+      status: AttemptStatus.COMPLETED, reviewStatus: AssessmentReviewStatus.EVALUATION_PENDING, humanScore: null },
+      data: { status: AttemptStatus.SUBMITTING } });
+    if (lock.count !== 1) throw new BadRequestException('Evaluation is already in progress');
+    this.aiRetryRateLimit.set(attemptId, Date.now());
+    try {
+      const answers = await this.prisma.assessmentAnswer.findMany({ where: { attemptId } });
+      let evaluation: any;
+      for (const answer of answers) {
+        const report = answer.executionResult as any;
+        if (!report?.evaluationPending) continue;
+        const question = attempt.assessment.questions.find(q => q.id === answer.questionId);
+        if (!question || question.evaluationMethod !== QuestionEvaluationMethod.OPEN_ENDED || !answer.submittedCode) continue;
+        evaluation = await this.aiEvaluator.evaluate({ questionTitle: question.title, questionPrompt: question.prompt,
+          sourceCode: answer.submittedCode, candidateExplanation: report.candidateExplanation || '', sandboxExecution: report,
+          rubricOverrides: question.rubric as any,
+          frameworkReference: attempt.assessment.frameworkCode === AZ204_FRAMEWORK.code && attempt.assessment.frameworkVersion === AZ204_FRAMEWORK.version && getFrameworkTopic(question.frameworkTopicId)
+            ? { code: AZ204_FRAMEWORK.code, version: AZ204_FRAMEWORK.version, topic: getFrameworkTopic(question.frameworkTopicId)!.name, authorMappingNote: question.frameworkMappingNote || '' } : undefined });
+        await this.prisma.assessmentAnswer.update({ where: { id: answer.id }, data: {
+          pointsEarned: Math.round(evaluation.result.overallScore / 100 * question.points * 10) / 10,
+          isCorrect: evaluation.result.overallScore >= attempt.assessment.passingScore,
+          executionResult: { ...report, evaluationPending: false },
+        } });
+      }
+      return await this.prisma.$transaction(async tx => {
+        const saved = await tx.assessmentAnswer.findMany({ where: { attemptId } });
+        const totals = codingAttemptTotals(attempt.assessment, saved, false);
+        return tx.assessmentAttempt.update({ where: { id: attemptId }, data: {
+          status: AttemptStatus.COMPLETED, ...totals,
+          ...(evaluation ? { evaluationSnapshot: evaluation.result, evaluatorModel: evaluation.model,
+            evaluatorProvider: evaluation.provider, promptVersion: evaluation.promptVersion } : {}),
+        } });
+      });
+    } catch {
+      await this.prisma.assessmentAttempt.update({ where: { id: attemptId }, data: { status: AttemptStatus.COMPLETED } });
+      throw new ServiceUnavailableException('บริการ AI ยังไม่พร้อม คำตอบเดิมยังอยู่ กรุณาลองใหม่ภายหลัง');
+    }
   }
 
   /**
@@ -1223,6 +1333,7 @@ export class AssessmentsService {
       where: {
         candidateId: candidate.id,
         passed: true,
+        assessment: { companyId: null },
       },
       include: {
         assessment: {

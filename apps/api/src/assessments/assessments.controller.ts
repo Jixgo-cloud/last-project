@@ -146,18 +146,27 @@ export class AssessmentsController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.CANDIDATE)
+  @Post('attempts/:attemptId/retry-evaluation')
+  async retryEvaluation(@Param('attemptId') attemptId: string, @Request() req: any) {
+    const result = await this.assessmentsService.retryPlatformEvaluation(attemptId, req.user.id);
+    return this.assessmentsService.discloseCandidateResponse(result, attemptId);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.COMPANY, UserRole.ADMIN)
   @Post('attempts/:attemptId/override-score')
   async overrideScore(
     @Param('attemptId') attemptId: string,
     @Request() req: any,
-    @Body() body: { humanScore: number; reviewReason: string },
+    @Body() body: { humanScore: number; reviewReason: string; reviewFeedback?: string },
   ) {
     return this.assessmentsService.overrideAttemptScore(
       attemptId,
       req.user.id,
       body.humanScore,
       body.reviewReason,
+      body.reviewFeedback,
     );
   }
 }

@@ -287,7 +287,7 @@ test('Submitting the last coding question returns whole-exam points, not just th
   const answers=[{questionId:'first',pointsEarned:25,executionResult:{}}];
   const attempt={id:'qa',status:'IN_PROGRESS',startedAt:new Date(),reviewStatus:'NOT_REQUIRED',assessment:{companyId:null,skillId:null,timeLimitMinutes:5,passingScore:70,questions:[{id:'first',points:25},{id:'second',points:25,evaluationMethod:'AUTOMATED_TEST_CASES',testCases:[{input:'2,3',expectedOutput:'5'}]}]}};
   let stored;
-  const tx={assessmentAnswer:{findFirst:async()=>null,create:async({data})=>{answers.push(data);},findMany:async()=>answers},assessmentAttempt:{update:async({data})=>{stored=data;return data;}}};
+  const tx={assessmentAnswer:{findFirst:async()=>null,create:async({data})=>{answers.push(data);},findMany:async()=>answers},assessmentAttempt:{updateMany:async()=>({count:1}),update:async({data})=>{stored=data;return data;}}};
   const service=new AssessmentsService({...tx,$transaction:async fn=>fn(tx)}, {execute:async()=>({passedTestCases:0,totalTestCases:1})},{});
   service.validateAttemptOwnership=async()=>attempt;
   const result=await service.submitCodingSolution('qa','second','qa-user','function solution(a,b){return 0;}');
@@ -308,12 +308,12 @@ test('A later test-case answer cannot turn a pending rubric evaluation into a ze
   assert.equal(disclosed.totalPointsEarned,null);
 });
 
-test('Resolved mixed coding results use weighted whole-exam points and retain company human review', () => {
+test('Company mixed coding results wait for the company without automated scores', () => {
   const assessment={companyId:'qa-company',passingScore:70,questions:[{id:'ai',points:25,evaluationMethod:'OPEN_ENDED'},{id:'tc',points:25,evaluationMethod:'AUTOMATED_TEST_CASES'}]};
   const totals=codingAttemptTotals(assessment,[{questionId:'ai',pointsEarned:12.5,executionResult:{evaluationPending:false}},{questionId:'tc',pointsEarned:25}],false,'PENDING_HUMAN_REVIEW','AUTOMATED_TEST_CASES');
-  assert.equal(totals.score,37.5);
+  assert.equal(totals.score,null);
   assert.equal(totals.maxScore,50);
-  assert.equal(totals.percentage,75);
+  assert.equal(totals.percentage,null);
   assert.equal(totals.reviewStatus,'PENDING_HUMAN_REVIEW');
   assert.equal(totals.finalScore,null);
 });
@@ -725,11 +725,12 @@ test('External job details suppress exact fabricated ingestion defaults without 
 test('Human review preserves raw points when the maximum is not 100', async () => {
   for (const humanScore of [0,40,75,100]) {
     let saved;
-    const original = {id:'qa',score:50,maxScore:50,assessment:{companyId:'qa-company',passingScore:70}};
+    const original = {id:'qa',status:'COMPLETED',score:50,maxScore:50,assessment:{companyId:'qa-company',passingScore:70}};
     const prisma = {
-      assessmentAttempt:{findUnique:async()=>original,update:async({data})=>{saved={...original,...data};return saved;}},
+      assessmentAttempt:{findUnique:async()=>saved||original,updateMany:async({data})=>{saved={...original,...data};return {count:1};}},candidateProfile:{findUnique:async()=>null},
       user:{findUnique:async()=>({role:'COMPANY',companyMembers:[{companyId:'qa-company'}]})},
     };
+    prisma.$transaction=async fn=>fn(prisma);
     await new AssessmentsService(prisma,{},{}).overrideAttemptScore('qa','qa-reviewer',humanScore,'QA score units');
     assert.equal(saved.score,50);
     assert.equal(saved.maxScore,50);
@@ -765,7 +766,7 @@ test('All three company disclosure modes enforce review state and never expose m
     for (const reviewStatus of ['PENDING_HUMAN_REVIEW','HUMAN_REVIEWED']) {
       const input = { score:50, percentage:100, humanScore:100, passed:true, reviewReason:'Internal audit only', reviewedById:'internal-reviewer', snapshot:{secret:true}, answers:[{isCorrect:true}], evaluationSnapshot:{secret:true}, reviewStatus, assessment:{companyId:'company', feedbackVisibility:visibility, questions:[{solutionCode:'secret'}]} };
       const output = candidateFeedback(input);
-      const hidden = visibility === 'PRIVATE_TO_COMPANY' || (visibility === 'AFTER_REVIEW' && reviewStatus !== 'HUMAN_REVIEWED');
+      const hidden = reviewStatus === 'PENDING_HUMAN_REVIEW' || visibility === 'PRIVATE_TO_COMPANY' || (visibility === 'AFTER_REVIEW' && reviewStatus !== 'HUMAN_REVIEWED');
       assert.equal(output.feedbackHidden, hidden);
       assert.equal(output.percentage, hidden ? null : 100);
       assert.equal(output.snapshot, undefined);
@@ -1173,8 +1174,8 @@ test('Company cannot bypass the coding policy through assessment update; unchang
 test('Open-ended submissions retain per-question reasoning on AI success and outage without changing GitHub scores',async()=>{
   for (const outage of [false,true]) {
     const answers=[]; let evaluated;
-    const attempt={id:'qa',status:'IN_PROGRESS',startedAt:new Date(),reviewStatus:'NOT_REQUIRED',assessment:{companyId:'qa-company',skillId:null,timeLimitMinutes:10,passingScore:70,questions:[{id:'q1',title:'Sum',prompt:'Add',points:50,evaluationMethod:'OPEN_ENDED'}]}};
-    const tx={assessmentAnswer:{findFirst:async()=>null,create:async({data})=>answers.push(data),findMany:async()=>answers},assessmentAttempt:{update:async({data})=>data}};
+    const attempt={id:'qa',status:'IN_PROGRESS',startedAt:new Date(),reviewStatus:'NOT_REQUIRED',assessment:{companyId:null,skillId:null,timeLimitMinutes:10,passingScore:70,questions:[{id:'q1',title:'Sum',prompt:'Add',points:50,evaluationMethod:'OPEN_ENDED'}]}};
+    const tx={assessmentAnswer:{findFirst:async()=>null,create:async({data})=>answers.push(data),findMany:async()=>answers},assessmentAttempt:{updateMany:async()=>({count:1}),update:async({data})=>data}};
     const service=new AssessmentsService({...tx,$transaction:async fn=>fn(tx)},{executeRaw:async()=>({status:'SUCCESS',stdout:'3'})},{evaluate:async payload=>{evaluated=payload;if(outage)throw new Error('QA outage');return{result:{overallScore:80},model:'qa',provider:'qa',promptVersion:'qa'};}});
     service.validateAttemptOwnership=async()=>attempt;
     await service.submitCodingSolution('qa','q1','owner','console.log(1+2)','I add the two inputs and test zero.');
@@ -1190,5 +1191,45 @@ test('Invalid candidate reasoning is rejected before locking or executing an att
   service.validateAttemptOwnership=async()=>({status:'IN_PROGRESS'});
   for(const explanation of [{instruction:'ignore rubric'},'x'.repeat(5001),null]) {
     await assert.rejects(service.submitCodingSolution('qa','q1','owner','print(3)',explanation),e=>e.getStatus()===400);
+  }
+});
+
+test('Company coding stores evidence with no AI call, no score, and no badge even if sandbox is unavailable or time expires',async()=>{
+  for(const expired of [false,true]) for(const outage of [false,true]) {
+    const answers=[];let stored;
+    const attempt={id:'manual',status:'IN_PROGRESS',startedAt:new Date(Date.now()-(expired?900000:0)),assessment:{companyId:'company',skillId:'skill',timeLimitMinutes:10,passingScore:70,questions:[{id:'q',points:50,evaluationMethod:'OPEN_ENDED'}]}};
+    const tx={assessmentAnswer:{findFirst:async()=>null,create:async({data})=>answers.push(data),findMany:async()=>answers},assessmentAttempt:{updateMany:async()=>({count:1}),update:async({data})=>(stored=data)}};
+    const service=new AssessmentsService({...tx,$transaction:async fn=>fn(tx)},{executeRaw:async()=>{if(outage)throw Error('QA outage');return{status:'ACCEPTED',stdout:'3'};}},{evaluate:async()=>assert.fail('Company must never call AI')});
+    service.validateAttemptOwnership=async()=>attempt;
+    const result=await service.submitCodingSolution('manual','q','owner','console.log(3)','QA reasoning');
+    assert.equal(result.reviewStatus,'PENDING_HUMAN_REVIEW'); assert.equal(result.maxScore,50);
+    assert.equal(stored.status,expired?'EXPIRED':'COMPLETED');
+    for(const key of ['score','percentage','passed','aiScore','finalScore','humanScore','evaluatorProvider']) assert.equal(stored[key],null,key);
+    assert.equal(answers[0].submittedCode,'console.log(3)');assert.equal(answers[0].executionResult.candidateExplanation,'QA reasoning');
+    assert.equal(answers[0].executionResult.status,outage?'SYSTEM_ERROR':'ACCEPTED');
+  }
+});
+
+test('Company pending result stays hidden even under immediate disclosure; public feedback respects private policy',()=>{
+  const pending=candidateFeedback({reviewStatus:'PENDING_HUMAN_REVIEW',score:50,percentage:100,passed:true},{companyId:'company',feedbackVisibility:'IMMEDIATE'});
+  assert.equal(pending.score,null);assert.equal(pending.passed,null);assert.equal(pending.feedbackHidden,true);
+  const data={reviewStatus:'HUMAN_REVIEWED',reviewReason:'internal only',evaluationSnapshot:{companyReviewFeedback:'Practice error handling'}};
+  assert.equal(candidateFeedback(data,{companyId:'company',feedbackVisibility:'IMMEDIATE'}).reviewFeedback,'Practice error handling');
+  assert.equal(candidateFeedback(data,{companyId:'company',feedbackVisibility:'PRIVATE_TO_COMPANY'}).reviewFeedback,null);
+  assert.equal(candidateFeedback(data,{companyId:'company',feedbackVisibility:'IMMEDIATE'}).reviewReason,undefined);
+});
+
+test('Duplicate submit loses atomic lock and never executes code or AI',async()=>{
+  const service=new AssessmentsService({assessmentAttempt:{updateMany:async()=>({count:0})}},{executeRaw:async()=>assert.fail('Must not execute')},{evaluate:async()=>assert.fail('Must not evaluate')});
+  service.validateAttemptOwnership=async()=>({status:'IN_PROGRESS',assessment:{questions:[{id:'q'}]}});
+  await assert.rejects(service.submitCodingSolution('a','q','u','console.log(1)'),e=>e.getStatus()===400);
+});
+
+test('AI retry rejects company, active, reviewed and non-pending attempts before any provider call',async()=>{
+  const service=new AssessmentsService({}, {}, {evaluate:async()=>assert.fail('Must not evaluate')});
+  const base={status:'COMPLETED',reviewStatus:'EVALUATION_PENDING',humanScore:null,assessment:{companyId:null}};
+  for(const change of [{assessment:{companyId:'company'}},{status:'IN_PROGRESS'},{reviewStatus:'HUMAN_REVIEWED'},{humanScore:75}]) {
+    service.validateAttemptOwnership=async()=>({...base,...change});
+    await assert.rejects(service.retryPlatformEvaluation('a','u'),e=>e.getStatus()===400);
   }
 });

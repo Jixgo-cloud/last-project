@@ -4,6 +4,10 @@ import { AssessmentReviewStatus, QuestionEvaluationMethod } from '@smartcareer/s
 export function codingAttemptTotals(assessment: any, answers: any[], isExpired: boolean,
   previousReviewStatus?: string, currentEvaluationMethod?: string) {
   const maxScore = assessment.questions.reduce((sum: number, q: any) => sum + q.points, 0);
+  if (assessment.companyId) return {
+    score: null, maxScore, percentage: null, passed: null, aiScore: null, finalScore: null,
+    reviewStatus: AssessmentReviewStatus.PENDING_HUMAN_REVIEW,
+  };
   const pending = answers.some(a => a.executionResult?.evaluationPending === true) ||
     (previousReviewStatus === AssessmentReviewStatus.EVALUATION_PENDING &&
       currentEvaluationMethod !== QuestionEvaluationMethod.OPEN_ENDED &&

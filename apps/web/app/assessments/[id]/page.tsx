@@ -78,6 +78,8 @@ export default function AssessmentRunnerPage() {
   const finalizingRef = useRef(false);
   const [submissionFeedback, setSubmissionFeedback] = useState<string | null>(null);
   const [codingFinalResult, setCodingFinalResult] = useState<any>(null);
+  const [retryingEvaluation, setRetryingEvaluation] = useState(false);
+  const [evaluationRetryError, setEvaluationRetryError] = useState<string | null>(null);
   const [confirmFinalize, setConfirmFinalize] = useState(false);
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
 
@@ -100,7 +102,7 @@ export default function AssessmentRunnerPage() {
           : history;
         const finished = getLatestFinishedAttempt<any>(resultHistory, String(id));
         if (finished) {
-          const result = { ...finished, percentage: getAttemptPercentage(finished) };
+          const result = { ...finished, evaluation: finished.evaluationSnapshot, percentage: getAttemptPercentage(finished) };
           setAssessment(assessData);
           setAttempt(finished);
           setTimeLeftSeconds(null);
@@ -693,7 +695,7 @@ export default function AssessmentRunnerPage() {
                 <p className="text-sm text-[#667085] mt-2">
                   {theoryResult.feedbackHidden ? 'ผลสอบรอบล่าสุด ' : theoryResult.reviewStatus === 'HUMAN_REVIEWED' ? 'คะแนนหลังผู้ตรวจประเมิน ' : 'คุณได้คะแนนรอบล่าสุด '}
                   <span className="font-extrabold text-[#4f46e5] text-xl">
-                    {theoryResult.feedbackHidden ? 'บริษัทเป็นผู้แจ้งผลสอบ' : `${theoryResult.percentage}%`}
+                    {theoryResult.reviewStatus === 'PENDING_HUMAN_REVIEW' ? 'รอบริษัทตรวจ' : theoryResult.feedbackHidden ? 'บริษัทเป็นผู้แจ้งผลสอบ' : `${theoryResult.percentage}%`}
                   </span>{' '}
                   {!theoryResult.feedbackHidden && theoryResult.reviewStatus !== 'HUMAN_REVIEWED' && `(${theoryResult.score} / ${theoryResult.maxScore} คะแนน)`}
                 </p>
@@ -706,7 +708,8 @@ export default function AssessmentRunnerPage() {
                   ระบบได้บันทึกผลการส่งข้อสอบรอบล่าสุดของคุณเรียบร้อยแล้ว
                 </p>
 
-                {theoryResult.passed && (
+                {theoryResult.reviewFeedback && <p className="mt-4 text-sm whitespace-pre-wrap text-left">ข้อเสนอแนะจากผู้ตรวจ: {theoryResult.reviewFeedback}</p>}
+                {!assessment.companyId && theoryResult.passed && (
                   <div className="mt-5 p-4 rounded-2xl bg-indigo-50/80 border border-indigo-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-left max-w-lg mx-auto shadow-2xs">
                     <div className="flex items-center gap-3">
                       <div className="h-10 w-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-xl shadow-xs shrink-0">
@@ -841,6 +844,17 @@ export default function AssessmentRunnerPage() {
                     <p className="text-xs text-slate-600 mt-3 max-w-lg mx-auto leading-relaxed">
                       บันทึกคำตอบของคุณแล้ว แต่บริการประเมินยังไม่สามารถให้ผลได้ จึงยังไม่มีคะแนนหรือผลผ่าน/ไม่ผ่าน คุณสามารถตรวจสอบผลอีกครั้งเมื่อบริการพร้อมหรือผู้ตรวจประเมินแล้ว
                     </p>
+                    {!assessment.companyId && <div className="mt-4">
+                      <button disabled={retryingEvaluation} className="rounded-xl bg-indigo-600 px-4 py-2 text-white disabled:opacity-50" onClick={async () => {
+                        setRetryingEvaluation(true); setEvaluationRetryError(null);
+                        try {
+                          await apiRequest(`/assessments/attempts/${codingFinalResult.attemptId || codingFinalResult.id || attempt?.id}/retry-evaluation`, { method: 'POST' });
+                          await initAssessment();
+                        } catch (err: any) { setEvaluationRetryError(err.message || 'ประเมินซ้ำไม่สำเร็จ คำตอบเดิมยังอยู่'); }
+                        finally { setRetryingEvaluation(false); }
+                      }}>{retryingEvaluation ? 'กำลังประเมินคำตอบเดิม...' : 'ให้ AI ประเมินคำตอบเดิมอีกครั้ง'}</button>
+                      {evaluationRetryError && <p role="alert" className="mt-2 text-sm text-red-700">{evaluationRetryError}</p>}
+                    </div>}
                     <div className="mt-8 flex justify-center">
                       <Link
                         href="/assessments"
@@ -850,8 +864,7 @@ export default function AssessmentRunnerPage() {
                       </Link>
                     </div>
                   </div>
-                ) : codingFinalResult.feedbackHidden || (codingFinalResult.reviewStatus === 'PENDING_HUMAN_REVIEW' &&
-                  assessment.feedbackVisibility === 'AFTER_REVIEW') ? (
+                ) : codingFinalResult.feedbackHidden || codingFinalResult.reviewStatus === 'PENDING_HUMAN_REVIEW' ? (
                   /* 2. Company Assessment Pending Human Review (AFTER_REVIEW mode) */
                   <div>
                     <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl mb-4 bg-amber-50 text-amber-600 border border-amber-200">
@@ -861,10 +874,10 @@ export default function AssessmentRunnerPage() {
                       ส่งคำตอบให้บริษัทเรียบร้อยแล้ว
                     </h2>
                     <p className="text-sm font-bold text-amber-700 mt-2">
-                      สถานะ: อยู่ระหว่างรอ Tech Lead ตรวจประเมินขั้นสุดท้าย (Pending Review)
+                      สถานะ: รอบริษัทตรวจข้อสอบ
                     </p>
                     <p className="text-xs text-slate-600 mt-3 max-w-lg mx-auto leading-relaxed">
-                      แบบทดสอบนี้กำหนดให้ทีมวิศวกรของบริษัทตรวจประเมินผลโค้ดและยืนยันคะแนนขั้นสุดท้าย {assessment.feedbackVisibility === 'PRIVATE_TO_COMPANY' ? 'บริษัทเป็นผู้แจ้งผลการประเมินให้คุณทราบ' : 'ผลการประเมินจะแสดงให้ทราบหลังจากที่ทีมงานทำการตรวจเสร็จสิ้น'}
+                      บริษัทเป็นผู้ตรวจคำตอบและให้คะแนนเอง ข้อสอบนี้ไม่เรียก AI และไม่ให้ Badge ของระบบ {assessment.feedbackVisibility === 'PRIVATE_TO_COMPANY' ? 'บริษัทเป็นผู้แจ้งผลการประเมินให้คุณทราบ' : 'ผลการประเมินจะแสดงหลังบริษัทบันทึกคะแนนแล้ว'}
                     </p>
                     <div className="mt-8 flex justify-center">
                       <Link
@@ -980,7 +993,8 @@ export default function AssessmentRunnerPage() {
                       </div>
                     )}
 
-                    {codingFinalResult.passed && (
+                    {codingFinalResult.reviewFeedback && <p className="mt-4 text-sm whitespace-pre-wrap text-left">ข้อเสนอแนะจากผู้ตรวจ: {codingFinalResult.reviewFeedback}</p>}
+                    {!assessment.companyId && codingFinalResult.passed && (
                       <div className="mt-6 p-4 rounded-2xl bg-indigo-50/80 border border-indigo-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-left max-w-lg mx-auto shadow-2xs">
                         <div className="flex items-center gap-3">
                           <div className="h-10 w-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-xl shadow-xs shrink-0">
@@ -1129,10 +1143,10 @@ export default function AssessmentRunnerPage() {
                         <div className="p-4 rounded-2xl bg-purple-50/70 border border-purple-200 text-xs text-purple-950 space-y-2.5 mb-6">
                           <div className="flex items-center gap-1.5 font-bold text-sm text-purple-950">
                             <Sparkles className="h-4 w-4 text-purple-600" />
-                            <span>โจทย์ปฏิบัติการจริง (Open-Ended / AI Rubric)</span>
+                            <span>{assessment.companyId ? 'โจทย์อิสระ — บริษัทตรวจเอง' : 'โจทย์ปฏิบัติการจริง (Open-Ended / AI Rubric)'}</span>
                           </div>
                           <p className="text-[11px] text-purple-900 leading-relaxed">
-                            ออกแบบและเขียนฟังก์ชันแก้ปัญหาได้อย่างอิสระ ไม่จำกัดรูปแบบ — เมื่อกดส่ง ระบบจะส่งโค้ดไปรันใน Judge0 Sandbox เพื่อตรวจสอบความถูกต้อง และให้ Gemini AI ประเมินผล 4 มิติ:
+                            {assessment.companyId ? 'เขียนโค้ดและอธิบายวิธีคิดได้อย่างอิสระ ระบบเก็บผลการรันประกอบการตรวจ บริษัทเป็นผู้ให้คะแนนเอง โดยไม่เรียก AI เกณฑ์ด้านล่างเป็นแนวทางสำหรับผู้ตรวจ:' : 'เมื่อส่งคำตอบ ระบบรันโค้ดใน Judge0 Sandbox และให้ Gemini AI ช่วยประเมินตามเกณฑ์ 4 มิติ:'}
                           </p>
                           <div className="grid grid-cols-2 gap-2 text-[11px]">
                             <div className="p-2 bg-white rounded-xl border border-purple-100">
@@ -1333,7 +1347,7 @@ export default function AssessmentRunnerPage() {
                     <div className="flex items-center justify-between pt-2">
                       <span className="text-[11px] text-slate-400 hidden sm:inline">
                         {currentQuestion?.evaluationMethod === QuestionEvaluationMethod.OPEN_ENDED
-                          ? 'ประเมินผลผ่าน Judge0 Sandbox + AI 4-Dimension Rubric'
+                          ? (assessment.companyId ? 'รันโค้ดประกอบการตรวจ — บริษัทเป็นผู้ให้คะแนน' : 'ประเมินผลผ่าน Judge0 Sandbox + AI 4-Dimension Rubric')
                           : 'Anti-Cheat: ตรวจ Test Cases จริงทุกข้อ 100%'}
                       </span>
 

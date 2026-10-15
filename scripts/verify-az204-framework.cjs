@@ -94,11 +94,39 @@ async function main() {
     }
     assert.equal((await db.assessment.findUnique({ where: { id: assessment.id } })).frameworkScope, 'FULL_BLUEPRINT');
   });
-  await check('AI evaluation receives the pinned topic and author mapping (isolated AI/sandbox fixtures)', async () => {
+  await check('Company answers stay ungraded and never call AI; owner review is isolated and publishes feedback', async () => {
     await candidateService.submitCodingSolution(attempt.id, assessment.questions[0].id, candidate.id, 'console.log("QA");', 'QA design rationale');
-    assert.equal(aiPayload.frameworkReference.code, 'AZ-204');
-    assert.equal(aiPayload.frameworkReference.version, '2026-01-14');
-    assert.equal(aiPayload.frameworkReference.authorMappingNote, assessment.questions[0].frameworkMappingNote);
+    assert.equal(aiPayload, undefined);
+    let saved = await db.assessmentAttempt.findUnique({where:{id:attempt.id}});
+    assert.equal(saved.score,null);assert.equal(saved.reviewStatus,'PENDING_HUMAN_REVIEW');
+    await assert.rejects(candidateService.overrideAttemptScore(attempt.id,owner.id,80,'QA'),e=>e.getStatus()===400);
+    await candidateService.finalizeAttempt(attempt.id,candidate.id);
+    await assert.rejects(candidateService.overrideAttemptScore(attempt.id,otherOwner.id,80,'QA'),e=>e.getStatus()===403);
+    await assert.rejects(candidateService.overrideAttemptScore(attempt.id,owner.id,NaN,'QA'),e=>e.getStatus()===400);
+    await candidateService.overrideAttemptScore(attempt.id,owner.id,80,'Internal QA reason','Practice Azure bindings');
+    saved = await db.assessmentAttempt.findUnique({where:{id:attempt.id}});
+    assert.equal(saved.humanScore,80);assert.equal(saved.aiScore,null);
+    assert.equal((await candidateService.getCandidateAttempts(candidate.id))[0].reviewFeedback,'Practice Azure bindings');
+    assert.equal((await candidateService.getCandidateBadges(candidate.id)).length,0);
+    assert.equal(await db.notification.count({where:{userId:candidate.id}}),1);
+  });
+  await check('Platform AI receives pinned framework; outage retry uses immutable saved answers and issues platform badge',async()=>{
+    const platform = await admin.createAssessment({...fixture(),title:'Platform retry QA',frameworkScope:'TOPIC_PRACTICE',questions:[fixture().questions[0]]});
+    const round=await candidateService.startAttempt(platform.id,candidate.id);
+    let fail=true,calls=0;
+    candidateService.aiEvaluator={evaluate:async payload=>{calls++;aiPayload=payload;if(fail)throw Error('Isolated outage');return{result:{overallScore:80},model:'fixture',provider:'fixture',promptVersion:'fixture'};}};
+    await candidateService.submitCodingSolution(round.id,platform.questions[0].id,candidate.id,'console.log("immutable QA")','Original reasoning');
+    let saved=await db.assessmentAttempt.findUnique({where:{id:round.id}});
+    assert.equal(saved.reviewStatus,'EVALUATION_PENDING');assert.equal(saved.score,null);
+    assert.equal(saved.maxScore,platform.questions[0].points);
+    fail=false;
+    await candidateService.retryPlatformEvaluation(round.id,candidate.id);
+    saved=await db.assessmentAttempt.findUnique({where:{id:round.id}});
+    assert.equal(saved.percentage,80);assert.equal(saved.reviewStatus,'NOT_REQUIRED');assert.equal(calls,2);
+    assert.equal(aiPayload.sourceCode,'console.log("immutable QA")');assert.equal(aiPayload.candidateExplanation,'Original reasoning');
+    assert.equal(aiPayload.frameworkReference.code,'AZ-204');
+    assert.equal((await candidateService.getCandidateBadges(candidate.id)).length,1);
+    await assert.rejects(candidateService.retryPlatformEvaluation(round.id,candidate.id),e=>e.getStatus()===400);
   });
   await check('Admin creation and question replacement retain framework mappings', async () => {
     const input = fixture(); input.title = 'QA admin AZ204';
@@ -106,6 +134,22 @@ async function main() {
     const loaded = await admin.getAssessment(saved.id);
     await admin.updateAssessment(saved.id, { questions: loaded.questions.map(q => ({ ...q, frameworkMappingNote: 'Updated author rationale before anybody has started this question.' })) });
     assert.equal((await admin.getAssessment(saved.id)).frameworkCoverage.meetsBlueprint, true);
+  });
+  await check('Company theory waits for review, while platform theory grades from its answer key without AI',async()=>{
+    for(const companyId of [company.id,null]) {
+      const exam=await admin.createAssessment({title:companyId?'Company theory QA':'Platform theory QA',companyId,type:'THEORY',timeLimitMinutes:10,passingScore:70,questions:[{title:'Sum',prompt:'1 + 2 = ?',points:50,choices:[{text:'3',isCorrect:true},{text:'4',isCorrect:false}]}]});
+      if(companyId)await db.job.update({where:{id:job.id},data:{customAssessmentId:exam.id}});
+      const round=await candidateService.startAttempt(exam.id,candidate.id);
+      const q=await db.question.findUnique({where:{id:exam.questions[0].id},include:{choices:true}});
+      const result=await candidateService.submitTheoryAttempt(round.id,candidate.id,[{questionId:q.id,selectedChoiceId:q.choices.find(c=>c.isCorrect).id}]);
+      assert.equal(result.maxScore,50);assert.equal(result.score,companyId?null:50);
+      assert.equal(result.reviewStatus,companyId?'PENDING_HUMAN_REVIEW':'NOT_REQUIRED');
+      const answer=await db.assessmentAnswer.findFirst({where:{attemptId:round.id}});
+      assert.equal(answer.pointsEarned,companyId?0:50);
+      if(companyId){await candidateService.overrideAttemptScore(round.id,owner.id,50,'QA partial credit','Practice');
+        assert.equal((await db.assessmentAttempt.findUnique({where:{id:round.id}})).score,25);}
+    }
+    await db.job.update({where:{id:job.id},data:{customAssessmentId:assessment.id}});
   });
   await check('Invalid full-coverage content is rejected on create, update, activation and attempt start', async () => {
     const broken = fixture(); broken.questions = broken.questions.slice(1);
