@@ -678,7 +678,7 @@ function CompanyApplicationsContent() {
                                       : 'bg-rose-50 text-rose-700 border-rose-200'
                                   }`}
                                 >
-                                  {isPassed ? '🏅 ผ่านเกณฑ์ (Badge)' : '✗ ยังไม่ผ่าน (Failed)'}
+                                  {isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ยังไม่ผ่าน (Failed)'}
                                 </span>}
                               </div>
                             );
@@ -1555,7 +1555,7 @@ function CompanyApplicationsContent() {
                                             : 'bg-rose-50 text-rose-700 border-rose-200'
                                         }`}
                                       >
-                                        {isPassed ? '🏅 ผ่านเกณฑ์ (Badge)' : '✗ ไม่ผ่านเกณฑ์ (Failed)'}
+                                        {isPassed ? '✓ ผ่านเกณฑ์ (Passed)' : '✗ ไม่ผ่านเกณฑ์ (Failed)'}
                                       </span>}
                                     </div>
                                   </div>
