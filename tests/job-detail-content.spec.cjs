@@ -20,6 +20,7 @@ test('Unknown and annual salary never become monthly salary; sections keep line 
   assert.deepEqual(monthlySalary({currency:'THB',unitText:'MONTH',minValue:'0.00',maxValue:'0.00'}),{});
   assert.deepEqual(monthlySalary({currency:'THB',unitText:'MONTH',minValue:'30000.00',maxValue:'50000.00'}),{salaryMin:30000,salaryMax:50000,salaryCurrency:'THB'});
   assert.equal(jobSections(jobText('<h2>Benefits</h2><p>Annual leave</p>')).benefits,'Annual leave');
+  assert.equal(jobSections('What you’ll Need to Succeed:\nPython or Go').requirements,'Python or Go');
 });
 test('Explicit expired page is not mistaken for a new sparse job', () => {
   assert.throws(()=>parseJobDetail('<body>This job is no longer advertised</body>','https://th.jobsdb.com/job/1'),/SOURCE_LISTING_CLOSED/);

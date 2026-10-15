@@ -15,7 +15,7 @@ export function jobSections(description: string) {
   let current = '';
   for (const line of lines) {
     const heading = line.trim().replace(/^\*\*|\*\*$/g, '').replace(/[:：]$/, '');
-    if (/^(qualifications|requirements|what you('ll| will) need|what you bring|คุณสมบัติ(?:ผู้สมัคร)?|คุณสมบัติที่ต้องการ)$/i.test(heading)) current = 'requirements';
+    if (/^(qualifications|requirements|what you(['’]ll| will) need(?: to succeed)?|what you bring|คุณสมบัติ(?:ผู้สมัคร)?|คุณสมบัติที่ต้องการ)$/i.test(heading)) current = 'requirements';
     else if (/^(benefits|what we offer|สวัสดิการ|สิ่งที่คุณจะได้รับ)$/i.test(heading)) current = 'benefits';
     else if (/^(responsibilities|about us|หน้าที่.*|วิธีการสมัคร|ติดต่อ|สถานที่ปฏิบัติงาน)$/i.test(heading)) current = '';
     else if (current) sections[current] = ((sections[current] || '') + '\n' + line).trim();
