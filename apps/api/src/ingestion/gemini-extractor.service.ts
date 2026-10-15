@@ -254,6 +254,15 @@ Return ONLY a valid JSON array of objects.`;
       { name: 'Test Case Design', category: SkillCategory.TESTING, regex: /\btest cases?\b/i },
       { name: 'PLC', category: SkillCategory.BACKEND, regex: /\bPLC\b/i },
 
+      // Infrastructure/support roles also have explicit technical evidence.
+      { name: 'Storage Systems', category: SkillCategory.DEVOPS, regex: /\bstorage systems?\b|\bsystem and storage\b/i },
+      { name: 'Technical Support', category: SkillCategory.DEVOPS, regex: /\btechnical support\b|\blevel 2 support\b/i },
+      { name: 'Network Switching', category: SkillCategory.DEVOPS, regex: /\bnetwork switches\b/i },
+      { name: 'Structured Cabling', category: SkillCategory.DEVOPS, regex: /\bstructured cabling\b/i },
+      { name: 'Server Hardware', category: SkillCategory.DEVOPS, regex: /\bserver hardware\b/i },
+      { name: 'Network Security', category: SkillCategory.SECURITY, regex: /\bnetwork security\b/i },
+      { name: 'Cybersecurity', category: SkillCategory.SECURITY, regex: /\bcyber[ -]?security\b/i },
+
       // Mobile
       { name: 'Flutter', category: SkillCategory.MOBILE, regex: /\b(flutter)\b/i },
       { name: 'React Native', category: SkillCategory.MOBILE, regex: /\b(react native)\b/i },

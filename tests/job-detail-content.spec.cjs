@@ -1,6 +1,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { parseJobDetail, jobText, monthlySalary, jobSections } = require('../apps/api/dist/ingestion/job-detail-content');
+test('Infrastructure evidence is tagged without inferring development tools or tagging nontechnical roles', () => {
+  const { GeminiExtractorService } = require('../apps/api/dist/ingestion/gemini-extractor.service');
+  const extract = (title, text) => new GeminiExtractorService().fallbackRuleBasedExtractor(title, text).map(s=>s.name);
+  assert.deepEqual(extract('System and Storage Support Engineer', 'Level 2 Support'), ['Storage Systems','Technical Support']);
+  assert.deepEqual(extract('Presales', 'Knowledge of Network Security and Cyber Security'), ['Network Security','Cybersecurity']);
+  for(const skill of ['Technical Support','Network Switching','Structured Cabling','Server Hardware']) assert.ok(extract('Project Engineer','Technical support, network switches, structured cabling and server hardware').includes(skill));
+  assert.deepEqual(extract('Project Sales Engineer', 'HVAC and Chinese language'), []);
+  assert.deepEqual(extract('Freelance Writer', 'Microsoft Word or Open Office'), []);
+});
 test('Next serialized JobPosting retains full details, qualifications and location without executing scripts', () => {
   const data = {'@type':'JobPosting', description:'<p>React development '.repeat(100)+'</p>', qualifications:'Docker and SQL',jobLocation:{address:{addressLocality:'Bangkok'}},baseSalary:{currency:'THB',value:{unitText:'MONTH',minValue:30000,maxValue:50000}}};
   const html = `<script>self.__next_s.push(${JSON.stringify([0,{type:'application/ld+json',children:JSON.stringify(data)}])})</script>`;
