@@ -78,6 +78,7 @@ export class JobsService {
         { title: { contains: filters.keyword, mode: 'insensitive' } },
         { description: { contains: filters.keyword, mode: 'insensitive' } },
         { companyName: { contains: filters.keyword, mode: 'insensitive' } },
+        { skills: { some: { skill: { name: { contains: filters.keyword, mode: 'insensitive' } } } } },
       ];
     }
 
