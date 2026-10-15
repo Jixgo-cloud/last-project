@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { execSync } from 'child_process';
+import { fetchJobDetail } from './job-detail-content';
 import { SkillCategory } from '@smartcareer/shared';
 
 export interface ExtractedSkill {
@@ -20,6 +20,8 @@ export interface DetailedJobInfo {
   benefits?: string;
   salaryMin?: number;
   salaryMax?: number;
+  location?: string;
+  salaryCurrency?: string;
 }
 
 @Injectable()
@@ -35,143 +37,8 @@ export class GeminiExtractorService {
    * from original job listing URLs (e.g. JobThai, JobsDB, Blognone).
    */
   async fetchDeepJobDetails(source: string, url: string, fallback: Partial<DetailedJobInfo> = {}): Promise<DetailedJobInfo> {
-    if (!url) {
-      return {
-        description: fallback.description || '',
-        requirements: fallback.requirements || '',
-        company: fallback.company,
-        logoUrl: fallback.logoUrl,
-        benefits: fallback.benefits,
-      };
-    }
-
-    try {
-      if (source === 'JOBTHAI' && url.includes('jobthai.com')) {
-        const details = this.scrapeJobThaiDeepDetail(url);
-        if (details) return { ...fallback, ...details };
-      } else if (source === 'BLOGNONE' && url.includes('blognone.com')) {
-        const details = this.scrapeBlognoneDeepDetail(url);
-        if (details) return { ...fallback, ...details };
-      }
-    } catch (err: any) {
-      this.logger.warn(`[Deep Detail] Could not scrape full details for ${url}: ${err.message}`);
-    }
-
-    return {
-      description: fallback.description || '',
-      requirements: fallback.requirements || '',
-      company: fallback.company,
-      logoUrl: fallback.logoUrl,
-      benefits: fallback.benefits,
-    };
-  }
-
-  /**
-   * JobThai deep scraper: Extracts Google Schema.org JobPosting JSON-LD
-   * embedded inside Next.js App Router RSC stream.
-   */
-  private scrapeJobThaiDeepDetail(url: string): Partial<DetailedJobInfo> | null {
-    try {
-      const html = execSync(
-        `curl.exe -s -L "${url}" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"`,
-        { maxBuffer: 10 * 1024 * 1024, encoding: 'utf-8' },
-      );
-
-      // 1. Look for Schema.org JobPosting in Next.js RSC stream or script
-      const idx = html.indexOf('JobPosting');
-      if (idx !== -1) {
-        const start = html.lastIndexOf('{\\"@context\\"', idx);
-        if (start !== -1) {
-          let sub = html.slice(start, start + 4000);
-          sub = sub.replace(/\\"/g, '"');
-          sub = sub.replace(/[\u0000-\u001F]+/g, (c) => (c === '\n' ? '\\n' : c === '\r' ? '' : ' '));
-
-          let depth = 0;
-          let endIdx = -1;
-          for (let i = 0; i < sub.length; i++) {
-            if (sub[i] === '{') depth++;
-            else if (sub[i] === '}') {
-              depth--;
-              if (depth === 0) {
-                endIdx = i;
-                break;
-              }
-            }
-          }
-
-          if (endIdx !== -1) {
-            try {
-              const jp = JSON.parse(sub.slice(0, endIdx + 1));
-              return {
-                title: jp.title,
-                description: jp.description ? jp.description.replace(/\\n/g, '\n').trim() : undefined,
-                requirements: jp.qualifications ? jp.qualifications.replace(/\\n/g, '\n').trim() : undefined,
-                company: jp.hiringOrganization?.name || undefined,
-                logoUrl: jp.hiringOrganization?.logo || undefined,
-                benefits: jp.jobBenefits || undefined,
-              };
-            } catch (err: any) {
-              this.logger.debug(`RSC JSON parse error: ${err.message}`);
-            }
-          }
-        }
-      }
-
-      // 2. Direct DOM Cheerio fallback
-      const $ = cheerio.load(html);
-      const ldJsonText = $('script[type="application/ld+json"]').text();
-      if (ldJsonText) {
-        try {
-          const ld = JSON.parse(ldJsonText);
-          if (ld['@type'] === 'JobPosting') {
-            return {
-              description: ld.description,
-              requirements: ld.qualifications,
-              company: ld.hiringOrganization?.name,
-              logoUrl: ld.hiringOrganization?.logo,
-              benefits: ld.jobBenefits,
-            };
-          }
-        } catch (e) {}
-      }
-
-      const descriptions: string[] = [];
-      $('.render-html-editor').each((_, el) => {
-        const t = $(el).text().trim();
-        if (t.length > 30) descriptions.push(t);
-      });
-
-      if (descriptions.length > 0) {
-        return {
-          description: descriptions[0],
-          requirements: descriptions.length > 1 ? descriptions[1] : undefined,
-        };
-      }
-    } catch (err: any) {
-      this.logger.debug(`JobThai deep extract failed: ${err.message}`);
-    }
-    return null;
-  }
-
-  /**
-   * Blognone deep scraper
-   */
-  private scrapeBlognoneDeepDetail(url: string): Partial<DetailedJobInfo> | null {
-    try {
-      const html = execSync(
-        `curl.exe -s -L "${url}" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"`,
-        { maxBuffer: 10 * 1024 * 1024, encoding: 'utf-8' },
-      );
-      const $ = cheerio.load(html);
-      const desc = $('article, .job-description, .content').text().trim();
-      if (desc && desc.length > 50) {
-        return {
-          description: desc.slice(0, 1500),
-          requirements: desc.slice(0, 1000),
-        };
-      }
-    } catch (e) {}
-    return null;
+    if (!['JOBTHAI', 'JOBSDB', 'BLOGNONE'].includes(source)) return fallback;
+    return { ...fallback, ...await fetchJobDetail(url) };
   }
 
   // =========================================================================
@@ -204,7 +71,7 @@ export class GeminiExtractorService {
         });
         if (aiSkills && aiSkills.length > 0) {
           this.logger.log(`[Gemini 1.5 Flash] Successfully extracted ${aiSkills.length} skills for '${title}'`);
-          return aiSkills;
+          return [...ruleSkills, ...aiSkills.filter(s => !ruleSkills.some(r => r.name.toLowerCase() === s.name.toLowerCase()))];
         }
       } catch (err: any) {
         this.logger.warn(`[Gemini 1.5 Flash] Extraction failed (${err.message}). Falling back to Smart Rule-Based Engine.`);
@@ -327,7 +194,7 @@ Return ONLY a valid JSON array of objects.`;
     const rules: Array<{ name: string; category: SkillCategory; regex: RegExp; isReq?: boolean; minScore?: number }> = [
       // Frontend
       { name: 'React', category: SkillCategory.FRONTEND, regex: /\b(react|react\.js|reactjs)\b/i },
-      { name: 'Next.js', category: SkillCategory.FRONTEND, regex: /\b(next|next\.js|nextjs)\b/i },
+      { name: 'Next.js', category: SkillCategory.FRONTEND, regex: /\b(next\.js|nextjs)\b/i },
       { name: 'JavaScript', category: SkillCategory.FRONTEND, regex: /\b(javascript|js|es6|es5|jsx)\b/i },
       { name: 'TypeScript', category: SkillCategory.FRONTEND, regex: /\b(typescript|ts)\b/i },
       { name: 'HTML5', category: SkillCategory.FRONTEND, regex: /\b(html|html5)\b/i },
@@ -342,8 +209,8 @@ Return ONLY a valid JSON array of objects.`;
       { name: 'Figma', category: SkillCategory.FRONTEND, regex: /\b(figma)\b/i },
 
       // Backend & APIs
-      { name: 'Node.js', category: SkillCategory.BACKEND, regex: /\b(node|node\.js|nodejs)\b/i },
-      { name: 'NestJS', category: SkillCategory.BACKEND, regex: /\b(nest|nestjs)\b/i },
+      { name: 'Node.js', category: SkillCategory.BACKEND, regex: /\b(node\.js|nodejs)\b/i },
+      { name: 'NestJS', category: SkillCategory.BACKEND, regex: /\b(nest\.js|nestjs)\b/i },
       { name: 'REST APIs', category: SkillCategory.BACKEND, regex: /\b(rest api|rest apis|restful|restful api|restful apis)\b/i },
       { name: 'GraphQL', category: SkillCategory.BACKEND, regex: /\b(graphql)\b/i },
       { name: 'Python', category: SkillCategory.BACKEND, regex: /\b(python|django|fastapi|flask)\b/i },
@@ -357,11 +224,11 @@ Return ONLY a valid JSON array of objects.`;
       { name: 'PostgreSQL', category: SkillCategory.DATABASE, regex: /\b(postgres|postgresql)\b/i },
       { name: 'MySQL', category: SkillCategory.DATABASE, regex: /\b(mysql)\b/i },
       { name: 'MongoDB', category: SkillCategory.DATABASE, regex: /\b(mongo|mongodb)\b/i },
-      { name: 'Redis', category: SkillCategory.DATABASE, regex: /\b(redis|cache)\b/i },
-      { name: 'SQL', category: SkillCategory.DATABASE, regex: /\b(sql|database|rdbms)\b/i },
+      { name: 'Redis', category: SkillCategory.DATABASE, regex: /\b(redis)\b/i },
+      { name: 'SQL', category: SkillCategory.DATABASE, regex: /\b(sql)\b/i },
 
       // DevOps & Infrastructure
-      { name: 'Docker', category: SkillCategory.DEVOPS, regex: /\b(docker|container|containers)\b/i },
+      { name: 'Docker', category: SkillCategory.DEVOPS, regex: /\b(docker)\b/i },
       { name: 'Kubernetes', category: SkillCategory.DEVOPS, regex: /\b(kubernetes|k8s)\b/i },
       { name: 'AWS', category: SkillCategory.DEVOPS, regex: /\b(aws|amazon web services)\b/i },
       { name: 'Git', category: SkillCategory.DEVOPS, regex: /\b(git|github|gitlab)\b/i },
@@ -371,11 +238,11 @@ Return ONLY a valid JSON array of objects.`;
       { name: 'Tomcat', category: SkillCategory.DEVOPS, regex: /\b(tomcat)\b/i },
 
       // Testing & QA
-      { name: 'Postman', category: SkillCategory.TESTING, regex: /\b(postman|api test|api testing)\b/i },
+      { name: 'Postman', category: SkillCategory.TESTING, regex: /\b(postman)\b/i },
       { name: 'Selenium', category: SkillCategory.TESTING, regex: /\b(selenium)\b/i },
       { name: 'Playwright', category: SkillCategory.TESTING, regex: /\b(playwright)\b/i },
       { name: 'Cypress', category: SkillCategory.TESTING, regex: /\b(cypress)\b/i },
-      { name: 'Jest', category: SkillCategory.TESTING, regex: /\b(jest|unit test)\b/i },
+      { name: 'Jest', category: SkillCategory.TESTING, regex: /\b(jest)\b/i },
       { name: 'Automated Testing', category: SkillCategory.TESTING, regex: /\b(automation test|automated test|automation testing)\b/i },
       { name: 'Manual Testing', category: SkillCategory.TESTING, regex: /\b(manual test|manual testing)\b/i },
 

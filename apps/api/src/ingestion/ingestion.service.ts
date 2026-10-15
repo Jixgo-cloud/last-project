@@ -13,6 +13,7 @@ import { fetchPublicJobHttp2 } from './public-job-http2';
 import { fetchBlognonePublicJobs } from './blognone-public-jobs';
 import { validateLocalJobBatch } from './local-job-batch';
 import { honestJobContent } from '../jobs/job-content';
+import { jobText, jobSections } from './job-detail-content';
 import { youtubeDurationFromHtml, youtubeDurationFromIso } from './youtube-duration';
 
 @Injectable()
@@ -220,6 +221,7 @@ export class IngestionService {
   private async performJobsSync(source: JobSource = JobSource.REMOTIVE, limit?: number, assertActive?: () => Promise<void>, localJobs?: any[]) {
     const startedAt = new Date();
     let createdCount = 0;
+    let updatedCount = 0;
     let duplicateCount = 0;
     let errorCount = 0;
     let errorMessage: string | null = null;
@@ -254,6 +256,19 @@ export class IngestionService {
       }
 
       for (const raw of jobsToProcess) {
+        if (!localJobs && ['JOBTHAI', 'JOBSDB', 'BLOGNONE'].includes(source)) {
+          try { Object.assign(raw, await this.geminiExtractor.fetchDeepJobDetails(source, raw.url, {})); }
+          catch (error: any) {
+            if (error.message === 'SOURCE_LISTING_CLOSED') raw.isActive = false;
+            else {
+              errorCount++;
+              errorMessage = `${source}: บางรายการอ่านรายละเอียดเต็มไม่ได้ เก็บข้อมูลที่ยืนยันได้และรักษารายละเอียดเดิมไว้`;
+            }
+            this.logger.warn(`Full details unavailable for ${source}; retaining verified listing fields`);
+          }
+        }
+        Object.assign(raw, { ...jobSections(jobText(raw.description)), ...Object.fromEntries(Object.entries(raw).filter(([,v]) => v != null && v !== '')) });
+        if (raw.isActive === false) continue;
         // Fence a stale worker before it can insert another job after losing its lease.
         if (assertActive) await assertActive();
         try {
@@ -273,6 +288,21 @@ export class IngestionService {
             if (source === JobSource.JSEARCH && existing.source === source
               && existing.externalId === externalId && existing.sourceUrl !== raw.url) {
               await this.prisma.job.update({ where: { id: existing.id }, data: { sourceUrl: raw.url } });
+            }
+            if (existing.source === source && existing.externalId === externalId) {
+              const data: any = {};
+              for (const field of ['description', 'requirements', 'benefits', 'location', 'salaryMin', 'salaryMax', 'salaryCurrency']) {
+                const value = raw[field];
+                if (value == null || value === '' || value === 'ไม่ระบุสถานที่') continue;
+                if (field === 'description' && (value === raw.title || value.length < existing.description.length)) continue;
+                if (value !== existing[field]) data[field] = value;
+              }
+              if (raw.logoUrl && raw.logoUrl !== existing.companyLogoUrl) data.companyLogoUrl = raw.logoUrl;
+              if (Object.keys(data).length) {
+                const updated = await this.prisma.job.update({ where: { id: existing.id }, data });
+                await this.assignSkillsToJob(updated.id, updated.title, updated.description, updated.requirements, source);
+                updatedCount++;
+              }
             }
             duplicateCount++;
             continue;
@@ -332,7 +362,7 @@ export class IngestionService {
         startedAt,
         finishedAt,
         createdCount,
-        updatedCount: 0,
+        updatedCount,
         duplicateCount,
         errorCount,
         errorMessage,
@@ -634,6 +664,8 @@ export class IngestionService {
               title: item.job_title,
               company: item.employer_name,
               logoUrl: item.employer_logo || null,
+              requirements: item.job_highlights?.Qualifications?.join("\n"),
+              benefits: item.job_highlights?.Benefits?.join("\n"),
               description: item.job_description
                 ? item.job_description
                     .replace(/\r\n/g, '\n')
@@ -702,7 +734,7 @@ export class IngestionService {
             title: j.title,
             company: j.company_name,
             logoUrl: j.company_logo || null,
-            description: j.description?.replace(/<[^>]*>?/gm, '').slice(0, 1000),
+            description: jobText(j.description),
             location: j.candidate_required_location || 'Remote (Worldwide)',
             isRemote: true,
             employmentType: JobType.FULL_TIME,
@@ -1924,6 +1956,10 @@ export class IngestionService {
             companyName: deepDetails.company || job.companyName,
             companyLogoUrl: deepDetails.logoUrl || job.companyLogoUrl,
             benefits: deepDetails.benefits || job.benefits,
+            location: deepDetails.location || job.location,
+            salaryMin: deepDetails.salaryMin ?? job.salaryMin,
+            salaryMax: deepDetails.salaryMax ?? job.salaryMax,
+            salaryCurrency: deepDetails.salaryCurrency || job.salaryCurrency,
           },
         });
 
