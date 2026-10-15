@@ -29,7 +29,6 @@ async function main() {
     const env=dotenv.parse(fs.readFileSync(path.join(root,f)));
     jsearchKey ||= env.JSEARCH_API_KEY || env.RAPIDAPI_KEY;
     for(const k of ['DATABASE_URL','DIRECT_URL']){try{const u=new URL(env[k]);if(u.hostname==='db.ivxsgbjvqutgyvakqfyt.supabase.co'||(u.hostname.endsWith('.pooler.supabase.com')&&decodeURIComponent(u.username)==='postgres.ivxsgbjvqutgyvakqfyt'))connection=env[k];}catch{}}
-    if(connection)break;
   }
   assert(connection,'No matching existing database connection');
   const db=new PrismaClient({datasources:{db:{url:connection}},log:[]});
