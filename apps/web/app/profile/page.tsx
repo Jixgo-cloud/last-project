@@ -29,6 +29,7 @@ import {
   ExternalLink,
   Sliders,
   TrendingUp,
+  Info,
 } from 'lucide-react';
 import { RadarChartDataPoint, CandidateEarnedBadge, githubEvidenceScore } from '@smartcareer/shared';
 
@@ -72,6 +73,7 @@ function ProfileHubContent() {
   const [radarData, setRadarData] = useState<RadarChartDataPoint[]>([]);
   const [badges, setBadges] = useState<CandidateEarnedBadge[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showRadarExplanation, setShowRadarExplanation] = useState(false);
 
   // Edit form states
   const [fullName, setFullName] = useState('');
@@ -356,21 +358,42 @@ function ProfileHubContent() {
                 <div className="lg:col-span-6 rounded-[20px] border border-slate-200/90 bg-white/95 p-6 sm:p-7 shadow-[0_12px_32px_rgba(15,23,42,0.04)] flex flex-col justify-between">
                   <div>
                     <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex min-w-0 items-center gap-2.5">
                         <span className="grid place-items-center w-8 h-8 rounded-xl bg-[#e8eaff] text-[#4f46e5]">
                           <Layers className="h-4 w-4" />
                         </span>
                         <div>
-                          <h2 className="text-base font-bold text-slate-900 tracking-tight">
-                            การกระจายตัวของทักษะ (Skill Competency Radar)
-                          </h2>
-                          <span className="text-[11px] text-[#667085]">วิเคราะห์ความครอบคลุมและศักยภาพจากผลงานจริง</span>
+                          <div className="flex items-start gap-2">
+                            <h2 className="text-base font-bold text-slate-900 tracking-tight">
+                              กราฟหลักฐานทักษะจาก GitHub
+                            </h2>
+                            <button type="button" aria-label="วิธีคิดคะแนนกราฟหลักฐานทักษะจาก GitHub"
+                              aria-expanded={showRadarExplanation} aria-controls="github-radar-explanation"
+                              onClick={() => setShowRadarExplanation(value => !value)}
+                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-indigo-600 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">
+                              <Info className="h-5 w-5" aria-hidden="true" />
+                            </button>
+                          </div>
+                          <span className="text-[11px] text-[#667085]">คะแนนจากหลักฐานที่ตรวจพบ ไม่ใช่เปอร์เซ็นต์ความเชี่ยวชาญ</span>
                         </div>
                       </div>
                       <span className="inline-flex items-center rounded-full bg-[#f4f5fa] border border-slate-200/80 px-3 py-1 text-[11px] font-semibold text-slate-700">
                         เป้าหมาย: {profile?.targetCareer || targetCareer}
                       </span>
                     </div>
+
+                    <section id="github-radar-explanation" aria-label="คำอธิบายการคิดคะแนน GitHub" hidden={!showRadarExplanation}
+                      className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm leading-relaxed text-slate-700">
+                      <h3 className="mb-2 font-bold text-indigo-950">กราฟนี้คิดคะแนนอย่างไร?</h3>
+                      <ol className="list-decimal space-y-2 pl-5">
+                        <li>ตรวจหลักฐานจากโครงการ GitHub ที่ซิงค์ไว้ เช่น ภาษาโปรแกรม รายการแพ็กเกจ ชื่อโครงการ คำอธิบาย และป้ายหัวข้อ</li>
+                        <li>พบภาษาโปรแกรม ให้ทักษะนั้น 85 คะแนน; พบเครื่องมือหรือเฟรมเวิร์ก ให้ 80 คะแนน และโครงการที่ไม่ว่างให้หลักฐาน Git 80 คะแนน หากพบทักษะซ้ำ ใช้คะแนนหลักฐานสูงสุด ไม่บวกตามจำนวนโครงการหรือดาว</li>
+                        <li>แต่ละด้านเป็นค่าเฉลี่ยของทักษะในหมวดนั้นที่พบหลักฐาน แล้วปัดเป็นจำนวนเต็ม เช่น JavaScript 85, HTML 85 และ React 80 ได้ FRONTEND ประมาณ 83 คะแนน</li>
+                      </ol>
+                      <p className="mt-3"><strong>ถ้าเป็น 0:</strong> ระบบยังไม่พบหลักฐานที่เข้ากฎตรวจจับในด้านนั้น ไม่ได้หมายความว่าคุณทำไม่เป็น ทักษะที่ไม่พบหลักฐานจะไม่ถูกนำมาเฉลี่ย</p>
+                      <p className="mt-2">คะแนนข้อสอบ Badge และผลประเมินบริษัทไม่รวมในกราฟนี้ เป้าหมายอาชีพที่แสดงยังไม่เปลี่ยนสูตรคะแนน</p>
+                      <p className="mt-2 font-medium">คะแนนสะท้อนการตรวจพบหลักฐานตามกฎของระบบ ไม่ใช่การรับรองคุณภาพโค้ดหรือระดับความเชี่ยวชาญ</p>
+                    </section>
 
                     {/* Radar Graphic */}
                     <div className="h-[340px] w-full flex items-center justify-center my-2">
