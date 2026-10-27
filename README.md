@@ -17,6 +17,8 @@ SmartCareer รวบรวมประกาศงาน แสดงบริ�
 - [ผู้ดูแลและงานเบื้องหลัง](#administration)
 - [สถาปัตยกรรมและไฟล์สำคัญ](#architecture)
 - [การติดตั้งและใช้งาน](#setup)
+- [การทดสอบและ CI](#verification)
+- [สถานะ production และเอกสารอ้างอิง](#production)
 
 <a id="overview"></a>
 
@@ -153,7 +155,7 @@ Prompt กำหนดให้ AI อ่านประกาศในบทบ
 | การทดสอบ | Postman, Selenium, Playwright, Cypress, Jest, Automated Testing, Manual Testing |
 | มือถือ | Flutter, React Native |
 
-มีคำพ้องที่กำหนดไว้ เช่น `reactjs` เป็น React, `k8s` เป็น Kubernetes และ `postgres` เป็น PostgreSQL บางกฎกว้างกว่าชื่อเทคโนโลยี เช่น `cache` เชื่อมไป Redis และ `database` เชื่อมไป SQL จึงอาจระบุทักษะคลาดเคลื่อนได้ วิธีสำรองกำหนดทุกทักษะที่พบเป็นทักษะจำเป็นและขั้นต่ำ 70 ไม่ได้แยกความจำเป็นตามบริบทเหมือนคำสั่งที่ส่งให้ AI
+มีคำพ้องที่กำหนดไว้ เช่น `reactjs` เป็น React, `k8s` เป็น Kubernetes และ `postgres` เป็น PostgreSQL กฎปัจจุบันต้องพบชื่อ Redis/SQL อย่างชัดเจน ไม่แปลงคำทั่วไป `cache` หรือ `database` เป็นสองทักษะนี้ รายการในตารางเป็นตัวอย่าง ไม่ใช่รายการทั้งหมด โค้ดยังรองรับทักษะขาย ประสานงาน การเขียน ระบบเครือข่าย และเครื่องมืออุตสาหกรรม โดยวิธีสำรองใช้ค่าของแต่ละกฎถ้ามี มิฉะนั้นกำหนดเป็นทักษะจำเป็นและขั้นต่ำ 70
 
 <a id="assessment"></a>
 
@@ -277,7 +279,7 @@ flowchart TB
     Logs --> Dashboard["แสดงภาพรวมและประวัติให้ผู้ดูแล"]
 ```
 
-ตารางตามเวลา Asia/Bangkok: 00:00 นำเข้างานและคอร์ส, 00:30 ตรวจงานปิด, 00:35 ตรวจคอร์สที่ใช้ไม่ได้ งานที่ปิดถูกปิดใช้งานเพื่อรักษาใบสมัครและประวัติ ส่วนการจัดการคอร์สขึ้นกับเงื่อนไขของตัวตรวจ
+เมื่อเปิด scheduler (ตั้ง `ENABLE_SCHEDULED_JOBS=false` ก่อนเริ่ม API เพื่อปิดงานตามเวลา): ตารางตามเวลา Asia/Bangkok: 00:00 นำเข้างานและคอร์ส, 00:30 ตรวจงานปิด, 00:35 ตรวจคอร์สที่ใช้ไม่ได้ งานที่ปิดถูกปิดใช้งานเพื่อรักษาใบสมัครและประวัติ ส่วนการจัดการคอร์สขึ้นกับเงื่อนไขของตัวตรวจ
 
 <a id="architecture"></a>
 
@@ -286,7 +288,8 @@ flowchart TB
 ```mermaid
 flowchart LR
     Browser["เบราว์เซอร์"] --> Web["Next.js: apps/web"]
-    Web --> API["NestJS: apps/api"]
+    Web --> Proxy["Next.js /api/* proxy + HttpOnly session"]
+    Proxy --> API["NestJS /api: apps/api"]
     API --> Prisma["Prisma"]
     Prisma --> DB[("PostgreSQL")]
     API --> External["GitHub / Google / Judge0 / AI<br/>แหล่งงานและคอร์ส"]
@@ -295,30 +298,90 @@ flowchart LR
     Health["ตรวจความพร้อมระบบ"] --> DB
 ```
 
-| ตำแหน่ง | หน้าที่ |
+โครงการเป็น npm workspaces มี 3 packages: `@smartcareer/web`, `@smartcareer/api` และ `@smartcareer/shared` เว็บใช้ Next.js 15 / React 19, API ใช้ NestJS 10 และ Prisma 5; Node.js 22 เป็นรุ่นที่ใช้ใน CI และ Docker
+
+```text
+.
+├── apps/
+│   ├── api/
+│   │   ├── src/
+│   │   │   ├── main.ts / app.module.ts
+│   │   │   ├── auth/ candidate/ company/ admin/
+│   │   │   ├── github/ skills/ assessments/ matching/
+│   │   │   ├── jobs/ applications/ evaluations/ recommendations/
+│   │   │   └── ingestion/ scheduler/ notifications/ health/ prisma/
+│   │   └── config/                 # ค่าการนำเข้าที่บันทึกไว้
+│   └── web/
+│       ├── app/                    # Next.js App Router
+│       │   ├── (auth)/ auth/        # login/register และ OAuth callback
+│       │   ├── profile/ jobs/ assessments/ courses/
+│       │   ├── applications/ learning-plan/
+│       │   ├── company/ admin/
+│       │   └── api/[...path]/route.ts
+│       ├── components/             # UI ที่ใช้ร่วมกัน
+│       ├── lib/                    # API client, auth และ helper
+│       └── public/
+├── packages/shared/src/            # ชนิดข้อมูล กติกาผลสอบ และสูตรจับคู่
+├── prisma/
+│   ├── schema.prisma
+│   ├── migrations/                 # incremental SQL; ไม่มี initial baseline
+│   ├── assessment-bank/            # โจทย์ เกณฑ์ test cases และเฉลยฝั่ง server
+│   └── seed*.ts                    # ตรวจขอบเขตก่อนรัน
+├── scripts/                        # release, integration และ maintenance
+├── tests/                          # node:test ใช้ compiled API/shared
+├── docs/                           # นโยบาย rollout และรายงานทดสอบ
+├── .github/workflows/verify.yml
+├── Dockerfile.api / Dockerfile.web
+├── docker-compose.prod.yml / Caddyfile
+└── package.json / package-lock.json
+```
+
+`dist/`, `.next/`, `node_modules/` และ `output/` เป็นผล build, dependencies หรือหลักฐานการรัน ไม่ใช่โมดูลระบบหลัก
+
+### โมดูลและเส้นทางหลัก
+
+ทุก controller ของ NestJS ใช้ prefix `/api` จาก `main.ts` ตารางนี้สรุปกลุ่มเส้นทาง ไม่ใช่สัญญา request/response ครบทุก endpoint; ตรวจ method และ guards ใน controller ของโมดูลก่อนเรียกใช้
+
+| โมดูลใน `apps/api/src` | กลุ่ม API | หน้าที่ |
+|---|---|---|
+| `auth` | `/api/auth/*` | OAuth, session exchange, JWT และสิทธิ์บทบาท |
+| `candidate`, `github`, `skills` | `/api/candidate/*`, `/api/github/*`, `/api/skills/*` | โปรไฟล์ บริบท repositories และคลังทักษะ |
+| `assessments` | `/api/assessments/*` | เริ่มสอบ รันโค้ด ส่งคำตอบ ตรวจผล และประวัติ |
+| `jobs`, `matching` | `/api/jobs/*` | รายการ/รายละเอียดงานและคะแนนจับคู่; matching เป็น service ไม่มี controller แยก |
+| `applications`, `evaluations` | `/api/applications/*`, `/api/evaluations/*` | ใบสมัครและผลประเมินบริษัท |
+| `company`, `admin` | `/api/company/*`, `/api/admin/*` | งานบริษัทและการดูแลระบบตามสิทธิ์ |
+| `recommendations` | `/api/recommendations/*` | skill-gaps, courses และ development-plan |
+| `ingestion`, `scheduler` | `/api/ingestion/*` | นำเข้าข้อมูลและงานตามเวลา; scheduler ไม่มี controller แยก |
+| `notifications`, `health` | `/api/notifications/*`, `/api/health`, `/api/health/ready` | การแจ้งเตือนและตรวจการเชื่อมต่อฐานข้อมูล |
+| `prisma` | ไม่มี public endpoint | PrismaService สำหรับเข้าฐานข้อมูล |
+
+### การเรียก API และ session
+
+[API client ของเว็บ](apps/web/lib/api.ts) เรียก same-origin `/api/*` ผ่าน [Next.js proxy](apps/web/app/api/[...path]/route.ts) โดย session อยู่ใน cookie `smartcareer_session` แบบ HttpOnly; proxy ส่ง JWT ไป backend และตรวจ Origin ของคำขอที่แก้ข้อมูล ระบบมีทางย้าย token เก่าจาก localStorage แล้วลบค่าเดิม ไม่ใช้ localStorage เป็นที่เก็บ session ใหม่
+
+proxy เลือก backend จาก `API_URL` ก่อน `NEXT_PUBLIC_API_URL` แล้วจึงใช้ค่า fallback ตาม environment ส่วน OAuth มี callback เข้า NestJS และกลับเว็บเพื่อแลก session จึงต้องตั้ง callback และ frontend origin ให้สอดคล้องกัน
+
+### ไฟล์ logic ที่ควรเริ่มอ่าน
+
+| ไฟล์ | หน้าที่ |
 |---|---|
-| `apps/web` | หน้าเว็บผู้สมัคร บริษัท และผู้ดูแล ใช้ Next.js, Tailwind CSS, Recharts และ Monaco Editor |
-| `apps/api` | ระบบหลังบ้าน NestJS แยกตามโมดูล พร้อมตรวจสิทธิ์และตั้งเวลางาน |
-| `packages/shared` | ชนิดข้อมูลและสูตรที่เว็บกับระบบหลังบ้านใช้ร่วมกัน |
-| `prisma` | โครงสร้างฐานข้อมูล การย้ายโครงสร้าง และข้อมูลตั้งต้น |
-| `scripts`, `tests`, `docs/uat` | เครื่องมือดูแลระบบ การตรวจอัตโนมัติ และคู่มือทดสอบ |
-
-ไฟล์อ้างอิงหลัก:
-
-- [กติกาผลประเมินและคะแนนจับคู่](packages/shared/src/skill-assessment.ts)
-- [นำเข้าประกาศงาน](apps/api/src/ingestion/ingestion.service.ts)
-- [Prompt และกฎค้นทักษะสำรอง](apps/api/src/ingestion/gemini-extractor.service.ts)
-- [สูตรจับคู่](apps/api/src/matching/matching.service.ts)
-- [แบบทดสอบและผลสอบ](apps/api/src/assessments/assessments.service.ts)
-- [คำแนะนำและแผนพัฒนา](apps/api/src/recommendations/recommendations.service.ts)
-- [งานตามเวลา](apps/api/src/scheduler/scheduler.service.ts)
-- [โครงสร้างข้อมูล](prisma/schema.prisma)
+| [skill-assessment.ts](packages/shared/src/skill-assessment.ts) | เลือกผลทักษะที่ใช้ได้ คะแนนจับคู่ และ coverage |
+| [candidate-screening.ts](packages/shared/src/candidate-screening.ts) | การเลือกผลสอบสำหรับการคัดกรอง |
+| [assessments.service.ts](apps/api/src/assessments/assessments.service.ts) | lifecycle ของรอบสอบและ snapshot |
+| [judge0.client.ts](apps/api/src/assessments/judge0.client.ts) | รันโค้ดผ่าน Judge0 |
+| [automated-rubric.ts](apps/api/src/assessments/automated-rubric.ts) | criterion gate และเพดานคะแนนองค์ประกอบจำเป็น |
+| [course-selection.ts](apps/api/src/recommendations/course-selection.ts) | ตัวตน URL, ตัดคอร์สซ้ำ และจัดลำดับความเกี่ยวข้อง |
+| [recommendations.service.ts](apps/api/src/recommendations/recommendations.service.ts) | ช่องว่างจากงาน/อาชีพและแผนพัฒนาบริษัท |
+| [ingestion.service.ts](apps/api/src/ingestion/ingestion.service.ts) | นำเข้าประกาศงานและคอร์ส |
+| [gemini-extractor.service.ts](apps/api/src/ingestion/gemini-extractor.service.ts) | Prompt และกฎค้นทักษะ |
+| [scheduler.service.ts](apps/api/src/scheduler/scheduler.service.ts) | ตารางงานนำเข้าและตรวจข้อมูลหมดอายุ |
+| [schema.prisma](prisma/schema.prisma) | แบบจำลองข้อมูล |
 
 <a id="setup"></a>
 
 ## 11. การติดตั้งและใช้งาน
 
-## 🔑 ช่องทางสมัครและเข้าสู่ระบบ
+### ช่องทางสมัครและเข้าสู่ระบบ
 
 | บทบาท | สมัครสมาชิก | เข้าสู่ระบบ | หน้าหลัก |
 |---|---|---|---|
@@ -334,11 +397,11 @@ flowchart LR
 
 ---
 
-## 🚀 วิธีการรันโปรเจค (Running Locally)
+### รันในเครื่อง
 
-### เตรียมเครื่องครั้งแรก
+#### เตรียมเครื่องครั้งแรก
 
-ใช้ Node.js 22 และ PostgreSQL ที่เปิดใช้งานแล้ว คัดลอก `.env.example` เป็น `.env` ที่โฟลเดอร์หลักหากยังไม่มี แล้วตั้ง `DATABASE_URL` ให้ตรงกับฐานข้อมูลของเครื่อง
+ใช้ Node.js 22 และ PostgreSQL ที่เปิดใช้งานแล้ว คัดลอก `.env.example` เป็น `.env` ที่โฟลเดอร์หลักหากยังไม่มี แล้วตั้ง `DATABASE_URL` ให้ตรงกับฐานข้อมูลทดสอบของเครื่อง และกำหนด `JWT_SECRET` แบบสุ่มอย่างน้อย 32 ตัวอักษร ตั้ง `ENABLE_SCHEDULED_JOBS=false` หากไม่ต้องการให้งานนำเข้า/cleanup ทำงานระหว่างพัฒนา
 
 ```bash
 npm ci
@@ -349,15 +412,15 @@ npm run build
 
 คำสั่ง `npm run build` เตรียมส่วนใช้ร่วมกันและตัวเชื่อมฐานข้อมูลครั้งเดียว ก่อนสร้างระบบหลังบ้านและเว็บ หากต้องการสร้างเฉพาะส่วน ใช้ `npm run build:api` หรือ `npm run build:web` ซึ่งเตรียมส่วนที่จำเป็นให้อัตโนมัติ `build:app` เป็นคำสั่งย่อยสำหรับกระบวนการสร้างรวม ไม่ใช่คำสั่งเริ่มเตรียมโปรเจกต์
 
-ระบบหลังบ้านรับค่าจากระบบที่ใช้เปิดโปรแกรมก่อน ตามด้วย `apps/api/.env` และ `.env` ที่โฟลเดอร์หลักตามลำดับ ไฟล์เฉพาะระบบหลังบ้านเดิมยังใช้เป็นค่าทับได้ แต่สำหรับเครื่องใหม่สามารถใส่ค่ารวมใน `.env` ที่โฟลเดอร์หลักได้ เปิดจากโฟลเดอร์หลักหรือ `apps/api` ก็อ่านไฟล์ชุดเดียวกัน
+ระบบหลังบ้านโหลด environment ผ่าน `dotenv` ใน `main.ts` และ `ConfigModule` ใน `app.module.ts` มีทั้ง `.env` ตาม working directory, `apps/api/.env` และ root `.env` ค่าที่โหลดก่อนหรือส่งจาก process มีผลก่อน จึงควรใช้ root `.env` ชุดเดียวสำหรับเครื่องใหม่ และหลีกเลี่ยงการตั้งชื่อเดียวกันหลายไฟล์
 
 เว็บอ่านไฟล์ตั้งค่าตามมาตรฐาน Next.js ภายใน `apps/web` หากต้องการเปลี่ยนที่อยู่ระบบหลังบ้าน ให้สร้าง `apps/web/.env.local` พร้อมค่า เช่น:
 
 ```dotenv
-NEXT_PUBLIC_API_URL=http://localhost:4000/api
+API_URL=http://localhost:4000/api
 ```
 
-ค่าที่ขึ้นต้น `NEXT_PUBLIC_` ต้องกำหนดก่อนสร้างเว็บ เมื่อเปลี่ยนต้องสร้างเว็บใหม่ ส่วน Docker รับค่าที่อยู่ระบบหลังบ้านจาก build arguments ใน Compose
+แนะนำ `API_URL` สำหรับปลายทาง server-side proxy; `NEXT_PUBLIC_API_URL` ยังเป็น fallback ที่รองรับอยู่และถูกใช้ในไฟล์ Compose ปัจจุบัน ค่าที่ขึ้นต้น `NEXT_PUBLIC_` ต้องกำหนดก่อน build และห้ามใส่ secret ค่า server-side เปลี่ยนแล้วต้องเริ่ม process ใหม่
 
 ### ค่าที่มีผลกับการใช้งาน
 
@@ -396,14 +459,45 @@ npx ts-node scripts/verify-manifests.ts
 
 คำสั่งแรกตรวจการอ่านค่าตั้งระบบและการเก็บค่าหลังเปิดใหม่ โดยเขียนเฉพาะไฟล์ชั่วคราว คำสั่งที่สองตรวจไฟล์ติดตั้ง ไม่ได้สร้างหรือเปิด Docker จริง ผลตรวจหลังปรับปรุงอยู่ใน [รายงานค่าตั้งระบบและขั้นตอนเตรียมระบบ](docs/RUNTIME_SETUP_REPORT.md)
 
-### 3. รัน Database Seeder หรือ Prisma Studio
+### ข้อมูลจำลองและ Prisma Studio
 ```bash
-# รัน Seed ข้อมูลจำลองครบชุด
+# ใช้เฉพาะฐานข้อมูลทดสอบแยกที่ตรวจแล้ว ไม่รันกับ production
 npm run prisma:seed
 
 # เปิดดูฐานข้อมูลผ่าน Prisma Studio GUI
 npm run prisma:studio
 ```
+
+<a id="verification"></a>
+
+## 12. การทดสอบและ CI
+
+รันจาก root หลังตั้งค่าฐานข้อมูลทดสอบและ build แล้ว:
+
+```bash
+npm run build
+npm run lint
+npm test
+```
+
+`npm test` รวม `test:security` และ `test:uat` ซึ่งอ่าน compiled API ใน `apps/api/dist` จึงต้อง rebuild หลังแก้ TypeScript ส่วน `npm run test:regression` เป็น integration ที่มีฐานข้อมูล/เบราว์เซอร์และสร้างข้อมูลทดสอบ ให้ใช้ฐานข้อมูลแยกตาม [workflow CI](.github/workflows/verify.yml) ไม่ชี้ไป production
+
+CI ใช้ Node.js 22, PostgreSQL 16 และตรวจ build, lint, security/UAT, import runs, การเก็บประวัติเมื่ออัปเกรด bank, headful browser และ core regression ผลทั้งหมดไม่ใช่การรับรองคุณภาพข้อสอบโดยมนุษย์
+
+คำสั่ง `start:api` และ `start:web` ที่ root เป็น development commands; สำหรับ production หลัง build ให้ใช้ `npm run start --workspace=@smartcareer/api` และ `npm run start --workspace=@smartcareer/web` ตามด้านบน
+
+<a id="production"></a>
+
+## 13. สถานะ production และเอกสารอ้างอิง
+
+สถานะที่ตรวจและบันทึกเมื่อ 27 ตุลาคม 2569: เว็บอยู่บน Vercel, API อยู่บน Railway และ PostgreSQL อยู่บน Supabase ส่วน Docker Compose/Caddy เป็นอีกทางเลือกสำหรับ self-host ไม่ใช่โครงสร้าง deployment ปัจจุบันทั้งหมด
+
+- [รายงาน rollout ข้อสอบ v3](docs/ASSESSMENT_V3_PRODUCTION.md): PR #4, Judge0 จริง และการรักษาผลเดิม
+- [รายงานโปรไฟล์และคอร์ส](docs/COURSE_RECOMMENDATION_CLEANUP.md): PR #5 และเอกสาร PR #6 พร้อมผล API/UI
+- [คู่มืออัปเกรดฐานข้อมูล](docs/PRODUCTION_ASSESSMENT_UPGRADE.md): ลำดับ migration และ bank release
+- [แนวทางเป้าหมายระบบ](docs/GITHUB_SKILL_ASSESSMENT_COMPARISON.md) และ [นโยบายที่นำไปใช้](docs/ASSESSMENT_POLICY_IMPLEMENTATION.md)
+
+ข้อสอบยังเป็นฉบับร่าง ต้องมีผู้เชี่ยวชาญมนุษย์ตรวจและ pilot กับผู้เข้าร่วมจริงก่อนอ้างคุณภาพการวัด ก่อนเปิดบริการทั่วไปยังต้องจัดการข้อมูล QA, ตรวจความปลอดภัย/ความเป็นส่วนตัว, โหลดที่รองรับ, monitoring, โควตาบริการ และการกู้คืนข้อมูล รายงานทดสอบเป็นหลักฐาน ณ เวลาที่ระบุ ไม่ใช่การตรวจสุขภาพระบบแบบเรียลไทม์
 
 ### การปรับโปรไฟล์และคอร์สหลัง rollout v3
 
