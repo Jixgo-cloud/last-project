@@ -40,7 +40,7 @@ import {
   PolarRadiusAxis,
   ResponsiveContainer,
 } from 'recharts';
-import { ApplicationStatus, getAttemptPercentage, formatAttemptScore, filterCodingApplications, hasGithubEvidence, formatAssessmentSkill, formatMatchSummary } from '@smartcareer/shared';
+import { ApplicationStatus, applicationAssessmentResult, getAttemptPercentage, formatAttemptScore, filterCodingApplications, hasGithubEvidence, formatAssessmentSkill, formatMatchSummary } from '@smartcareer/shared';
 import { useLanguage } from '@/lib/use-language';
 import { applicationStatusLabel } from '@/lib/application-status';
 
@@ -618,13 +618,9 @@ function CompanyApplicationsContent() {
 
                     {/* Custom Technical Assessment Results (Assigned or Job Default) */}
                     {(() => {
-                      const effectiveAssessment = app.assignedAssessment || app.job?.customAssessment;
-                      if (!effectiveAssessment) return null;
-
-                      const targetAssessmentId = app.assignedAssessmentId || app.job?.customAssessmentId;
-                      const customAttempt = (app.candidate?.assessmentAttempts || []).find(
-                        (att: any) => att.assessmentId === targetAssessmentId
-                      );
+                      const result = applicationAssessmentResult(app);
+                      if (!result) return null;
+                      const { assessment: effectiveAssessment, attempt: customAttempt } = result;
 
                       return (
                         <div className="mb-5 p-3.5 rounded-2xl bg-[#f8f9fd] border border-indigo-100/90 shadow-2xs">
@@ -633,7 +629,7 @@ function CompanyApplicationsContent() {
                               <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-1">
                                 <Code2 className="h-3 w-3" /> Technical Test: {effectiveAssessment.title}
                               </span>
-                              {app.assignedAssessment ? (
+                              {result.assigned ? (
                                 <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 border border-purple-200">
                                   Custom Assigned
                                 </span>
@@ -643,7 +639,7 @@ function CompanyApplicationsContent() {
                                 </span>
                               )}
                             </div>
-                            <span className="text-[10px] text-slate-400">เกณฑ์ {effectiveAssessment.passingScore}%</span>
+                            <span className="text-[10px] text-slate-400">เกณฑ์ {result.passingScore}%</span>
                           </div>
                           {(() => {
                             if (!customAttempt) {
@@ -665,7 +661,7 @@ function CompanyApplicationsContent() {
                               );
                             }
                             const attemptPercentage = getAttemptPercentage(customAttempt);
-                            const isPassed = attemptPercentage !== null && attemptPercentage >= (effectiveAssessment.passingScore || 70);
+                            const isPassed = result.passed;
                             return (
                               <div className="flex items-center justify-between text-xs pt-0.5">
                                 <span className="font-semibold text-slate-800">
@@ -901,34 +897,31 @@ function CompanyApplicationsContent() {
               </div>
 
               <form onSubmit={handleSubmitEvaluation} className="space-y-5 pt-5">
-                {/* Custom Assessment Performance if available */}
-                {selectedAppForEval.job?.customAssessment && (
-                  <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-200/80 text-xs">
-                    <span className="font-bold text-indigo-900 block mb-1 flex items-center gap-1.5">
-                      <Code2 className="h-3.5 w-3.5 text-indigo-600" />
-                      ผลการทดสอบเฉพาะตำแหน่ง ({selectedAppForEval.job.customAssessment.title})
-                    </span>
-                    {(() => {
-                      const customAttempt = (selectedAppForEval.candidate?.assessmentAttempts || []).find(
-                        (att: any) => att.assessmentId === selectedAppForEval.job.customAssessmentId,
-                      );
-                      if (!customAttempt) {
-                        return (
-                          <span className="text-slate-500">ผู้สมัครยังไม่ได้ทำแบบทดสอบทักษะเฉพาะตำแหน่งนี้</span>
-                        );
-                      }
-                      const isPassed = (getAttemptPercentage(customAttempt) ?? -1) >= (selectedAppForEval.job.customAssessment.passingScore || 70);
-                      return (
+                {(() => {
+                  const result = applicationAssessmentResult(selectedAppForEval);
+                  if (!result) return null;
+                  const { assessment, attempt, percentage, passingScore, passed, assigned } = result;
+                  return (
+                    <div className="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-200/80 text-xs" aria-label="ผลข้อสอบประกอบการประเมิน">
+                      <span className="font-bold text-indigo-900 block mb-1 flex items-center gap-1.5">
+                        <Code2 className="h-3.5 w-3.5 text-indigo-600" />
+                        {assigned ? 'ผลการทดสอบที่มอบหมายเฉพาะผู้สมัคร' : 'ผลการทดสอบเฉพาะตำแหน่ง'} ({assessment.title})
+                      </span>
+                      {!attempt ? (
+                        <span className="text-slate-500">ผู้สมัครยังไม่ได้ทำแบบทดสอบนี้</span>
+                      ) : (
                         <div className="flex items-center justify-between mt-1 text-slate-700">
-                          <span>คะแนนสอบข้อสอบปฏิบัติล่าสุด: <strong className="text-indigo-700 text-sm">{formatAttemptScore(customAttempt)}</strong> (เกณฑ์ {selectedAppForEval.job.customAssessment.passingScore}%)</span>
-                          <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${isPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                            {isPassed ? 'ผ่านเกณฑ์' : 'ไม่ผ่านเกณฑ์'}
-                          </span>
+                          <span>คะแนนสอบล่าสุด: <strong className="text-indigo-700 text-sm">{formatAttemptScore(attempt)}</strong> (เกณฑ์ {passingScore}%)</span>
+                          {percentage !== null && (
+                            <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${passed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                              {passed ? 'ผ่านเกณฑ์' : 'ไม่ผ่านเกณฑ์'}
+                            </span>
+                          )}
                         </div>
-                      );
-                    })()}
-                  </div>
-                )}
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* 4 Competency Score Pickers */}
                 <div className="space-y-4">
