@@ -1,0 +1,42 @@
+{
+  "version": 2,
+  "qualityStatus": "PENDING_EXPERT_REVIEW_AND_PILOT",
+  "description": "JavaScript algorithm practice using Judge0. Draft assessment pending expert review and pilot calibration; covers only the stated tasks, not all JavaScript proficiency.",
+  "questions": [
+    {
+      "title": "Two Sum Target Matcher",
+      "prompt": "Implement solution(numsStr, target) in JavaScript. numsStr is a comma-separated string of integers. Return two different zero-based indices as a string 'i,j' whose values sum to target. Scan the second index j from left to right and return the first matching pair; for repeated values, use the most recent earlier index. Return an empty string if no pair exists. Example: solution('2,7,11,15', 9) returns '0,1'. Test inputs use JSON argument arrays, for example [\"2,7,11,15\",9].",
+      "difficulty": "MEDIUM",
+      "points": 50,
+      "evaluationMethod": "AUTOMATED_TEST_CASES",
+      "starterCode": "// JavaScript: implement the function below.\nfunction solution(numsStr, target) {\n  // TODO\n}",
+      "solutionCode": "function solution(numsStr, target) { const nums = String(numsStr).split(',').map(Number); const seen = new Map(); for (let j = 0; j < nums.length; j++) { const other = Number(target) - nums[j]; if (seen.has(other)) return seen.get(other) + ',' + j; seen.set(nums[j], j); } return ''; }",
+      "rubric": { "scoring": "50 * passedTestCases / totalTestCases", "criteria": ["Parse integer arguments", "Find distinct indices with the specified tie-break", "Handle repeated values and zero"], "qualityStatus": "PENDING_EXPERT_REVIEW_AND_PILOT" },
+      "testCases": [
+        { "input": "[\"2,7,11,15\",9]", "expectedOutput": "0,1" },
+        { "input": "[\"3,2,4\",6]", "expectedOutput": "1,2" },
+        { "input": "[\"3,3\",6]", "expectedOutput": "0,1" },
+        { "input": "[\"1,5,3,7\",8]", "expectedOutput": "1,2", "isHidden": true },
+        { "input": "[\"0,4,3,0\",0]", "expectedOutput": "0,3", "isHidden": true }
+      ]
+    },
+    {
+      "title": "Valid Palindrome Verifier",
+      "prompt": "Implement solution(str) in JavaScript. Keep only ASCII letters A-Z/a-z and digits 0-9, ignore letter case, and return boolean true if the remaining string reads identically forward and backward; otherwise return false. An empty normalized string is a palindrome. Example: solution('A man, a plan, a canal: Panama') returns true. Test inputs use JSON argument arrays, preserving commas and whitespace inside strings.",
+      "difficulty": "EASY",
+      "points": 50,
+      "evaluationMethod": "AUTOMATED_TEST_CASES",
+      "starterCode": "// JavaScript: implement the function below.\nfunction solution(str) {\n  // TODO\n}",
+      "solutionCode": "function solution(str) { const clean = String(str).toLowerCase().replace(/[^a-z0-9]/g, ''); return clean === clean.split('').reverse().join(''); }",
+      "rubric": { "scoring": "50 * passedTestCases / totalTestCases", "criteria": ["Normalize ASCII letters and digits", "Preserve single string input including punctuation", "Check symmetry including empty strings"], "qualityStatus": "PENDING_EXPERT_REVIEW_AND_PILOT" },
+      "testCases": [
+        { "input": "[\"A man, a plan, a canal: Panama\"]", "expectedOutput": "true" },
+        { "input": "[\"race a car\"]", "expectedOutput": "false" },
+        { "input": "[\" \"]", "expectedOutput": "true" },
+        { "input": "[\"Was it a car or a cat I saw?\"]", "expectedOutput": "true", "isHidden": true },
+        { "input": "[\"12321\"]", "expectedOutput": "true", "isHidden": true },
+        { "input": "[\"12345\"]", "expectedOutput": "false", "isHidden": true }
+      ]
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MatchingService } from '../matching/matching.service';
-import { ApplicationStatus } from '@smartcareer/shared';
+import { ApplicationStatus, applicationAssessmentView } from '@smartcareer/shared';
 
 @Injectable()
 export class ApplicationsService {
@@ -61,6 +61,7 @@ export class ApplicationsService {
         coverLetter: data.coverLetter,
         resumeUrl: data.resumeUrl,
         matchScoreAtApplication: match.matchScore,
+        matchAssessmentSnapshot: { ...match, policyVersion: 1 },
         statusHistory: {
           create: {
             newStatus: ApplicationStatus.APPLIED,
@@ -74,7 +75,7 @@ export class ApplicationsService {
       },
     });
 
-      return application;
+      return applicationAssessmentView(application);
     } catch (err: any) {
       this.logger.error(`Failed to apply for job ${jobId} (candidateUserId: ${candidateUserId}): ${err.message}`, err.stack);
       throw err;
@@ -122,7 +123,7 @@ export class ApplicationsService {
       },
     });
 
-    return updated;
+    return applicationAssessmentView(updated);
   }
 
   async getApplicationById(id: string) {
@@ -145,6 +146,6 @@ export class ApplicationsService {
       throw new NotFoundException('Application not found');
     }
 
-    return application;
+    return applicationAssessmentView(application);
   }
 }

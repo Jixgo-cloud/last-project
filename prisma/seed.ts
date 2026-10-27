@@ -459,61 +459,14 @@ async function main() {
     data: {
       title: 'Practical Coding: Algorithm & Data Manipulation Sandbox',
       slug: 'coding-algorithm-sandbox',
-      description: 'Write, debug, and execute clean JavaScript/TypeScript algorithms tested against automated test cases in the Judge0 sandbox.',
+      description: require('./assessment-bank/javascript-sandbox.json').description,
+      version: 2,
       type: AssessmentType.PRACTICAL_CODING,
       skillId: createdSkills.get('JavaScript').id,
       timeLimitMinutes: 30,
       passingScore: 70,
       questions: {
-        create: [
-          {
-            title: 'Two Sum Target Matcher',
-            prompt: 'Write a function `solution(numbers, target)` that takes a comma-separated list of numbers and a target integer. Return the indices of the two numbers that add up to target as "index1,index2" (0-indexed). Example: input "2,7,11,15" with target 9 should return "0,1".',
-            difficulty: QuestionDifficulty.MEDIUM,
-            points: 50,
-            starterCode: `// Write your solution here
-function solution(numsStr, target) {
-  const nums = String(numsStr).split(',').map(n => Number(n.trim()));
-  const targetNum = Number(target);
-  const map = new Map();
-
-  for (let i = 0; i < nums.length; i++) {
-    const complement = targetNum - nums[i];
-    if (map.has(complement)) {
-      return map.get(complement) + ',' + i;
-    }
-    map.set(nums[i], i);
-  }
-  return '';
-}`,
-            testCases: [
-              { input: '2,7,11,15, 9', expectedOutput: '0,1' },
-              { input: '3,2,4, 6', expectedOutput: '1,2' },
-              { input: '3,3, 6', expectedOutput: '0,1' },
-              { input: '1,5,3,7, 8', expectedOutput: '1,2', isHidden: true },
-              { input: '0,4,3,0, 0', expectedOutput: '0,3', isHidden: true },
-            ],
-          },
-          {
-            title: 'Valid Palindrome Verifier',
-            prompt: 'Write a function `solution(str)` that checks whether a given string is a palindrome, considering only alphanumeric characters and ignoring cases. Return `true` or `false`. Example: "A man, a plan, a canal: Panama" => true.',
-            difficulty: QuestionDifficulty.EASY,
-            points: 50,
-            starterCode: `// Write your solution here
-function solution(str) {
-  const clean = String(str).toLowerCase().replace(/[^a-z0-9]/g, '');
-  return clean === clean.split('').reverse().join('');
-}`,
-            testCases: [
-              { input: 'A man, a plan, a canal: Panama', expectedOutput: 'true' },
-              { input: 'race a car', expectedOutput: 'false' },
-              { input: ' ', expectedOutput: 'true' },
-              { input: 'Was it a car or a cat I saw?', expectedOutput: 'true', isHidden: true },
-              { input: '12321', expectedOutput: 'true', isHidden: true },
-              { input: '12345', expectedOutput: 'false', isHidden: true },
-            ],
-          },
-        ],
+        create: require('./assessment-bank/javascript-sandbox.json').questions,
       },
     },
   });

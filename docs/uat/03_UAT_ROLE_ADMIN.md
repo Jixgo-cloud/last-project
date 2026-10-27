@@ -1,3 +1,5 @@
+> คะแนน GitHub และสูตรจับคู่ในเอกสารรุ่นเก่านี้เลิกใช้แล้ว ดู [กติกาและการตรวจรับใหม่](../ASSESSMENT_POLICY_IMPLEMENTATION.md)
+
 # SmartCareer — UAT Test Scripts: Admin (System Administrator) Role
 > เอกสารขั้นตอนรุ่นเก่า: ดู [คู่มือปัจจุบัน](CURRENT_USER_GUIDE.md) และ [การเข้าสู่ระบบ GitHub/Google](AUTH_PROVIDER_POLICY.md) ก่อนทดสอบ การสมัครด้วยอีเมล รหัสผ่านของบัญชีทั่วไป และ LocalStorage ในเอกสารเดิมไม่ใช่พฤติกรรมปัจจุบัน
 

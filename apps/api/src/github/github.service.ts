@@ -1,7 +1,8 @@
+import { skillAttemptSelect } from '../assessments/skill-attempt-select';
 import { Injectable, Logger, ForbiddenException, ConflictException, NotFoundException, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import axios from 'axios';
-import { SkillCategory, githubEvidenceScore } from '@smartcareer/shared';
+import { SkillCategory, candidateSkillViews } from '@smartcareer/shared';
 
 interface RepoAnalysisResult {
   repoName: string;
@@ -17,7 +18,7 @@ interface RepoAnalysisResult {
     skillName: string;
     category: SkillCategory;
     dependency: string;
-    scoreWeight: number;
+    evidenceType: "LANGUAGE" | "DEPENDENCY";
   }>;
 }
 
@@ -25,7 +26,7 @@ interface RepoAnalysisResult {
 export class GithubService {
   private readonly logger = new Logger(GithubService.name);
 
-  // Comprehensive mapping from package names & keywords to standardized skill names
+  // Package-name hints mapped to skills; dependencies do not prove proficiency.
   private readonly dependencyMapping: Record<string, { skill: string; category: SkillCategory }> = {
     // Frontend & UI
     react: { skill: 'React', category: SkillCategory.FRONTEND },
@@ -147,13 +148,12 @@ export class GithubService {
     // 1. Fetch repositories
     const repos = await this.fetchUserRepositories(targetUsername);
 
-    // Strongest evidence wins; stars and repeated detections do not add points.
-    const detectedByName = new Map<string, { category: SkillCategory; practicalScore: number }>();
+    // Deduplicate repository context; never infer proficiency.
+    const detectedByName = new Map<string, { category: SkillCategory }>();
     for (const repo of repos) {
       for (const detected of repo.detectedSkills) {
         detectedByName.set(detected.skillName, {
           category: detected.category,
-          practicalScore: Math.max(detectedByName.get(detected.skillName)?.practicalScore || 0, githubEvidenceScore({evidences:[{repositoryId:repo.fullName,scoreContribution:detected.scoreWeight}]})),
         });
       }
     }
@@ -189,43 +189,37 @@ export class GithubService {
           })) });
         }
         const masterSkills = await tx.skill.findMany({ where: { name: { in: [...detectedByName.keys()] } } });
-        const existingSkills = await tx.candidateSkill.findMany({ where: { candidateId: profile.id } });
-        const existingBySkill = new Map(existingSkills.map(skill => [skill.skillId, skill]));
         const candidateSkillIds = new Map<string, string>();
         for (const skill of masterSkills) {
-          const practicalScore = detectedByName.get(skill.name)!.practicalScore;
-          const data = { practicalScore, verifiedScore: practicalScore };
+          const data = {};
           const saved = await tx.candidateSkill.upsert({
             where: { candidateId_skillId: { candidateId: profile.id, skillId: skill.id } },
             update: data, create: { ...data, candidateId: profile.id, skillId: skill.id },
           });
           candidateSkillIds.set(skill.name, saved.id);
-          existingBySkill.delete(skill.id);
         }
         const evidence = repos.flatMap(repo => repo.detectedSkills.map(detected => ({
           repositoryId: repositoryIds.get(repo.fullName)!,
           candidateSkillId: candidateSkillIds.get(detected.skillName)!,
           dependencyMatches: [detected.dependency], commitCount: 0, linesOfCode: 0,
-          scoreContribution: detected.scoreWeight,
+          scoreContribution: 0,
         })));
         if (evidence.length) await tx.gitHubEvidence.createMany({ data: evidence });
-        // Remove stale practical contributions while preserving quiz/code history.
-        for (const skill of existingBySkill.values()) {
-          await tx.candidateSkill.update({ where: { id: skill.id }, data: { practicalScore: 0, verifiedScore: 0 } });
-        }
       }, { timeout: 60000 });
     } catch (error) {
       this.logger.error('GitHub snapshot transaction failed', error instanceof Error ? error.stack : undefined);
       throw new ServiceUnavailableException('บันทึกข้อมูล GitHub ไม่สำเร็จ กรุณาลองใหม่ ข้อมูลเดิมยังคงอยู่');
     }
 
-    return this.prisma.candidateProfile.findUnique({
+    const synced = await this.prisma.candidateProfile.findUnique({
       where: { id: profile.id },
       include: {
         skills: { include: { skill: true, evidences: { include: { repository: true } } } },
         githubRepos: true,
+        assessmentAttempts: { select: skillAttemptSelect },
       },
     });
+    return { ...synced, skills: candidateSkillViews(synced?.skills, synced?.assessmentAttempts), assessmentAttempts: undefined };
   }
 
   private async fetchUserRepositories(username: string): Promise<RepoAnalysisResult[]> {
@@ -288,7 +282,7 @@ export class GithubService {
             skillName: mapped.skill,
             category: mapped.category,
             dependency: langName.toLowerCase(),
-            scoreWeight: 25,
+            evidenceType: "LANGUAGE",
           });
         }
       }
@@ -296,17 +290,7 @@ export class GithubService {
       throw error; // A partial snapshot must not replace existing evidence.
     }
 
-    // Every GitHub repo intrinsically proves Git version control competence
-    if (repo.size > 0 && !detectedSkills.some((ds) => ds.skillName === 'Git')) {
-      detectedSkills.push({
-        skillName: 'Git',
-        category: SkillCategory.DEVOPS,
-        dependency: 'git',
-        scoreWeight: 20,
-      });
-    }
-
-    // 2. Fetch real package.json dependencies from raw.githubusercontent.com
+    // 2. Read package.json dependency hints; presence does not prove use or proficiency.
     try {
       const defaultBranch = repo.default_branch || 'main';
       const rawPkgUrl = `https://raw.githubusercontent.com/${repo.full_name}/${defaultBranch}/package.json`;
@@ -323,7 +307,7 @@ export class GithubService {
                 skillName: mapping.skill,
                 category: mapping.category,
                 dependency: depName,
-                scoreWeight: 20,
+                evidenceType: "DEPENDENCY",
               });
             }
           }
@@ -333,22 +317,8 @@ export class GithubService {
       if (error.response?.status !== 404) throw error;
     }
 
-    // 3. Inspect topics or repo name for frameworks
-    const keywords = [...(repo.topics || []), repo.name.toLowerCase(), (repo.description || '').toLowerCase()];
-    for (const [key, mapping] of Object.entries(this.dependencyMapping)) {
-      if (keywords.some((k) => k.includes(key))) {
-        if (!detectedSkills.some((ds) => ds.skillName === mapping.skill)) {
-          detectedSkills.push({
-            skillName: mapping.skill,
-            category: mapping.category,
-            dependency: key,
-            scoreWeight: 20,
-          });
-        }
-      }
-    }
-
-    // If any testing framework is detected, also credit Automated Testing
+    // Repository name, description, topics and size are not skill evidence.
+    // A detected testing dependency also hints at Automated Testing, not proficiency.
     const hasTesting = detectedSkills.some((ds) =>
       ['Jest', 'Cypress', 'Playwright', 'Selenium'].includes(ds.skillName),
     );
@@ -357,7 +327,7 @@ export class GithubService {
         skillName: 'Automated Testing',
         category: SkillCategory.TESTING,
         dependency: 'automated-test-suite',
-        scoreWeight: 20,
+        evidenceType: "DEPENDENCY",
       });
     }
 
@@ -429,94 +399,8 @@ export class GithubService {
       profileData.publicRepos = repos.length;
     }
 
-    // Aggregate skill frequencies & weights
-    const skillCountMap = new Map<string, { count: number; category: SkillCategory; totalWeight: number }>();
-    for (const repo of repos) {
-      for (const ds of repo.detectedSkills) {
-        const existing = skillCountMap.get(ds.skillName) || { count: 0, category: ds.category, totalWeight: 0 };
-        existing.count += 1;
-        existing.totalWeight = Math.max(existing.totalWeight, githubEvidenceScore({evidences:[{repositoryId:repo.fullName,scoreContribution:ds.scoreWeight}]}));
-        skillCountMap.set(ds.skillName, existing);
-      }
-    }
-
-    // Calculate Competency Distribution across 5 core categories
-    const categories = [
-      SkillCategory.FRONTEND,
-      SkillCategory.BACKEND,
-      SkillCategory.DATABASE,
-      SkillCategory.DEVOPS,
-      SkillCategory.TESTING,
-    ];
-
-    const radar = categories.map((cat) => {
-      const skillsInCat = Array.from(skillCountMap.entries()).filter(
-        ([_, data]) => data.category === cat,
-      );
-
-      if (skillsInCat.length === 0) {
-        return {
-          category: cat,
-          subject: cat,
-          score: 0,
-          fullMark: 100,
-        };
-      }
-
-      const totalScore = skillsInCat.reduce((acc, [_, d]) => acc + d.totalWeight, 0);
-      const avgScore = Math.round(totalScore / skillsInCat.length);
-
-      return {
-        category: cat,
-        subject: cat,
-        score: avgScore,
-        fullMark: 100,
-      };
-    });
-
-    // Top Competency percentage chips
-    const topSkillChips = radar
-      .slice()
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 4)
-      .map((r) => ({
-        name: r.category.charAt(0) + r.category.slice(1).toLowerCase(),
-        percentage: `${r.score}%`,
-      }));
-
-    // Detect roles matching
-    const detectedSkillNames = new Set(
-      Array.from(skillCountMap.keys()).map((k) => k.toLowerCase()),
-    );
-    const checkFit = (reqs: string[]) => {
-      const matchCount = reqs.filter((r) => detectedSkillNames.has(r.toLowerCase())).length;
-      if (matchCount >= 3) return 'Strong';
-      if (matchCount >= 2) return 'Good fit';
-      return 'Possible';
-    };
-
-    const recommendedRoles = [
-      {
-        role: 'Full-Stack Developer',
-        skills: ['React', 'Node.js', 'TypeScript', 'Next.js'],
-        fitLevel: checkFit(['React', 'Node.js', 'TypeScript', 'Next.js']) as 'Strong' | 'Good fit' | 'Possible',
-      },
-      {
-        role: 'Frontend Developer',
-        skills: ['React', 'TypeScript', 'Next.js', 'Tailwind CSS'],
-        fitLevel: checkFit(['React', 'TypeScript', 'Next.js', 'Tailwind CSS']) as 'Strong' | 'Good fit' | 'Possible',
-      },
-      {
-        role: 'Backend Developer',
-        skills: ['Node.js', 'Prisma'],
-        fitLevel: checkFit(['Node.js', 'Prisma', 'PostgreSQL']) as 'Strong' | 'Good fit' | 'Possible',
-      },
-      {
-        role: 'Mobile Developer',
-        skills: ['React'],
-        fitLevel: checkFit(['React Native', 'Flutter', 'React']) as 'Strong' | 'Good fit' | 'Possible',
-      },
-    ];
+    // Repository context only. Public analysis cannot know assessed proficiency or career fit.
+    const detectedSkills = [...new Set(repos.flatMap(repo => repo.detectedSkills.map(s => s.skillName)))];
 
     // Top repositories (up to 4)
     const topRepositories = repos.slice(0, 4).map((r) => ({
@@ -524,6 +408,11 @@ export class GithubService {
       fullName: r.fullName,
       url: r.url,
       language: r.language,
+      languages: r.languages,
+      languageComposition: Object.entries(r.languages).map(([language, bytes]) => ({
+        language, bytes, repositoryCodePercentage: Object.values(r.languages).reduce((a, b) => a + b, 0) > 0
+          ? bytes / Object.values(r.languages).reduce((a, b) => a + b, 0) * 100 : null,
+      })),
       tags: [
         ...(r.language ? [r.language] : []),
         ...(r.topics || []).slice(0, 2),
@@ -533,9 +422,11 @@ export class GithubService {
 
     return {
       profile: profileData,
-      topSkillChips,
-      radar,
-      recommendedRoles,
+      detectedSkills,
+      assessmentStatus: "NOT_ASSESSED",
+      topSkillChips: [],
+      radar: [],
+      recommendedRoles: [],
       topRepositories,
     };
   }

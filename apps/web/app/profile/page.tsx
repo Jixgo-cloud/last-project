@@ -31,7 +31,7 @@ import {
   TrendingUp,
   Info,
 } from 'lucide-react';
-import { RadarChartDataPoint, CandidateEarnedBadge, githubEvidenceScore } from '@smartcareer/shared';
+import { RadarChartDataPoint, CandidateEarnedBadge, hasGithubEvidence, formatAssessmentSkill } from '@smartcareer/shared';
 
 function ProfileHubLoading() {
   return (
@@ -180,9 +180,10 @@ function ProfileHubContent() {
   // Quick Stats Calculations
   const verifiedSkillsCount = profile?.skills?.length || 0;
   const reposCount = profile?.githubRepos?.length || 0;
-  const avgRadarScore = radarData.length > 0
-    ? Math.round(radarData.reduce((acc, curr) => acc + curr.score, 0) / radarData.length)
-    : 0;
+  const measuredRadar = radarData.filter(d => d.score !== null);
+  const avgRadarScore = measuredRadar.length
+    ? Math.round(measuredRadar.reduce((sum, d) => sum + d.score!, 0) / measuredRadar.length)
+    : 'ยังไม่ประเมิน';
 
   const displayName = fullName || profile?.fullName || user?.email?.split('@')[0] || 'นักพัฒนา';
   const initialLetter = displayName.charAt(0).toUpperCase();
@@ -279,7 +280,7 @@ function ProfileHubContent() {
               <div className="min-w-0 p-2 sm:p-3.5 rounded-2xl bg-[#f9fafb] border border-slate-200/70 text-center sm:min-w-[105px]">
                 <div className="flex items-center justify-center gap-1 text-emerald-600 mb-0.5">
                   <TrendingUp className="h-3.5 w-3.5" />
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">GitHub</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">ผลประเมินเฉลี่ย</span>
                 </div>
                 <p className="text-xl sm:text-2xl font-black text-emerald-600">{avgRadarScore}</p>
                 <span className="text-[10px] text-slate-400">คะแนนเฉลี่ย</span>
@@ -323,7 +324,7 @@ function ProfileHubContent() {
             }`}
           >
             <Sparkles className="h-3.5 w-3.5" />
-            <span>เรดาร์หลักฐาน GitHub</span>
+            <span>ผลประเมินทักษะ</span>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 font-extrabold">Default</span>
           </button>
 
@@ -365,16 +366,16 @@ function ProfileHubContent() {
                         <div>
                           <div className="flex items-start gap-2">
                             <h2 className="text-base font-bold text-slate-900 tracking-tight">
-                              กราฟหลักฐานทักษะจาก GitHub
+                              กราฟผลประเมินทักษะ
                             </h2>
-                            <button type="button" aria-label="วิธีคิดคะแนนกราฟหลักฐานทักษะจาก GitHub"
+                            <button type="button" aria-label="วิธีคิดคะแนนกราฟผลประเมินทักษะ"
                               aria-expanded={showRadarExplanation} aria-controls="github-radar-explanation"
                               onClick={() => setShowRadarExplanation(value => !value)}
                               className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-indigo-600 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">
                               <Info className="h-5 w-5" aria-hidden="true" />
                             </button>
                           </div>
-                          <span className="text-[11px] text-[#667085]">คะแนนจากหลักฐานที่ตรวจพบ ไม่ใช่เปอร์เซ็นต์ความเชี่ยวชาญ</span>
+                          <span className="text-[11px] text-[#667085]">แสดงเฉพาะหมวดที่มีผลประเมิน ไม่ใช่ทุกทักษะในหมวด</span>
                         </div>
                       </div>
                       <span className="inline-flex items-center rounded-full bg-[#f4f5fa] border border-slate-200/80 px-3 py-1 text-[11px] font-semibold text-slate-700">
@@ -382,24 +383,19 @@ function ProfileHubContent() {
                       </span>
                     </div>
 
-                    <section id="github-radar-explanation" aria-label="คำอธิบายการคิดคะแนน GitHub" hidden={!showRadarExplanation}
+                    <section id="github-radar-explanation" aria-label="คำอธิบายผลประเมินทักษะ" hidden={!showRadarExplanation}
                       className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm leading-relaxed text-slate-700">
                       <h3 className="mb-2 font-bold text-indigo-950">กราฟนี้คิดคะแนนอย่างไร?</h3>
-                      <ol className="list-decimal space-y-2 pl-5">
-                        <li>ตรวจหลักฐานจากโครงการ GitHub ที่ซิงค์ไว้ เช่น ภาษาโปรแกรม รายการแพ็กเกจ ชื่อโครงการ คำอธิบาย และป้ายหัวข้อ</li>
-                        <li>พบภาษาโปรแกรม ให้ทักษะนั้น 85 คะแนน; พบเครื่องมือหรือเฟรมเวิร์ก ให้ 80 คะแนน และโครงการที่ไม่ว่างให้หลักฐาน Git 80 คะแนน หากพบทักษะซ้ำ ใช้คะแนนหลักฐานสูงสุด ไม่บวกตามจำนวนโครงการหรือดาว</li>
-                        <li>แต่ละด้านเป็นค่าเฉลี่ยของทักษะในหมวดนั้นที่พบหลักฐาน แล้วปัดเป็นจำนวนเต็ม เช่น JavaScript 85, HTML 85 และ React 80 ได้ FRONTEND ประมาณ 83 คะแนน</li>
-                      </ol>
-                      <p className="mt-3"><strong>ถ้าเป็น 0:</strong> ระบบยังไม่พบหลักฐานที่เข้ากฎตรวจจับในด้านนั้น ไม่ได้หมายความว่าคุณทำไม่เป็น ทักษะที่ไม่พบหลักฐานจะไม่ถูกนำมาเฉลี่ย</p>
-                      <p className="mt-2">คะแนนข้อสอบ Badge และผลประเมินบริษัทไม่รวมในกราฟนี้ เป้าหมายอาชีพที่แสดงยังไม่เปลี่ยนสูตรคะแนน</p>
-                      <p className="mt-2 font-medium">คะแนนสะท้อนการตรวจพบหลักฐานตามกฎของระบบ ไม่ใช่การรับรองคุณภาพโค้ดหรือระดับความเชี่ยวชาญ</p>
+                      <p>ใช้ผลสอบเชิงปฏิบัติล่าสุดที่ตรวจเสร็จและมีข้อมูลทักษะกับเกณฑ์ ณ วันสอบครบถ้วน ค่าเฉลี่ยแต่ละหมวดคิดเฉพาะทักษะที่ประเมินแล้ว และไม่แทนทักษะที่ยังไม่ประเมินด้วยศูนย์</p>
+                      <p>ผล 0% จากการสอบจริงต่างจาก “ยังไม่ประเมิน” หมวดที่ไม่มีผลสอบไม่ถูกวาดในกราฟ ผลสอบเก่าที่ผูกเกณฑ์ไม่ได้ยังอยู่ในประวัติ แต่ไม่ใช้คำนวณ</p>
+                      <p>ข้อสอบและเกณฑ์ยังรอผู้เชี่ยวชาญตรวจและทดลองใช้ คะแนนอธิบายผลในขอบเขตข้อสอบ ไม่รับรองความชำนาญทั้งหมด</p>
                     </section>
 
                     {/* Radar Graphic */}
                     <div className="h-[340px] w-full flex items-center justify-center my-2">
-                      {radarData.length > 0 ? (
+                      {measuredRadar.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
-                          <RadarChart cx="50%" cy="50%" outerRadius="78%" data={radarData}>
+                          <RadarChart cx="50%" cy="50%" outerRadius="78%" data={measuredRadar}>
                             <PolarGrid stroke="#e2e8f0" strokeDasharray="3 3" />
                             <PolarAngleAxis
                               dataKey="subject"
@@ -418,7 +414,7 @@ function ProfileHubContent() {
                         </ResponsiveContainer>
                       ) : (
                         <div className="text-center text-slate-400 py-12 text-xs">
-                          ยังไม่มีข้อมูลเรดาร์ทักษะ กรุณาซิงค์ GitHub
+                          ยังไม่ประเมิน กรุณาทำแบบทดสอบทักษะที่เกี่ยวข้อง
                         </div>
                       )}
                     </div>
@@ -427,7 +423,7 @@ function ProfileHubContent() {
                   {/* Score Badges Footer */}
                   <div className="grid grid-cols-5 gap-2 pt-4 border-t border-slate-100 text-center">
                     {radarData.map((d) => {
-                      const isHigh = d.score >= 80;
+                      const isHigh = d.score !== null && d.score >= 80;
                       return (
                         <div
                           key={d.category}
@@ -439,7 +435,7 @@ function ProfileHubContent() {
                         >
                           <p className="text-[9px] uppercase font-bold text-[#667085] tracking-wider truncate">{d.category}</p>
                           <p className={`text-base font-extrabold mt-0.5 ${isHigh ? 'text-[#4338ca]' : 'text-[#4f46e5]'}`}>
-                            {d.score}%
+                            {d.score === null ? 'ยังไม่ประเมิน' : `${d.score}%`}
                           </p>
                         </div>
                       );
@@ -458,9 +454,9 @@ function ProfileHubContent() {
                         </span>
                         <div>
                           <h2 className="text-base font-bold text-slate-900 tracking-tight">
-                            คะแนนหลักฐานจาก GitHub
+                            ผลประเมินและบริบท GitHub
                           </h2>
-                          <span className="text-[11px] text-[#667085]">คิดจากหลักฐานใน Repo เท่านั้น · ผลสอบแยกเป็น Badge</span>
+                          <span className="text-[11px] text-[#667085]">คะแนนจากแบบทดสอบ · GitHub เป็นบริบทของโครงการ</span>
                         </div>
                       </div>
                       <span className="text-[11px] font-bold text-[#4f46e5] bg-[#e8eaff] px-2.5 py-1 rounded-full">
@@ -473,14 +469,14 @@ function ProfileHubContent() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-1">
                           {profile.skills.map((cs: any) => (
                             <div
-                              key={cs.id}
+                              key={cs.skillId}
                               className="p-3.5 rounded-xl border border-slate-200/80 bg-[#fbfcfd] hover:bg-white hover:border-[#6366f1]/40 hover:shadow-xs transition duration-150"
                             >
                               <div className="flex items-start justify-between">
                                 <div>
                                   <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="font-bold text-slate-900 text-xs sm:text-sm">{cs.skill.name}</span>
-                                    {githubEvidenceScore(cs) > 0 ? (
+                                    {hasGithubEvidence(cs) ? (
                                       <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-200">
                                         <CheckCircle2 className="h-2.5 w-2.5" /> มีหลักฐาน GitHub
                                       </span>
@@ -493,19 +489,14 @@ function ProfileHubContent() {
                                   <span className="text-[10px] font-medium text-[#667085]">{cs.skill.category}</span>
                                 </div>
                                 <div className="text-right">
-                                  <span className={`text-sm sm:text-base font-extrabold ${githubEvidenceScore(cs) > 0 ? 'text-emerald-600' : 'text-[#4f46e5]'}`}>
-                                    {githubEvidenceScore(cs)}
+                                  <span className={`text-sm sm:text-base font-extrabold ${cs.assessmentStatus === 'GAP' ? 'text-amber-700' : 'text-slate-700'}`}>
+                                    {formatAssessmentSkill(cs)}
                                   </span>
-                                  <span className="text-[9px] text-slate-400 block">/ 100</span>
+
                                 </div>
                               </div>
 
-                              {/* Score breakdown pills */}
-                              <div className="mt-3 grid grid-cols-3 gap-1 text-[10px] pt-2 border-t border-slate-100 text-[#667085]">
-                                <div>Git: <span className="font-bold text-slate-800">{githubEvidenceScore(cs)}%</span></div>
-                                <div>ผล Quiz (แยก): <span className="font-bold text-slate-800">{cs.theoryScore}%</span></div>
-                                <div>ผล Code (แยก): <span className="font-bold text-slate-800">{cs.codingScore}%</span></div>
-                              </div>
+                              <p className="mt-2 text-xs text-slate-600">{cs.assessmentResult ? `เกณฑ์สอบ ${cs.assessmentResult.requiredScore}% · รุ่น ${cs.assessmentResult.assessmentVersion}` : 'ทำแบบทดสอบเพื่อประเมินทักษะนี้'}</p>
                             </div>
                           ))}
                         </div>
@@ -513,7 +504,7 @@ function ProfileHubContent() {
                         {/* Verification Guidance Note */}
                         <div className="mt-3.5 p-3 rounded-xl bg-indigo-50/70 border border-indigo-100/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-[#4338ca]">
                           <span className="font-medium">
-                            💡 <strong>คะแนนหลักฐาน GitHub:</strong> ใช้หลักฐานที่ตรวจพบ ไม่รวมผลสอบหรือจำนวนดาว และไม่ใช่การรับรองความเชี่ยวชาญ
+                            💡 <strong>ข้อมูล GitHub:</strong> ใช้บอกองค์ประกอบโครงการเท่านั้น ไม่สร้างคะแนนหรือช่องว่างทักษะ
                           </span>
                           <Link
                             href="/assessments"
@@ -526,7 +517,7 @@ function ProfileHubContent() {
                       </>
                     ) : (
                       <div className="text-center py-8 text-xs text-slate-400">
-                        ยังไม่มีหลักฐาน GitHub · ผลสอบและ Badge แสดงแยกด้านล่าง
+                        ยังไม่มีผลประเมินหรือบริบทโครงการ · เลือกทำแบบทดสอบที่เกี่ยวข้อง
                       </div>
                     )}
                   </div>
@@ -542,7 +533,7 @@ function ProfileHubContent() {
                           <h2 className="text-base font-bold text-slate-900 tracking-tight">
                             เหรียญรางวัลรายบททดสอบ (Assessment Badges)
                           </h2>
-                          <span className="text-[11px] text-[#667085]">ได้จากข้อสอบที่ผ่านเกณฑ์และเปิดเผยผลแล้ว ไม่เพิ่มคะแนน GitHub</span>
+                          <span className="text-[11px] text-[#667085]">แสดงการผ่านเกณฑ์ข้อสอบนั้น ไม่ใช่การรับรองทุกทักษะ</span>
                         </div>
                       </div>
                       <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200/80 px-2.5 py-1 rounded-full">
@@ -592,7 +583,7 @@ function ProfileHubContent() {
                       <div className="text-center py-6 px-4 rounded-xl border border-dashed border-slate-200 bg-[#fbfcfd]">
                         <p className="text-xs text-slate-500 font-medium">ยังไม่มีเหรียญรางวัลรายบททดสอบ</p>
                         <p className="text-[11px] text-slate-400 mt-1">
-                          เมื่อทำแบบทดสอบ Quiz หรือ Coding Challenge ผ่าน 60% จะได้รับเหรียญรับรองเฉพาะวิชานั้นทันที
+                          เมื่อทำแบบทดสอบผ่านเกณฑ์ของข้อสอบนั้น ระบบจะแสดงเหรียญตามผลประเมิน ไม่ใช่การรับรองความชำนาญทั้งภาษา
                         </p>
                         <Link
                           href="/assessments"

@@ -20,18 +20,3 @@ export function filterCodingApplications<T extends { codingResult?: { percentage
   });
   return filtered;
 }
-
-/** Evidence strength, not proficiency. Repeated repos, stars and exams never add points. */
-export function githubEvidenceScore(skill: { evidences?: { repositoryId?: string | null; scoreContribution?: number }[] }) {
-  const weights = (skill.evidences || []).filter(e => e.repositoryId && typeof e.scoreContribution === 'number' && Number.isFinite(e.scoreContribution) && e.scoreContribution > 0).map(e => e.scoreContribution!);
-  return weights.length ? Math.min(95, 60 + Math.max(...weights)) : 0;
-}
-
-/** Compatibility alias for radar callers; exams are deliberately excluded. */
-export const evidenceWeightedScore = githubEvidenceScore;
-
-/** Normalize legacy combined caches without rewriting historical exam records. */
-export function githubSkillView<T extends { evidences?: { repositoryId?: string | null; scoreContribution?: number }[] }>(skill: T) {
-  const score = githubEvidenceScore(skill);
-  return { ...skill, practicalScore: score, verifiedScore: score, hasGithubEvidence: score > 0, scoreSource: 'GITHUB_EVIDENCE' as const };
-}

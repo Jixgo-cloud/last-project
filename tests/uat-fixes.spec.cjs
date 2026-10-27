@@ -13,6 +13,40 @@ test('Salary labels preserve currency, missing endpoints and a genuine zero', ()
 });
 const { candidateFeedback } = require('../apps/api/dist/assessments/candidate-feedback');
 const { GithubService } = require('../apps/api/dist/github/github.service');
+test('GitHub detection ignores repository text and size while preserving language and dependency hints', async (t) => {
+  const service = new GithubService({});
+  const repo = {
+    name: 'react-jest-git', full_name: 'qa/react-jest-git',
+    description: 'React, Jest, Docker and Git expertise', topics: ['react', 'jest', 'docker', 'git'],
+    size: 100, languages_url: 'https://api.github.com/repos/qa/example/languages',
+  };
+  let languages = {};
+  let pkg;
+  t.mock.method(axios, 'get', async (url) => {
+    if (url === repo.languages_url) return { data: languages };
+    assert.match(url, /\/package\.json$/);
+    if (!pkg) throw Object.assign(new Error('Not found'), { response: { status: 404 } });
+    return { data: pkg };
+  });
+
+  const textOnly = await service.analyzeRepoData(repo, {});
+  assert.deepEqual(textOnly.detectedSkills, []);
+  assert.equal(textOnly.repoName, repo.name);
+  assert.equal(textOnly.description, repo.description);
+  assert.deepEqual(textOnly.topics, repo.topics);
+
+  languages = { TypeScript: 100, Dockerfile: 20 };
+  pkg = { dependencies: { react: '^19' }, devDependencies: { jest: '^30' } };
+  const result = await service.analyzeRepoData(repo, {});
+  assert.deepEqual(result.detectedSkills.map(s => [s.skillName, s.evidenceType]), [
+    ['TypeScript', 'LANGUAGE'], ['Docker', 'LANGUAGE'], ['React', 'DEPENDENCY'], ['Jest', 'DEPENDENCY'], ['Automated Testing', 'DEPENDENCY'],
+  ]);
+  assert.ok(result.detectedSkills.every(skill => skill.scoreWeight === undefined));
+  // A populated package.json with no matching tools still cannot infer skills from metadata.
+  languages = {};
+  pkg = { dependencies: { 'unrelated-tool': '1.0.0' } };
+  assert.deepEqual((await service.analyzeRepoData(repo, {})).detectedSkills, []);
+});
 const { CompanyService } = require('../apps/api/dist/company/company.service');
 test('Job deletion preserves every application round and rejects foreign jobs without reading their history', async () => {
   for (const owned of [true,false]) {
@@ -821,7 +855,7 @@ test('A repeated GitHub skill is written once, keeps quiz/code scores and batche
     skill:{createMany:async()=>{},findMany:async()=>[{id:'js',name:'JavaScript'}]},
     candidateSkill:{
       findMany:async()=>[{id:'existing',skillId:'js',theoryScore:100,codingScore:50},{id:'stale',skillId:'old',theoryScore:50,codingScore:100}],
-      upsert:async args=>{skillWrites++;assert.deepEqual(args.update,{practicalScore:70,verifiedScore:70});return{id:'existing'};},
+      upsert:async args=>{skillWrites++;assert.deepEqual(args.update,{});return{id:'existing'};},
       update:async args=>{staleUpdate=args;},
     },
   };
@@ -832,7 +866,8 @@ test('A repeated GitHub skill is written once, keeps quiz/code scores and batche
   assert.equal(skillWrites,1);
   assert.equal(evidence.length,16);
   assert.ok(evidence.every(row=>row.commitCount===0&&row.linesOfCode===0));
-  assert.deepEqual(staleUpdate.data,{practicalScore:0,verifiedScore:0});
+  assert.equal(staleUpdate,undefined);
+  assert.ok(evidence.every(row=>row.scoreContribution===0));
 });
 
 test('Foreign job scope fails before querying any applications; owned scope reaches the database', async () => {
@@ -847,7 +882,7 @@ test('Foreign job scope fails before querying any applications; owned scope reac
   assert.deepEqual(query.where.job,{companyId:'company',id:'owned'});
   const attempts=query.include.candidate.include.assessmentAttempts;
   assert.deepEqual(attempts.where.assessment.OR,[{companyId:'company'},{companyId:null}]);
-  assert.equal(attempts.select.snapshot,undefined);
+  assert.equal(attempts.select.snapshot,true);
   assert.equal(attempts.select.sourceCode,undefined);
 });
 
@@ -865,7 +900,7 @@ test('Profile actions use the selected application and exclude another companyâ€
   assert.equal(result.application.id,'round-1');
   const attempts=candidateQuery.include.assessmentAttempts;
   assert.deepEqual(attempts.where.assessment.OR,[{companyId:'owner'},{companyId:null}]);
-  for(const field of ['snapshot','sourceCode','draftCode','evaluationSnapshot','answers']) assert.equal(attempts.select[field],undefined);
+  for(const field of ['sourceCode','draftCode','evaluationSnapshot','answers']) assert.equal(attempts.select[field],undefined);
   candidateQuery=undefined;
   prisma.jobApplication.findFirst=async()=>null;
   await assert.rejects(service.getCandidateProfile('user','candidate','foreign-round'), /only view/);

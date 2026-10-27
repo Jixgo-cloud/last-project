@@ -89,13 +89,10 @@ test('Personal development plan uses only owned explicit feedback, matches cours
   assert.equal(plan.evaluations[0].skills[0].steps.length,4);
   assert.equal(plan.evaluations[1].legacy,true);assert.deepEqual(plan.evaluations[1].skills,[]);
 });
-const {codingScreeningResult,filterCodingApplications,evidenceWeightedScore}=require('@smartcareer/shared');
-test('Radar has no invented baseline and only evidenced GitHub scores contribute',()=>{
-  assert.equal(evidenceWeightedScore({practicalScore:100,theoryScore:0,codingScore:0,evidences:[]}),0);
-  assert.equal(evidenceWeightedScore({practicalScore:80,theoryScore:50,codingScore:100,evidences:[{repositoryId:'r',scoreContribution:20}]}),80);
-  assert.equal(evidenceWeightedScore({codingScore:50}),0);
-  assert.equal(evidenceWeightedScore({practicalScore:100,evidences:[{repositoryId:'r',scoreContribution:20},{repositoryId:'r',scoreContribution:20}]}),80);
-  assert.equal(evidenceWeightedScore({theoryScore:NaN,codingScore:-5}),0);
+const {codingScreeningResult,filterCodingApplications,candidateSkillViews,hasGithubEvidence}=require('@smartcareer/shared');
+test('Repository evidence never becomes a skill assessment',()=>{
+ const view=candidateSkillViews([{skillId:'s',practicalScore:100,codingScore:100,evidences:[{repositoryId:'r',scoreContribution:20}]}])[0];
+ assert.equal(view.assessmentScore,null);assert.equal(view.hasGithubEvidence,true);
 });
 test('Coding screening uses graded real percentages, includes zero, and scopes assigned exams',()=>{
  const attempt=(id,score,status='COMPLETED',type='PRACTICAL_CODING')=>({id,assessmentId:id,startedAt:'2026-10-14',status,score,maxScore:50,assessment:{type,title:id}});
@@ -114,43 +111,32 @@ test('Coding filters distinguish absent from zero and sort absent last without m
  assert.equal(filterCodingApplications(apps,'0','LATEST').length,3);
  assert.equal(apps[0].id,'none');
 });
-test('Radar averages measured skill scores per category and leaves absent categories at zero',async()=>{
+test('Radar averages measured skill scores per category and leaves absent categories unassessed',async()=>{
  const {CandidateService}=require('../apps/api/dist/candidate/candidate.service');
  const service=new CandidateService({candidateProfile:{findUnique:async()=>({skills:[
   {skill:{category:'FRONTEND'},codingScore:100,theoryScore:50,practicalScore:100,evidences:[]},
   {skill:{category:'FRONTEND'},codingScore:0,theoryScore:0,practicalScore:100,evidences:[]}
  ]})}});
  const radar=await service.getRadarData('qa');
- assert.equal(radar.length,5);assert.equal(radar.find(p=>p.category==='FRONTEND').score,0);
- assert.equal(radar.find(p=>p.category==='BACKEND').score,0);
+ assert.equal(radar.length,5);assert.equal(radar.find(p=>p.category==='FRONTEND').score,null);
+ assert.equal(radar.find(p=>p.category==='BACKEND').score,null);
 });
 test('Coding result survives more than five newer unrelated exams',()=>{
  const attempts=Array.from({length:8},(_,i)=>({id:'t'+i,assessmentId:'t'+i,startedAt:'2026-10-14',status:'COMPLETED',percentage:100,assessment:{type:'THEORY'}}));
  attempts.push({id:'coding',assessmentId:'coding',startedAt:'2026-10-01',status:'COMPLETED',percentage:65,assessment:{type:'PRACTICAL_CODING'}});
  assert.equal(codingScreeningResult(attempts).percentage,65);
 });
-test('GitHub evidence score ignores exam scores, stars, repeated evidence and cached combined score',()=>{
- const {githubEvidenceScore}=require('@smartcareer/shared');
- const base={evidences:[{repositoryId:'repo',scoreContribution:25}]};
- assert.equal(githubEvidenceScore(base),85);
- assert.equal(githubEvidenceScore({...base,theoryScore:100,codingScore:100,verifiedScore:100,practicalScore:100,stars:999}),85);
- assert.equal(githubEvidenceScore({evidences:[...base.evidences,...base.evidences]}),85);
- assert.equal(githubEvidenceScore({theoryScore:100,codingScore:100,isVerified:true}),0);
+test('Repository evidence is contextual regardless of its historical weight',()=>{
+ assert.equal(hasGithubEvidence({evidences:[{repositoryId:'r',scoreContribution:0}]}),true);
+ assert.equal(hasGithubEvidence({evidences:[]}),false);
 });
-test('Single and batch matching ignore exam-only skills and remain identical after exam score changes',async()=>{
+test('Single and batch matching cannot score candidates without assessment attempts',async()=>{
  const {MatchingService}=require('../apps/api/dist/matching/matching.service');
- const skill={skillId:'react',skill:{id:'react',name:'React'},practicalScore:100,verifiedScore:100,isVerified:true,theoryScore:100,codingScore:100,evidences:[]};
- const candidate={targetCareer:'Frontend Developer',skills:[skill]};
- const job={id:'job',title:'Frontend Developer',skills:[{skillId:'react',skill:{name:'React'},isRequired:true,minimumScore:80}]};
- const service=new MatchingService({candidateProfile:{findUnique:async()=>candidate},job:{findUnique:async()=>job}});
- assert.equal((await service.calculateMatchScore('c','job')).matchScore,0);
- assert.equal((await service.calculateBatchMatchScores('c',[job])).get('job'),0);
- skill.evidences=[{repositoryId:'r',scoreContribution:20}];
- const before=await service.calculateMatchScore('c','job');
- assert.equal(before.matchedSkills[0].userScore,80);
- skill.theoryScore=0;skill.codingScore=0;skill.isVerified=false;
- assert.equal((await service.calculateMatchScore('c','job')).matchScore,before.matchScore);
- assert.equal((await service.calculateBatchMatchScores('c',[job])).get('job'),before.matchScore);
+ const job={id:'job',skills:[{skillId:'react',skill:{name:'React'},isRequired:true,minimumScore:80}]};
+ const service=new MatchingService({assessmentAttempt:{findMany:async()=>[]},job:{findUnique:async()=>job}});
+ const result=await service.calculateMatchScore('c','job');
+ assert.equal(result.matchScore,null);
+ assert.deepEqual((await service.calculateBatchMatchScores('c',[job])).get('job'),result);
 });
 test('Recording exam result retains best exam score but never writes GitHub score or verification',async()=>{
  const {AssessmentsService}=require('../apps/api/dist/assessments/assessments.service');
@@ -161,19 +147,18 @@ test('Recording exam result retains best exam score but never writes GitHub scor
  assert.deepEqual(write.update,{codingScore:75});
  assert.deepEqual(write.create,{candidateId:'candidate',skillId:'skill',codingScore:50});
 });
-test('Adding an exam-only skill cannot dilute a GitHub radar category',async()=>{
+test('Adding an unassessed cache cannot manufacture a radar result',async()=>{
  const {CandidateService}=require('../apps/api/dist/candidate/candidate.service');
  const skills=[{skill:{category:'FRONTEND'},evidences:[{repositoryId:'r',scoreContribution:20}]}];
  const service=new CandidateService({candidateProfile:{findUnique:async()=>({skills})}});
  const before=await service.getRadarData('qa');
  skills.push({skill:{category:'FRONTEND'},codingScore:100,evidences:[]});
  assert.deepEqual(await service.getRadarData('qa'),before);
- assert.equal(before.find(p=>p.category==='FRONTEND').score,80);
+ assert.equal(before.find(p=>p.category==='FRONTEND').score,null);
 });
-test('Legacy score view recalculates from evidence without mutating exam records',()=>{
- const {githubSkillView}=require('@smartcareer/shared');
- const stored={verifiedScore:100,practicalScore:95,theoryScore:100,codingScore:75,evidences:[]};
- const view=githubSkillView(stored);
- assert.equal(view.verifiedScore,0);assert.equal(view.practicalScore,0);assert.equal(view.hasGithubEvidence,false);
- assert.equal(view.theoryScore,100);assert.equal(view.codingScore,75);assert.equal(stored.verifiedScore,100);
+test('Legacy view preserves stored history while presenting unknown proficiency',()=>{
+ const stored={skillId:'s',verifiedScore:100,practicalScore:95,theoryScore:100,codingScore:75,evidences:[]};
+ const view=candidateSkillViews([stored])[0];
+ assert.equal(view.verifiedScore,null);assert.equal(view.practicalScore,null);assert.equal(view.assessmentScore,null);
+ assert.equal(view.hasGithubEvidence,false);assert.equal(stored.verifiedScore,100);
 });

@@ -612,6 +612,7 @@ export default function AssessmentRunnerPage() {
                 <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight">
                   {assessment.title}
                 </h1>
+                {!assessment.companyId && <p className="text-xs text-amber-800 mt-2">ข้อสอบและเกณฑ์รอผู้เชี่ยวชาญตรวจและทดลองใช้ ผลประเมินสะท้อนเฉพาะขอบเขตที่ทดสอบ</p>}
                 <span className="text-[10px] font-semibold bg-[#e8eaff] text-[#4f46e5] px-2.5 py-0.5 rounded-full border border-[#dce0ff]">
                   {assessment.type === AssessmentType.PRACTICAL_CODING
                     ? 'Strict Sandbox Coding'
@@ -1005,7 +1006,7 @@ export default function AssessmentRunnerPage() {
                               ได้รับเหรียญทักษะเฉพาะ: {assessment.title}
                             </div>
                             <div className="text-[11px] text-indigo-700 mt-0.5">
-                              เหรียญแสดงผลผ่านข้อสอบนี้ โดยไม่เพิ่มคะแนนหลักฐาน GitHub
+                              เหรียญแสดงผลผ่านข้อสอบนี้ ไม่ใช่การรับรองความชำนาญทั้งหมด
                             </div>
                           </div>
                         </div>

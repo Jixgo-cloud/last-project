@@ -95,8 +95,9 @@ flowchart TD
 | ข้อมูลเริ่มจาก | บันทึกเป็น | โมดูลที่นำไปใช้ต่อ | ความสัมพันธ์ |
 |---|---|---|---|
 | สมัครบัญชี/เข้าสู่ระบบ | User และ CandidateProfile หรือ Company กับ CompanyMember | Candidate, Company, Admin และระบบตรวจสิทธิ์ | บัญชีหนึ่งมีบทบาทกำหนดว่าผู้ใช้ทำงานส่วนใดได้ |
-| โปรไฟล์ GitHub | GitHubRepository และ GitHubEvidence | Candidate, Company, Matching | Evidence บอกว่าพบ skill ใดใน repository ใด แล้วเชื่อมกับ CandidateSkill |
-| ผลจาก GitHub/ข้อสอบ | CandidateSkill | Matching, Recommendations, Candidate, Company | หนึ่งแถวคือคะแนนของผู้สมัครหนึ่งคนต่อหนึ่ง Skill |
+| โปรไฟล์ GitHub | GitHubRepository และ GitHubEvidence | Candidate, Company | Evidence บอกว่าพบ skill ใดใน repository ใด แล้วเชื่อมกับ CandidateSkill |
+| บริบททักษะและ cache เดิม | CandidateSkill | Candidate, Company | ไม่ใช้ cache เป็นผลประเมิน |
+| ผลสอบที่ผูกเกณฑ์ | AssessmentAttempt.snapshot + ผลที่ตรวจเสร็จ | Matching, Recommendations, Candidate, Company | ใช้ผลล่าสุดที่เข้าเกณฑ์ต่อ skillId |
 | ประกาศงานจากบริษัทหรือแหล่งงาน | Job และ JobSkill | Jobs, Matching, Applications | JobSkill แยกว่าทักษะใดจำเป็นหรือเป็นทักษะเสริม |
 | คำขอสมัคร | JobApplication และ ApplicationStatusHistory | Company, Candidate, Evaluations, Notifications | ใบสมัครชี้ไปที่ผู้สมัครและงาน; ประวัติสถานะแยกเก็บทุกการเปลี่ยน |
 | การมอบหมาย/ทำข้อสอบ | Assessment, AssessmentAttempt, AssessmentAnswer | Company, Candidate, Assessments และ Admin | Attempt ผูกผู้สอบกับข้อสอบ และ Answer เก็บคำตอบของแต่ละข้อ |
@@ -108,15 +109,9 @@ flowchart TD
 
 ### ผลจับคู่งาน (MatchScoreResult)
 
-MatchingModule รับข้อมูลทักษะผู้สมัครกับทักษะที่งานต้องการ แล้วส่งกลับ:
+`matchScore` เป็น number หรือ null; `status` เป็น AWAITING_ASSESSMENT/PRELIMINARY/ASSESSED แสดง `assessedCount`, `totalSkills`, `assessmentCoverage` พร้อมคะแนนเสมอ requiredCoverage/preferredCoverage เป็นเครดิตเฉพาะกลุ่มที่มีผล (ไม่มีผลคืน null) ส่วน careerAlignment ไม่ใช้และคืน null
 
-- **matchScore** — คะแนนรวมความเหมาะสม
-- **requiredCoverage / preferredCoverage** — ระดับการครอบคลุมทักษะจำเป็นและทักษะเสริม
-- **careerAlignment** — ความใกล้เคียงระหว่างเป้าหมายอาชีพกับชื่อตำแหน่ง
-- **matchedSkills** — ทักษะที่ผ่านเกณฑ์ พร้อมคะแนนผู้สมัครและระดับที่งานต้องการ
-- **missingSkills** — ทักษะที่ยังไม่ถึงเกณฑ์หรือยังไม่มีข้อมูล
-
-คะแนนรวมใช้สัดส่วน 70% ทักษะจำเป็น, 20% ทักษะเสริม และ 10% ความสอดคล้องกับเป้าหมายอาชีพ ข้อมูลนี้ใช้แสดงงานและบันทึกคะแนน ณ เวลาสมัคร
+`matchedSkills` คือมีผลถึงเกณฑ์; `missingSkills` คือช่องว่างจากผลสอบจริง; `unassessedSkills` คือยังไม่มีผลที่ใช้ได้และ userScore=null ไม่ใส่ทักษะที่ยังไม่ประเมินในช่องว่าง ดูสูตรและตัวอย่างใน README หัวข้อ 6 และ [สัญญา API](ASSESSMENT_POLICY_IMPLEMENTATION.md)
 
 ### ข้อมูลใบสมัครและการแจ้งเตือน
 
@@ -137,7 +132,7 @@ Assessment อธิบายชุดข้อสอบ; Question ระบุ�
 | โมดูล | หน้าที่ในเส้นทางข้อมูล |
 |---|---|
 | SkillsModule | อ่านรายการ Skill และกรอบมาตรฐานมาให้หน้าเว็บ; การเพิ่มรายการทำผ่านหลังบ้านหรือการตรวจพบจาก GitHub/ingestion |
-| RecommendationsModule | อ่าน CandidateSkill และเป้าหมายอาชีพ แล้วค้น Course/CourseSkill; ในโค้ดมีการโหลด CompanyEvaluation แต่ไม่ได้เอามาคำนวณ gap |
+| RecommendationsModule | อ่าน AssessmentAttempt, งานที่เปิดและเป้าหมายอาชีพ แยกยังไม่ประเมินออกจากช่องว่างก่อนค้น Course/CourseSkill |
 | EvaluationsModule | บันทึกและอ่าน CompanyEvaluation แยกจากคะแนน CandidateSkill; จึงเป็น feedback สำหรับการรับสมัคร ไม่ใช่คะแนนทักษะอัตโนมัติ |
 | AdminModule | อ่านหรือแก้ข้อมูลหลายกลุ่มโดยตรง เช่น ผู้ใช้ บริษัท Skill, Assessment, Course และ IngestionLog; ไม่ใช่ตัวกลางที่ทุกโมดูลต้องผ่าน |
 | HealthModule | ส่งคำถามสั้น ๆ ไปตรวจฐานข้อมูลว่าตอบสนองอยู่หรือไม่ แล้วส่งสถานะกลับระบบ deployment |
@@ -150,8 +145,8 @@ Assessment อธิบายชุดข้อสอบ; Question ระบุ�
 - เส้นระหว่างโมดูลไม่ได้หมายความว่าโมดูลหนึ่งส่ง “ทุกฟิลด์” ให้อีกโมดูล เส้นและตารางระบุเฉพาะข้อมูลที่ใช้ในงานนั้น
 - โมดูลอาจอ่านข้อมูลที่อีกโมดูลสร้างไว้ แม้ไม่มีเส้นเรียกกันตรง ๆ เพราะข้อมูลถูกบันทึกไว้ในฐานข้อมูลกลาง
 - CompanyEvaluation ถูกเก็บและแสดงได้ แต่ยังไม่ไหลไปปรับ CandidateSkill หรือผล skill gap
-- คะแนนการจับคู่กับ badge ยืนยันทักษะเป็นคนละผลลัพธ์; การจับคู่งานใช้ practicalScore ก่อนเมื่อมีค่า ส่วนคะแนนสอบช่วยยืนยัน badge และใช้ประกอบ skill gap
-- ค่า commitCount และ linesOfCode ที่บันทึกกับ GitHubEvidence ใน sync ปัจจุบันเป็นค่ากึ่งสุ่ม ไม่ใช่ค่าที่อ่านจริงจาก GitHub
+- Badge และ matching เป็นคนละผลลัพธ์ Matching ใช้ผลสอบที่ผูกเกณฑ์ครบถ้วน ไม่ใช้ practicalScore; ผลบางส่วนต้องแสดง coverage
+- ค่า commitCount และ linesOfCode เป็น placeholder 0 ไม่ใช่การวัดจริงและไม่ใช้ให้คะแนน
 
 ## 6. ไฟล์โค้ดที่เป็นแหล่งของแต่ละเส้นทาง
 

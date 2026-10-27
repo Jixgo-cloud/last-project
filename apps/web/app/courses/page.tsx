@@ -1,4 +1,5 @@
 'use client';
+import AssessmentPlan, { AssessmentPlanItem } from '@/components/AssessmentPlan';
 
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import Image from 'next/image';
@@ -23,12 +24,13 @@ import { SkillGapItem, CourseSource, CAREER_TRACK_LABELS } from '@smartcareer/sh
 
 export default function CoursesPage() {
   const { user } = useAuth();
-  const [data, setData] = useState<{ targetCareer: string; gaps: SkillGapItem[] } | null>(null);
+  const [data, setData] = useState<{ targetCareer: string; gaps: SkillGapItem[]; assessmentPlan: AssessmentPlanItem[]; relevantJobCount: number } | null>(null);
   const [allCourses, setAllCourses] = useState<any[]>([]);
   const [skillsList, setSkillsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [coursesLoading, setCoursesLoading] = useState(false);
 
+  const [assessmentPlanError, setAssessmentPlanError] = useState(false);
   // Filters
   const [keyword, setKeyword] = useState('');
   const keywordRef = useRef('');
@@ -36,20 +38,24 @@ export default function CoursesPage() {
   const [selectedCareer, setSelectedCareer] = useState<string>('ALL');
   const [selectedSkillId, setSelectedSkillId] = useState<string>('ALL');
 
-  // Load initial gap data and skills
+  // Keep unavailable assessment data distinct from an empty gap list.
   useEffect(() => {
     const promises = [apiRequest('/skills').catch(() => [])];
-    if (user) {
-      promises.push(apiRequest('/recommendations/skill-gaps').catch(() => null));
+    let active = true;
+    setData(null);
+    setAssessmentPlanError(false);
+    if (user?.role === 'CANDIDATE') {
+      promises.push(apiRequest('/recommendations/skill-gaps').catch(() => {
+        if (active) setAssessmentPlanError(true);
+        return null;
+      }));
     }
-
-    Promise.all(promises)
-      .then(([skills, gapData]) => {
-        if (skills) setSkillsList(skills);
-        if (gapData) setData(gapData);
-      })
-      .catch((e) => console.error(e))
-      .finally(() => setLoading(false));
+    Promise.all(promises).then(([skills, gapData]) => {
+      if (!active) return;
+      if (skills) setSkillsList(skills);
+      if (gapData) setData(gapData);
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, [user]);
 
   // Fetch courses whenever filters change
@@ -138,6 +144,7 @@ export default function CoursesPage() {
           </p>
         </div>
 
+        {assessmentPlanError && <p role="alert" className="mb-4 text-amber-800">โหลดผลประเมินส่วนบุคคลไม่สำเร็จ จึงยังสรุปช่องว่างไม่ได้ กรุณาโหลดหน้านี้ใหม่ คอร์สด้านล่างเป็นรายการทั่วไป</p>}
         {loading ? (
           <div className="py-28 text-center text-slate-400 flex flex-col items-center justify-center gap-3">
             <div className="h-8 w-8 rounded-full border-2 border-[#6366f1] border-t-transparent animate-spin" />
@@ -145,6 +152,7 @@ export default function CoursesPage() {
           </div>
         ) : (
           <div className="space-y-12">
+            {data && <AssessmentPlan items={data.assessmentPlan || []} jobCount={data.relevantJobCount || 0} />}
             {/* Skill Gaps Section (if candidate logged in & has gaps) */}
             {data && data.gaps && data.gaps.length > 0 && (
               <section className="rounded-[20px] border border-slate-200/90 bg-white/95 p-6 sm:p-8 shadow-[0_12px_32px_rgba(15,23,42,0.04)]">
@@ -155,7 +163,7 @@ export default function CoursesPage() {
                       ทักษะสำคัญที่ควรพัฒนาเร่งด่วน (Priority Skill Gaps)
                     </h2>
                     <p className="text-xs text-[#667085] mt-1">
-                      เปรียบเทียบคะแนนหลักฐาน GitHub ของคุณกับเป้าหมายของตำแหน่ง (ไม่รวมผลสอบ) {data.targetCareer}
+                      เทียบผลประเมินกับเกณฑ์ที่ประกาศงานระบุ สำหรับเป้าหมาย {data.targetCareer}
                     </p>
                   </div>
                 </div>

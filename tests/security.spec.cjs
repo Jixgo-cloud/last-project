@@ -255,3 +255,15 @@ test('Judge outage fails safely and never evaluates applicant source in the API 
     assert.equal(client.runLocalRawFallback, undefined);
   } finally { axios.post = original; }
 });
+
+test('Judge internal, queued and unknown results never become candidate zero scores', async () => {
+  const original = axios.post;
+  try {
+    for (const id of [1, 2, 13, 99]) {
+      axios.post = async () => ({ data: { status: { id }, stdout: '' } });
+      const client = new Judge0Client();
+      await assert.rejects(client.execute('function solution() { return 1; }', [{ input: '[]', expectedOutput: '1' }]), e => e.getStatus() === 503);
+      await assert.rejects(client.executeRaw('console.log(1)'), e => e.getStatus() === 503);
+    }
+  } finally { axios.post = original; }
+});

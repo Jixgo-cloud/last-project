@@ -40,7 +40,7 @@ import {
   PolarRadiusAxis,
   ResponsiveContainer,
 } from 'recharts';
-import { ApplicationStatus, getAttemptPercentage, formatAttemptScore, filterCodingApplications, githubEvidenceScore } from '@smartcareer/shared';
+import { ApplicationStatus, getAttemptPercentage, formatAttemptScore, filterCodingApplications, hasGithubEvidence, formatAssessmentSkill, formatMatchSummary } from '@smartcareer/shared';
 import { useLanguage } from '@/lib/use-language';
 import { applicationStatusLabel } from '@/lib/application-status';
 
@@ -384,11 +384,11 @@ function CompanyApplicationsContent() {
                 ผู้สมัครงาน & ไพป์ไลน์การคัดเลือก
               </h1>
               <p className="text-slate-600 text-sm mt-1 max-w-2xl">
-                ตรวจสอบความพร้อมของผู้สมัครด้วยคะแนน 70/20/10 AI Matching, ทักษะที่ยืนยันแล้ว, เลื่อนสถานะกระบวนการ และให้คะแนนประเมินรายบุคคล
+                พิจารณาผลประเมินพร้อมสัดส่วนทักษะที่ประเมินแล้ว ดูบริบทโครงการ เลื่อนสถานะ และให้ข้อเสนอแนะรายบุคคล
               </p>
               <p className="text-xs text-slate-500 mt-2 max-w-2xl">{language === 'EN'
-                ? 'Job match measures skills and career fit. Assessment scores come from test answers. Hiring decisions are a separate stage.'
-                : 'ความเหมาะสมประเมินจากทักษะและสายงาน ส่วนคะแนนสอบมาจากคำตอบ การรับเข้าทำงานเป็นผลคัดเลือกอีกขั้นหนึ่ง'}</p>
+                ? 'Job match uses measured assessment results with coverage shown. Incomplete coverage gives a preliminary score. Hiring decisions are a separate stage.'
+                : 'ความเหมาะสมใช้ผลประเมินที่วัดได้พร้อมสัดส่วนทักษะที่ประเมินแล้ว หากยังไม่ครบจะแสดงคะแนนเบื้องต้น การรับเข้าทำงานเป็นผลคัดเลือกอีกขั้นหนึ่ง'}</p>
             </div>
             <div className="flex flex-col items-start gap-2">
               <button
@@ -526,9 +526,9 @@ function CompanyApplicationsContent() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredApps.map((app) => {
-              const score = app.matchScoreAtApplication || 0;
-              const isHighMatch = score >= 80;
-              const isMedMatch = score >= 60;
+              const score = app.matchAssessmentSnapshot?.matchScore ?? null;
+              const isHighMatch = score !== null && score >= 80;
+              const isMedMatch = score !== null && score >= 60;
 
               return (
                 <div
@@ -538,7 +538,7 @@ function CompanyApplicationsContent() {
                   <div>
                     <p className="mb-2 text-xs font-semibold text-slate-500">รอบที่ {app.roundNumber || 1}</p>
                     {/* Top Header with Clickable Profile Link */}
-                    <div className="flex items-start justify-between gap-3 mb-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
                       <div className="flex items-start gap-3">
                         <button
                           type="button"
@@ -571,7 +571,7 @@ function CompanyApplicationsContent() {
 
                       {/* Match Score Badge */}
                       <div
-                        className={`px-3 py-1 rounded-full text-xs font-black border flex items-center gap-1 shrink-0 ${
+                        className={`px-3 py-1 rounded-full text-xs font-black border flex items-center gap-1 max-w-full whitespace-normal ${
                           isHighMatch
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                             : isMedMatch
@@ -580,7 +580,7 @@ function CompanyApplicationsContent() {
                         }`}
                       >
                         <Sparkles className="h-3 w-3" />
-                        <span>{score}% {language === 'EN' ? 'Match at application' : 'ความเหมาะสม ณ วันที่สมัคร'}</span>
+                        <span>{formatMatchSummary(app.matchAssessmentSnapshot)}</span>
                       </div>
                     </div>
 
@@ -595,18 +595,18 @@ function CompanyApplicationsContent() {
                     {/* Verified Competencies */}
                     <div className="mb-4">
                       <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-2">
-                        ทักษะจากหลักฐาน GitHub (GitHub Skills)
+                        ผลประเมินทักษะและบริบท GitHub
                       </span>
                       {app.candidate?.skills && app.candidate.skills.length > 0 ? (
                         <div className="flex flex-wrap gap-1.5">
                           {app.candidate.skills.slice(0, 4).map((cs: any) => (
                             <span
-                              key={cs.id}
+                              key={cs.skillId}
                               className="text-[11px] font-semibold bg-[#e8eaff] text-[#4f46e5] border border-[#dce0ff] px-2.5 py-0.5 rounded-full inline-flex items-center gap-1"
                             >
                               <span>{cs.skill?.name}</span>
                               <span className="text-[10px] font-bold text-[#4f46e5]/80 bg-white/70 px-1 rounded-md">
-                                {githubEvidenceScore(cs)}%
+                                {formatAssessmentSkill(cs)}
                               </span>
                             </span>
                           ))}
@@ -1155,7 +1155,7 @@ function CompanyApplicationsContent() {
                       <div className="px-3.5 py-1.5 rounded-2xl bg-indigo-50 border border-indigo-200/90 text-[#4f46e5] flex items-center gap-1.5 shadow-2xs">
                         <Sparkles className="h-4 w-4" />
                         <span className="text-sm font-black">
-                          {candidateProfile.application?.matchScoreAtApplication || 0}% Match ณ วันที่สมัคร
+                          {formatMatchSummary(candidateProfile.application?.matchAssessmentSnapshot)} · ณ วันที่สมัคร
                         </span>
                       </div>
                       <button
@@ -1244,14 +1244,14 @@ function CompanyApplicationsContent() {
                             <div className="flex items-center justify-between w-full mb-3">
                               <span className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
                                 <Sparkles className="h-3.5 w-3.5 text-[#4f46e5]" />
-                                เรดาร์หลักฐาน GitHub 5 มิติ
+                                ผลประเมินตามหมวดทักษะ
                               </span>
                               <span className="text-[10px] text-slate-400 font-semibold">คะแนนเต็ม 100</span>
                             </div>
-                            <p className="text-xs text-slate-500">เฉลี่ยคะแนนหลักฐาน GitHub ในแต่ละด้านเท่านั้น ไม่รวมข้อสอบหรือจำนวนดาว · 0 หมายถึงยังไม่มีหลักฐาน ไม่ใช่ไม่มีความสามารถ</p>
+                            <p className="text-xs text-slate-500">เฉลี่ยเฉพาะทักษะที่มีผลประเมินในหมวด ไม่ใช่ผลครบทุกทักษะ · ยังไม่ประเมินไม่ใช่คะแนน 0</p>
                             <div className="h-64 sm:h-72 w-full">
                               <ResponsiveContainer width="100%" height="100%">
-                                <RadarChart data={candidateProfile.radarData || []}>
+                                <RadarChart data={(candidateProfile.radarData || []).filter((d: any) => d.score != null)}>
                                   <PolarGrid stroke="#e2e8f0" />
                                   <PolarAngleAxis
                                     dataKey="category"
@@ -1277,7 +1277,7 @@ function CompanyApplicationsContent() {
                               {(candidateProfile.radarData || []).map((pt: any) => (
                                 <div key={pt.category} className="bg-white rounded-xl p-2 border border-slate-200/60 shadow-2xs">
                                   <div className="text-[9px] font-bold text-slate-400 uppercase truncate">{pt.category}</div>
-                                  <div className="text-xs font-black text-[#4f46e5] mt-0.5">{pt.score}%</div>
+                                  <div className="text-xs font-black text-[#4f46e5] mt-0.5">{pt.score == null ? 'ยังไม่ประเมิน' : `${pt.score}%`}</div>
                                 </div>
                               ))}
                             </div>
@@ -1315,7 +1315,7 @@ function CompanyApplicationsContent() {
                               <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-3.5 text-center">
                                 <span className="text-[10px] font-bold text-slate-400 uppercase block">GitHub Skills</span>
                                 <span className="text-lg font-black text-slate-900 mt-1 block">
-                                  {candidateProfile.skills?.filter((skill: any) => githubEvidenceScore(skill) > 0).length || 0}
+                                  {candidateProfile.skills?.filter((skill: any) => hasGithubEvidence(skill)).length || 0}
                                 </span>
                               </div>
                               <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-3.5 text-center">
@@ -1352,7 +1352,7 @@ function CompanyApplicationsContent() {
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {candidateProfile.skills.map((cs: any) => (
                               <div
-                                key={cs.id}
+                                key={cs.skillId}
                                 className="bg-slate-50/70 border border-slate-200/90 rounded-2xl p-4.5 space-y-3"
                               >
                                 <div className="flex items-start justify-between gap-2">
@@ -1364,29 +1364,16 @@ function CompanyApplicationsContent() {
                                       </span>
                                     </div>
                                     <span className="text-[11px] text-slate-500">
-                                      {githubEvidenceScore(cs) > 0 ? 'มีหลักฐาน GitHub' : 'ยังไม่มีหลักฐาน GitHub'}
+                                      {hasGithubEvidence(cs) ? 'มีหลักฐาน GitHub' : 'ยังไม่มีหลักฐาน GitHub'}
                                     </span>
                                   </div>
                                   <div className="text-right">
-                                    <span className="text-base font-black text-[#4f46e5]">{githubEvidenceScore(cs)}%</span>
-                                    <span className="text-[10px] text-slate-400 block font-semibold">GitHub Evidence</span>
+                                    <span className="text-base font-black text-[#4f46e5]">{formatAssessmentSkill(cs)}</span>
+                                    <span className="text-[10px] text-slate-400 block font-semibold">ผลประเมิน</span>
                                   </div>
                                 </div>
 
-                                {/* Score Bar */}
-                                <div className="w-full bg-slate-200/80 rounded-full h-2 overflow-hidden">
-                                  <div
-                                    className="bg-gradient-to-r from-indigo-500 to-indigo-600 h-2 rounded-full transition-all"
-                                    style={{ width: `${Math.min(100, githubEvidenceScore(cs))}%` }}
-                                  />
-                                </div>
-
-                                {/* Score Breakdown */}
-                                <div className="grid grid-cols-3 gap-2 text-[10px] font-bold text-slate-500 pt-1 border-t border-slate-200/60">
-                                  <div>ผลทฤษฎี (แยก): <strong className="text-slate-800">{cs.theoryScore || 0}%</strong></div>
-                                  <div>ผล Coding (แยก): <strong className="text-slate-800">{cs.codingScore || 0}%</strong></div>
-                                  <div>GitHub: <strong className="text-slate-800">{githubEvidenceScore(cs)}%</strong></div>
-                                </div>
+                                <p className="text-xs text-slate-600">{cs.assessmentResult ? `เกณฑ์สอบ ${cs.assessmentResult.requiredScore}% · รุ่น ${cs.assessmentResult.assessmentVersion}` : 'ยังไม่มีผลประเมินที่ผูกทักษะและเกณฑ์ครบถ้วน'}</p>
 
                                 {/* Evidences from GitHub */}
                                 {cs.evidences && cs.evidences.length > 0 && (
