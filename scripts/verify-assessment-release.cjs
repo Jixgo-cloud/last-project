@@ -70,7 +70,7 @@ async function main() {
   assert.equal(archived.snapshot.questions.length, single ? 1 : 2);
   assert.equal(archived.snapshot.questions[0].starterCode, '// legacy starter');
   assert.equal(await db.assessmentBankRevision.count(), 1);
-  await db.assessment.update({ where: { id: exam.id }, data: { version: 3 } });
+  await db.assessment.update({ where: { id: exam.id }, data: { version: bank.version + 1 } });
   run(release, [], 1);
   console.log(`PASS (${single ? 'one-to-two' : 'two-to-two'}): explicit scope, read-only plan, stale-hash and active-attempt rejection, atomic archive, backup, idempotency, preserved IDs/results/denominators/snapshots, newer-version rejection`);
 }

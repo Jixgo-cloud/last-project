@@ -6,6 +6,7 @@ export interface TestCase {
   input: string;
   expectedOutput: string;
   isHidden?: boolean;
+  returnType?: 'boolean' | 'string';
 }
 
 export type JudgeResultStatus =
@@ -135,7 +136,10 @@ export class Judge0Client {
 
     for (let i = 0; i < testCases.length; i++) {
       const tc = testCases[i];
-      const harness = this.wrapSourceCode(sourceCode, tc.input, languageId);
+      if (tc.returnType && ![63, 74].includes(languageId)) {
+        throw new BadRequestException('This typed assessment requires JavaScript or TypeScript');
+      }
+      const harness = this.wrapSourceCode(sourceCode, tc.input, languageId, tc.returnType);
 
       try {
         const response = await axios.post(
@@ -332,7 +336,7 @@ export class Judge0Client {
     return false;
   }
 
-  private wrapSourceCode(sourceCode: string, testInput: string, languageId: number = 63): string {
+  private wrapSourceCode(sourceCode: string, testInput: string, languageId: number = 63, returnType?: 'boolean' | 'string'): string {
     if (languageId === 71) {
       // Python 3.11 Harness
       return `import json
@@ -442,6 +446,7 @@ if (typeof solution !== 'function') {
   try {
     var __args = __parseInput(${JSON.stringify(testInput)});
     var __res = solution.apply(null, __args);
+    ${returnType ? `if (typeof __res !== ${JSON.stringify(returnType)}) throw new Error(${JSON.stringify('Return type must be ' + returnType)});` : ''}
     if (typeof __res === 'object' && __res !== null) {
       console.log(JSON.stringify(__res));
     } else {

@@ -127,7 +127,8 @@ export function getAssessmentValidationError(input: AssessmentInput): string | n
         if (!testCases.some((testCase) => Boolean(testCase.isHidden))) {
           return `${prefix}ต้องมีกรณีทดสอบที่ซ่อนอย่างน้อย 1 ข้อ`;
         }
-        if (testCases.some((testCase) => !hasExpectedOutput(testCase.expectedOutput))) {
+        if (testCases.some((testCase) => !hasExpectedOutput(testCase.expectedOutput) &&
+            !(testCase.expectedOutput === '' && testCase.returnType === 'string'))) {
           return `${prefix}กรุณาระบุผลลัพธ์ที่คาดหวังของกรณีทดสอบให้ครบ`;
         }
       }

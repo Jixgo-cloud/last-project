@@ -12,8 +12,10 @@ const cfg = JSON.parse(fs.readFileSync(file));
 const url = new URL(cfg.databaseUrl);
 assert(['localhost','127.0.0.1'].includes(url.hostname) && url.pathname.startsWith('/smartcareer_assessment_staging_'));
 assert.equal(cfg.apiUrl,'http://127.0.0.1:4100/api'); assert.equal(cfg.webUrl,'http://localhost:3100');
-const stage = process.argv[2] || 'before'; assert(['before','gap','pass','history'].includes(stage));
+const stage = process.argv[2] || 'before'; assert(['before','gap','pass','history','criterion'].includes(stage));
 const checkOnly = process.argv.includes('--check-only');
+assert(stage !== 'criterion' || checkOnly, 'Criterion scenario is submitted through the UI');
+const expectedScore = stage === 'pass' ? 100 : stage === 'criterion' ? 65 : 50;
 const db = new PrismaClient({datasources:{db:{url:cfg.databaseUrl}}});
 function save() { fs.writeFileSync(file, JSON.stringify(cfg,null,2), {mode:0o600}); }
 async function request(route, body, token = cfg.testUser?.token) {
@@ -22,13 +24,19 @@ async function request(route, body, token = cfg.testUser?.token) {
   const data=await r.json();assert(r.ok,`${route}: HTTP ${r.status} ${JSON.stringify(data)}`);return data;
 }
 (async()=>{
+  if (stage === 'before' && process.argv.includes('--fresh-candidate')) {
+    cfg.qaCandidateIds = [...new Set([...(cfg.qaCandidateIds || []), cfg.testUser?.candidateId].filter(Boolean))];
+    delete cfg.testUser;
+    delete cfg.legacyFixtureId;
+    cfg.qaEmail = `assessment-v3-${Date.now()}@smartcareer.test`;
+  }
   if(!cfg.testUser) {
-    const auth=await request('/auth/dev-callback',{provider:'github',role:'CANDIDATE',email:'assessment-staging-qa@smartcareer.test',fullName:'Assessment Staging QA',githubUsername:'assessment-staging-qa'});
+    const auth=await request('/auth/dev-callback',{provider:'github',role:'CANDIDATE',email:cfg.qaEmail || 'assessment-staging-qa@smartcareer.test',fullName:'Assessment Staging QA',githubUsername:cfg.qaEmail ? cfg.qaEmail.split('@')[0] : 'assessment-staging-qa'});
     cfg.testUser={id:auth.id,candidateId:auth.candidateProfile.id,token:auth.token,email:auth.email};save();
     await db.candidateProfile.update({where:{id:auth.candidateProfile.id},data:{targetCareer:'Full Stack Developer'}});
   }
   const assessment=await db.assessment.findUniqueOrThrow({where:{id:cfg.assessmentId},include:{questions:true}});
-  assert.equal(assessment.questions.length,2);assert.equal(assessment.version,2);
+  assert.equal(assessment.questions.length,2);assert.equal(assessment.version,bank.version);
   if(!cfg.jobId) {
     const job=await db.job.findFirstOrThrow({where:{isActive:true,title:'Full Stack Developer (Next.js / NestJS)',skills:{some:{skill:{slug:'javascript'}}}},include:{skills:true}});
     cfg.jobId=job.id;cfg.jobSkillCount=job.skills.length;save();
@@ -65,6 +73,9 @@ async function request(route, body, token = cfg.testUser?.token) {
         answers:{create:answers.map(({id,attemptId,...answer})=>answer)}}});
       cfg.historyUiFixtureId=copy.id;save();
     }
+    const historyUser = await db.user.findUniqueOrThrow({where:{id:cfg.historyUiUser.id}});
+    cfg.historyUiUser.token = jwt.sign({sub:historyUser.id,email:historyUser.email,role:historyUser.role},cfg.jwtSecret,{expiresIn:'1h'});
+    save();
     const unknown=await request('/jobs/'+cfg.jobId+'/match',undefined,cfg.historyUiUser.token);
     assert.equal(unknown.matchScore,null);assert.equal(unknown.status,'AWAITING_ASSESSMENT');
     report.history={archivedQuestionCount:1,score:review.score,maxScore:review.maxScore,percentage:review.percentage,version:review.assessmentVersion,qaCopy:cfg.legacyFixtureId};
@@ -88,7 +99,7 @@ async function request(route, body, token = cfg.testUser?.token) {
         report.submissions.push({question:q.title,visibleCases:run.totalTestCases,passed:result.execution.passedTestCases,total:result.execution.totalTestCases,engine:result.execution.engine});
       }
       const persisted=await db.assessmentAttempt.findUniqueOrThrow({where:{id:attempt.id},include:{answers:true}});
-      assert.equal(persisted.status,'COMPLETED');assert.equal(persisted.percentage,stage==='pass'?100:50);
+      assert.equal(persisted.status,'COMPLETED');assert.equal(persisted.percentage,expectedScore);
       assert.equal(persisted.maxScore,100);assert.equal(persisted.snapshot.questions.length,2);assert.equal(persisted.snapshot.skill.id,assessment.skillId);
       report.result={status:persisted.status,score:persisted.score,maxScore:persisted.maxScore,percentage:persisted.percentage,version:persisted.assessmentVersion,answerCount:persisted.answers.length};
     }
@@ -104,7 +115,7 @@ async function request(route, body, token = cfg.testUser?.token) {
       assert.equal(js.currentLevel,null);assert.equal(js.status,'NOT_ASSESSED');assert.equal(recommendations.gaps.length,0);
     } else {
       const latest=await db.assessmentAttempt.findFirstOrThrow({where:{candidateId:cfg.testUser.candidateId,assessmentId:assessment.id,status:'COMPLETED'},orderBy:{startedAt:'desc'},include:{answers:true}});
-      assert.equal(latest.assessmentVersion,2);assert.equal(latest.maxScore,100);assert.equal(latest.percentage,stage==='pass'?100:50);
+      assert.equal(latest.assessmentVersion,bank.version);assert.equal(latest.maxScore,100);assert.equal(latest.percentage,expectedScore);
       assert.equal(latest.answers.length,2);assert.equal(latest.snapshot.questions.length,2);
       assert(latest.answers.every(a=>a.executionResult.engine==='Judge0-Isolated-Container'));
       if(stage==='pass') assert(latest.answers.every(a=>a.executionResult.passedTestCases===a.executionResult.totalTestCases));
@@ -112,9 +123,9 @@ async function request(route, body, token = cfg.testUser?.token) {
       report.executions=latest.answers.map(a=>({questionId:a.questionId,pointsEarned:a.pointsEarned,engine:a.executionResult.engine,passed:a.executionResult.passedTestCases,total:a.executionResult.totalTestCases}));
       assert.equal(match.status,'PRELIMINARY');assert.equal(match.assessedCount,1);
       assert.equal(match.unassessedSkills.length,cfg.jobSkillCount-1);assert(match.unassessedSkills.every(s=>s.userScore===null));
-      assert.equal(js.currentLevel,stage==='pass'?100:50);assert.equal(js.status,stage==='pass'?'ASSESSED':'GAP');
+      assert.equal(js.currentLevel,expectedScore);assert.equal(js.status,stage==='pass'?'ASSESSED':'GAP');
       assert.equal(profile.skills.find(s=>s.skillId===assessment.skillId).assessmentScore,js.currentLevel);
-      if(stage==='gap') {assert.equal(recommendations.gaps.length,1);assert(recommendations.gaps[0].recommendedCourses.length>0);}
+      if(stage==='gap'||stage==='criterion') {assert.equal(recommendations.gaps.length,1);assert(recommendations.gaps[0].recommendedCourses.length>0);}
       else {assert.equal(match.matchScore,100);assert.equal(recommendations.gaps.length,0);assert.equal(detail.recommendedCourses.length,0);}
     }
     report.match=match;report.javaScript=js;report.gaps=recommendations.gaps.map(g=>({skill:g.skillName,courses:g.recommendedCourses.length}));
@@ -125,7 +136,7 @@ async function request(route, body, token = cfg.testUser?.token) {
     const condition=table==='assessment_answers'
       ? 't."attemptId" IN (SELECT id FROM assessment_attempts WHERE "candidateId" <> ALL($1::text[]))'
       : 't."candidateId" <> ALL($1::text[])';
-    const rows=await db.$queryRawUnsafe(`SELECT to_jsonb(t) - ARRAY['matchAssessmentSnapshot'] AS data FROM ${table} t WHERE ${condition}`,[cfg.testUser.candidateId,cfg.historyUiUser?.candidateId].filter(Boolean));
+    const rows=await db.$queryRawUnsafe(`SELECT to_jsonb(t) - ARRAY['matchAssessmentSnapshot'] AS data FROM ${table} t WHERE ${condition}`,[cfg.testUser.candidateId,cfg.historyUiUser?.candidateId,...(cfg.qaCandidateIds || [])].filter(Boolean));
     const fingerprint=createHash('sha256').update(rows.map(r=>JSON.stringify(r.data)).sort().join('\n')).digest('hex');
     assert.equal(rows.length,baseline.before[table].rows,table+' original row count');
     assert.equal(fingerprint,baseline.before[table].hash,table+' original content');
