@@ -4,6 +4,8 @@
 
 Read with [the upgrade/recovery runbook](PRODUCTION_ASSESSMENT_UPGRADE.md). [PR #2](https://github.com/Jixgo-cloud/last-project/pull/2) remains open with auto-merge disabled at the owner's request.
 
+**Subsequent preparation:** the owner chose the two-question expansion for isolated staging, with no deploy/merge. See [the expansion and staging evidence](ASSESSMENT_EXPANSION_STAGING.md). The observations below describe the earlier production inspection; production has not been upgraded. The current runbook includes a fourth SQL step for the private revision archive and an explicit one-to-two expansion flag.
+
 ## Verified targets and current state
 
 | Component | Observed state | Release implication |
@@ -85,7 +87,7 @@ Private evidence (not committed): `C:/Users/ayumg/.codex/backups/smartcareer/rol
 2. **Operator:** obtain a fresh production backup with documented scope, permissions, storage coverage, checksums, and recovery instructions. Restore to an isolated database and rerun the schema migration plus the chosen bank patch. Stop if data, RLS/grants, or schema differ unexpectedly.
 3. **Operator + QA:** stage the pinned API and frontend against that isolated database. Verify real Judge0 submissions and unknown → measured gap → passing retake, including partial coverage and historical applications. The existing Vercel preview alone does not satisfy this gate.
 4. **Operator:** hold automatic releases and public writes using the reviewed provider controls; drain and stop all writers/cron processes. Take the final backup and counts/fingerprints. Recheck unfinished attempts and worker activity. Do not restart an old image that still runs `db push` after the schema is expanded.
-5. **Operator:** run the three explicit SQL commands in the [runbook](PRODUCTION_ASSESSMENT_UPGRADE.md#2-apply-the-schema-changes-explicitly), one at a time with timeouts; require diff exit 0 and unchanged original data. Apply only the separately reviewed bank plan (or agreed inactive-bank path).
+5. **Operator:** run the explicit SQL commands in the current [runbook](PRODUCTION_ASSESSMENT_UPGRADE.md#2-apply-the-schema-changes-explicitly), including the subsequently added private bank-revision archive, one at a time with timeouts; require diff exit 0 and unchanged original data. Apply only the separately reviewed bank plan (or agreed inactive-bank path).
 6. **Operator:** deploy the pinned API first with the new no-schema-write startup, then the matching frontend. Verify deployment healthcheck, revision, API proxy, OAuth production callbacks, required provider configuration, and permissions before reopening writes.
 7. **QA:** run the designated-account smoke test through real Judge0 and both API/screens. Verify null unknowns, measured gaps only, coverage/`PRELIMINARY`, nullable application snapshots, and preserved old records. Only then restore traffic/workers and monitor.
 8. **Recovery:** follow the runbook's compatible-version/fix-forward path. An old image may reintroduce GitHub scores and enforce non-null columns through startup `db push`; do not use it as an automatic rollback. Any restore must account for writes after the recovery point.

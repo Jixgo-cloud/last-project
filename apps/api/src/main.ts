@@ -52,7 +52,7 @@ async function bootstrap() {
   );
 
   const port = process.env.PORT || 4000;
-  await app.listen(port);
+  await app.listen(port, process.env.HOST || '0.0.0.0');
   logger.log(`🚀 SmartCareer Backend API is running on: http://localhost:${port}/api`);
 }
 

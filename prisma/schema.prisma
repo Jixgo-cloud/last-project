@@ -490,11 +490,25 @@ model Assessment {
   updatedAt        DateTime            @updatedAt
 
   questions        Question[]
+  bankRevisions    AssessmentBankRevision[]
   attempts         AssessmentAttempt[]
   jobs             Job[]
   assignedApplications JobApplication[]      @relation("AssignedApplicationAssessment")
 
   @@map("assessments")
+}
+
+// Private authored criteria archive. Never return through candidate/public APIs.
+model AssessmentBankRevision {
+  assessmentId String
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+  version      Int
+  snapshot     Json
+  contentHash  String
+  createdAt    DateTime @default(now())
+
+  @@id([assessmentId, version])
+  @@map("assessment_bank_revisions")
 }
 
 // 17. Question

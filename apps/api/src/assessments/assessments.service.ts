@@ -132,6 +132,7 @@ export class AssessmentsService {
             type: true,
             passingScore: true,
             timeLimitMinutes: true,
+            version: true,
             skill: { select: { id: true, name: true, category: true } },
             company: { select: { id: true, name: true } },
           },
@@ -139,7 +140,8 @@ export class AssessmentsService {
       },
       orderBy: { startedAt: 'desc' },
     });
-    return attempts.map(attempt => candidateFeedback(attempt));
+    return Promise.all(attempts.map(async attempt => candidateFeedback({ ...attempt,
+      assessment: await this.assessmentForHistoricalResult(attempt) })));
   }
 
   /**
@@ -193,8 +195,9 @@ export class AssessmentsService {
       orderBy: { startedAt: 'desc' },
     });
 
-    if (existingAttempt && (existingAttempt.snapshot as any)?.criteriaHash &&
-        (existingAttempt.snapshot as any).criteriaHash !== this.criteriaHash(assessment)) {
+    if (existingAttempt && (existingAttempt.assessmentVersion !== assessment.version ||
+        ((existingAttempt.snapshot as any)?.criteriaHash &&
+        (existingAttempt.snapshot as any).criteriaHash !== this.criteriaHash(assessment)))) {
       await this.prisma.assessmentAttempt.update({ where: { id: existingAttempt.id }, data: { status: AttemptStatus.SYSTEM_ERROR } });
     } else if (existingAttempt) {
       const now = new Date();
@@ -1065,7 +1068,7 @@ export class AssessmentsService {
     }
 
     const snapshot = attempt.snapshot as any;
-    if (snapshot?.criteriaHash && snapshot.criteriaHash !== this.criteriaHash(attempt.assessment)) {
+    if (this.hasVersionMismatch(attempt) || (snapshot?.criteriaHash && snapshot.criteriaHash !== this.criteriaHash(attempt.assessment))) {
       throw new BadRequestException('เกณฑ์ข้อสอบเปลี่ยนหลังเริ่มรอบสอบ ต้องตรวจเกณฑ์เดิมก่อนบันทึกผล');
     }
     const passingScore = snapshot?.passingScore ?? attempt.assessment.passingScore;
@@ -1205,10 +1208,11 @@ export class AssessmentsService {
       throw new ForbiddenException('Access denied');
     }
 
-    if (isOwnerCandidate && !isAdmin && !isCompanyMember) return candidateFeedback(attempt);
+    const historical = { ...attempt, assessment: await this.assessmentForHistoricalResult(attempt) };
+    if (isOwnerCandidate && !isAdmin && !isCompanyMember) return candidateFeedback(historical);
 
     return {
-      ...attempt,
+      ...historical,
       integritySummary: this.getIntegritySummary(attempt.integrityEvents),
     };
   }
@@ -1261,10 +1265,28 @@ export class AssessmentsService {
     }
 
     const snapshot = attempt.snapshot as any;
-    if (snapshot?.criteriaHash && snapshot.criteriaHash !== this.criteriaHash(attempt.assessment)) {
+    if (this.hasVersionMismatch(attempt) || (snapshot?.criteriaHash && snapshot.criteriaHash !== this.criteriaHash(attempt.assessment))) {
       throw new BadRequestException('เกณฑ์ข้อสอบเปลี่ยนหลังเริ่มรอบสอบ กรุณาเริ่มรอบใหม่หรือติดต่อผู้ดูแล');
     }
     return attempt;
+  }
+
+  private hasVersionMismatch(attempt: any) {
+    return typeof attempt.assessmentVersion === 'number' && typeof attempt.assessment?.version === 'number' &&
+      attempt.assessmentVersion !== attempt.assessment.version;
+  }
+
+  private async assessmentForHistoricalResult(attempt: any) {
+    if (!this.hasVersionMismatch(attempt)) return attempt.assessment;
+    const revision = await this.prisma.assessmentBankRevision.findUnique({ where: {
+      assessmentId_version: { assessmentId: attempt.assessmentId, version: attempt.assessmentVersion },
+    } });
+    if (!revision) return { ...attempt.assessment, questions: [], historicalCriteriaUnavailable: true };
+    const snapshot = revision.snapshot as any;
+    // Keep current access/disclosure policy; restore only the authored historical criteria.
+    return { ...attempt.assessment, title: snapshot.title, type: snapshot.type,
+      version: snapshot.version, passingScore: snapshot.passingScore, timeLimitMinutes: snapshot.timeLimitMinutes,
+      questions: snapshot.questions, historicalCriteriaArchived: true };
   }
 
   private criteriaHash(assessment: any) {

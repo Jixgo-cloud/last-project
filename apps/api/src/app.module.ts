@@ -43,7 +43,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     EvaluationsModule,
     RecommendationsModule,
     IngestionModule,
-    SchedulerModule,
+    ...(process.env.ENABLE_SCHEDULED_JOBS === 'false' ? [] : [SchedulerModule]),
     NotificationsModule,
   ],
 })

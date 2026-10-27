@@ -3,6 +3,13 @@ export function candidateFeedback<T extends Record<string, any>>(attempt: T, ass
   const hidden = Boolean(assessment?.companyId) && (attempt.reviewStatus === 'PENDING_HUMAN_REVIEW' || assessment.feedbackVisibility === 'PRIVATE_TO_COMPANY' ||
     (assessment.feedbackVisibility === 'AFTER_REVIEW' && attempt.reviewStatus !== 'HUMAN_REVIEWED'));
   const result: any = { ...attempt };
+  result.resultScope = {
+    assessmentVersion: attempt.assessmentVersion ?? attempt.snapshot?.assessmentVersion ?? null,
+    questionCount: attempt.snapshot?.questions?.length ?? (assessment?.historicalCriteriaArchived ? assessment.questions?.length : null),
+    maxScore: attempt.maxScore ?? attempt.snapshot?.totalPossiblePoints ?? null,
+    historicalCriteriaArchived: Boolean(assessment?.historicalCriteriaArchived),
+    historicalCriteriaUnavailable: Boolean(assessment?.historicalCriteriaUnavailable),
+  };
   result.reviewFeedback = !hidden && attempt.reviewStatus === 'HUMAN_REVIEWED'
     ? attempt.evaluationSnapshot?.companyReviewFeedback || null : null;
   // Progress can be restored without disclosing answers or marking details.

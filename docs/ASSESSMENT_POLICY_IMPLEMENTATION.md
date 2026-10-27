@@ -79,6 +79,8 @@ JavaScript จึงเป็นทักษะนำร่องที่มี
 
 SQL ใหม่เปลี่ยนเพียงคอลัมน์คะแนนใบสมัครให้รับ null, เอา default 0 ออก และเพิ่ม JSONB snapshot ไม่มี DELETE, UPDATE คะแนนเดิม หรือการ backfill ผลสอบที่เดาที่มา การเพิ่มคอลัมน์ใช้ IF NOT EXISTS เพื่อรันซ้ำได้
 
+การเตรียมขยาย bank production ในขั้นถัดมาเพิ่ม migration `202610270003_assessment_bank_revisions` สำหรับ archive โจทย์/เกณฑ์เดิมแบบ backend-only โดยไม่ rewrite ผลสอบ รายละเอียด API และการซ้อม 1 → 2 ข้ออยู่ใน [รายงาน staging](ASSESSMENT_EXPANSION_STAGING.md) จึงต้องใช้ลำดับ SQL ปัจจุบันครบก่อนเริ่ม API รุ่นใหม่
+
 อัปเกรดฐานข้อมูล local `smartcareer` จริงแล้วเมื่อ 27 ตุลาคม 2569: เพิ่ม framework fields ที่เคยทำให้เกิด P2022, เปลี่ยนคะแนนใบสมัครเป็น nullable/เพิ่ม snapshot และเพิ่ม enum SALES/COORDINATION/WRITING ที่มีใน schema เดิมแต่ยังขาดในฐานข้อมูล ตรวจ Prisma schema diff แล้วไม่พบความต่าง สำรองและทดลอง restore ก่อนทดสอบจริง รายละเอียดและหลักฐานอยู่ใน [รายงานทดสอบจริง](LIVE_JUDGE0_VERIFICATION.md)
 
 สำหรับฐานข้อมูลเดิมที่เริ่มด้วย db push และยังไม่มี Prisma migration history: สำรองข้อมูล ตรวจสภาพแวดล้อมเป้าหมาย แล้วใช้ SQL แบบไม่ทำลายข้อมูลตามลำดับ:
@@ -87,6 +89,7 @@ SQL ใหม่เปลี่ยนเพียงคอลัมน์คะ�
 npx prisma db execute --schema prisma/schema.prisma --file scripts/sql/assessment-framework.sql
 npx prisma db execute --schema prisma/schema.prisma --file prisma/migrations/202610270001_assessment_matching/migration.sql
 npx prisma db execute --schema prisma/schema.prisma --file prisma/migrations/202610270002_skill_categories/migration.sql
+npx prisma db execute --schema prisma/schema.prisma --file prisma/migrations/202610270003_assessment_bank_revisions/migration.sql
 npm run prisma:generate
 npm run build
 ```

@@ -734,7 +734,8 @@ export default function AssessmentRunnerPage() {
                   </div>
                 )}
 
-                <AssessmentResultGuidance percentage={getAttemptPercentage(theoryResult)} passingScore={assessment.passingScore} feedbackHidden={theoryResult.feedbackHidden} skillName={assessment.skill?.name} />
+                {theoryResult.resultScope?.assessmentVersion != null && <p className="text-sm text-slate-500">ผลสอบชุดรุ่น {theoryResult.resultScope.assessmentVersion}{theoryResult.resultScope.questionCount != null ? ` · ${theoryResult.resultScope.questionCount} ข้อ` : ''} · คะแนนเต็มเดิม {theoryResult.maxScore}</p>}
+                <AssessmentResultGuidance percentage={getAttemptPercentage(theoryResult)} passingScore={theoryResult.assessment?.passingScore ?? assessment.passingScore} feedbackHidden={theoryResult.feedbackHidden} skillName={assessment.skill?.name} />
 
                 <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
                   <Link
@@ -920,6 +921,7 @@ export default function AssessmentRunnerPage() {
                       ) : null}
                     </p>
 
+                    {codingFinalResult.resultScope?.assessmentVersion != null && <p className="text-sm text-slate-500 mt-2">ผลสอบชุดรุ่น {codingFinalResult.resultScope.assessmentVersion}{codingFinalResult.resultScope.questionCount != null ? ` · ${codingFinalResult.resultScope.questionCount} ข้อ` : ''} · คะแนนเต็มเดิม {codingFinalResult.maxScore}</p>}
                     {/* AI Rubric Breakdown Display */}
                     {codingFinalResult.evaluation?.rubricBreakdown && (
                       <div className="mt-6 text-left p-5 rounded-2xl bg-purple-50/60 border border-purple-200 space-y-4">
@@ -1019,7 +1021,7 @@ export default function AssessmentRunnerPage() {
                       </div>
                     )}
 
-                    <AssessmentResultGuidance percentage={getAttemptPercentage(codingFinalResult)} passingScore={assessment.passingScore} feedbackHidden={codingFinalResult.feedbackHidden} skillName={assessment.skill?.name} />
+                    <AssessmentResultGuidance percentage={getAttemptPercentage(codingFinalResult)} passingScore={codingFinalResult.assessment?.passingScore ?? assessment.passingScore} feedbackHidden={codingFinalResult.feedbackHidden} skillName={assessment.skill?.name} />
 
                     <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
                       <Link
