@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException, Logger, HttpException, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MatchingService } from '../matching/matching.service';
-import { ApplicationStatus, applicationAssessmentView } from '@smartcareer/shared';
+import { ApplicationStatus, applicationAssessmentView, UserRole } from '@smartcareer/shared';
+import { companyEvaluationView } from '../evaluations/company-evaluation-view';
 
 @Injectable()
 export class ApplicationsService {
@@ -77,8 +78,10 @@ export class ApplicationsService {
 
       return applicationAssessmentView(application);
     } catch (err: any) {
-      this.logger.error(`Failed to apply for job ${jobId} (candidateUserId: ${candidateUserId}): ${err.message}`, err.stack);
-      throw err;
+      if (err instanceof HttpException) throw err;
+      // Prisma errors can contain submitted cover letters or other private fields.
+      this.logger.error('Application submission failed');
+      throw new InternalServerErrorException('Application submission failed');
     }
   }
 
@@ -126,14 +129,20 @@ export class ApplicationsService {
     return applicationAssessmentView(updated);
   }
 
-  async getApplicationById(id: string) {
-    const application = await this.prisma.jobApplication.findUnique({
-      where: { id },
+  async getApplicationById(id: string, userId: string, role: UserRole) {
+    if (!userId || ![UserRole.CANDIDATE, UserRole.COMPANY, UserRole.ADMIN].includes(role)) {
+      throw new NotFoundException('Application not found');
+    }
+    const scope = role === UserRole.ADMIN ? {} : role === UserRole.CANDIDATE
+      ? { candidate: { userId } }
+      : { job: { company: { members: { some: { userId } } } } };
+    const application = await this.prisma.jobApplication.findFirst({
+      where: { id, ...scope },
       include: {
         job: { include: { company: true } },
         candidate: {
           include: {
-            user: true,
+            user: { select: { id: true, email: true, avatarUrl: true } },
             skills: { include: { skill: true } },
           },
         },
@@ -146,6 +155,9 @@ export class ApplicationsService {
       throw new NotFoundException('Application not found');
     }
 
-    return applicationAssessmentView(application);
+    return applicationAssessmentView({ ...application,
+      evaluation: role === UserRole.COMPANY && application.evaluation
+        ? companyEvaluationView(application.evaluation) : application.evaluation,
+    });
   }
 }

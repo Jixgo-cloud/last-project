@@ -490,6 +490,9 @@ CI ใช้ Node.js 22, PostgreSQL 16 และตรวจ build, lint, securi
 
 ## 13. สถานะ production และเอกสารอ้างอิง
 
+- [ผลตรวจความพร้อมก่อนเปิดจริง](docs/PRELAUNCH_READINESS_20261027.md): แพตช์สิทธิ์อ่านใบสมัครที่ยังต้อง deploy และเงื่อนไขด้าน hosting/monitoring/recovery
+- [รายการ QA ที่เสนอให้ซ่อน](docs/QA_HIDE_INVENTORY_20261027.md): ID และวิธีรักษาประวัติผลสอบ ยังไม่ได้ซ่อนหรือลบข้อมูล production
+
 สถานะที่ตรวจและบันทึกเมื่อ 27 ตุลาคม 2569: เว็บอยู่บน Vercel, API อยู่บน Railway และ PostgreSQL อยู่บน Supabase ส่วน Docker Compose/Caddy เป็นอีกทางเลือกสำหรับ self-host ไม่ใช่โครงสร้าง deployment ปัจจุบันทั้งหมด
 
 - [รายงาน rollout ข้อสอบ v3](docs/ASSESSMENT_V3_PRODUCTION.md): PR #4, Judge0 จริง และการรักษาผลเดิม

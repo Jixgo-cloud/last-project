@@ -24,7 +24,7 @@
     "prisma:studio": "npx prisma studio",
     "admin:create": "npx ts-node scripts/create-superadmin.ts",
     "test": "npm run test:security && npm run test:uat",
-    "test:uat": "node --test tests/uat-fixes.spec.cjs tests/attempt-review.spec.cjs tests/youtube-ingestion.spec.cjs tests/company-development.spec.cjs tests/assessment-framework.spec.cjs tests/job-detail-content.spec.cjs tests/skill-assessment.spec.cjs tests/assessment-history.spec.cjs tests/application-assessment.spec.cjs tests/assessment-v3.spec.cjs tests/course-selection.spec.cjs",
+    "test:uat": "node --test tests/uat-fixes.spec.cjs tests/attempt-review.spec.cjs tests/youtube-ingestion.spec.cjs tests/company-development.spec.cjs tests/assessment-framework.spec.cjs tests/job-detail-content.spec.cjs tests/skill-assessment.spec.cjs tests/assessment-history.spec.cjs tests/application-assessment.spec.cjs tests/assessment-v3.spec.cjs tests/course-selection.spec.cjs tests/prelaunch-readiness.spec.cjs",
     "test:security": "node --test tests/security.spec.cjs",
     "test:regression": "node scripts/verify-core-regression.cjs",
     "test:framework:integration": "node scripts/verify-az204-framework.cjs --ui"

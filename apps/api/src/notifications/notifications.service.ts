@@ -32,7 +32,7 @@ export class NotificationsService {
     return this.prisma.notification.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
-      take: limit,
+      take: Number.isFinite(limit) ? Math.max(1, Math.min(100, Math.floor(limit))) : 30,
     });
   }
 
