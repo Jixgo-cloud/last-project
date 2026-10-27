@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MatchingService } from '../matching/matching.service';
 import { honestJobContent } from './job-content';
+import { selectRelevantCourses } from '../recommendations/course-selection';
 import { courseWithSupportedSkills, mentionsSkill } from '../recommendations/course-skill-evidence';
 import { isLegacySampleJob, legacySampleJobIds } from './legacy-sample-jobs';
 import { JobType, JobSource, SkillCategory, CareerTrack } from '@smartcareer/shared';
@@ -295,7 +296,7 @@ export class JobsService {
         },
       });
 
-      recommendedCourses = courses.map(courseWithSupportedSkills).flatMap((c) => {
+      recommendedCourses = selectRelevantCourses(courses.map(courseWithSupportedSkills), targetSkillNames, 6).flatMap((c) => {
         // Old links can be wrong even at relevanceScore=1; require descriptive
         // evidence before claiming that a course addresses a measured gap.
         const targetSkill = targetSkillNames.find(name =>
@@ -306,7 +307,7 @@ export class JobsService {
           targetSkill,
           isGapCloser: isPersonalizedForGap,
         }];
-      }).slice(0, 6);
+      });
     }
 
     return {

@@ -178,7 +178,7 @@ function ProfileHubContent() {
   };
 
   // Quick Stats Calculations
-  const verifiedSkillsCount = profile?.skills?.length || 0;
+  const recordedSkillsCount = profile?.skills?.length || 0;
   const reposCount = profile?.githubRepos?.length || 0;
   const measuredRadar = radarData.filter(d => d.score !== null);
   const avgRadarScore = measuredRadar.length
@@ -264,8 +264,8 @@ function ProfileHubContent() {
                   <Award className="h-3.5 w-3.5" />
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Skills</span>
                 </div>
-                <p className="text-xl sm:text-2xl font-black text-slate-900">{verifiedSkillsCount}</p>
-                <span className="text-[10px] text-slate-400">ทักษะที่ตรวจแล้ว</span>
+                <p className="text-xl sm:text-2xl font-black text-slate-900">{recordedSkillsCount}</p>
+                <span className="text-[10px] text-slate-400">ทักษะที่บันทึกไว้</span>
               </div>
 
               <div className="min-w-0 p-2 sm:p-3.5 rounded-2xl bg-[#f9fafb] border border-slate-200/70 text-center sm:min-w-[105px]">

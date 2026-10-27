@@ -75,7 +75,7 @@ JavaScript จึงเป็นทักษะนำร่องที่มี
 
 ## 5. Migration และการเปิดใช้
 
-การทบทวน AI รอบต่อมาพบข้อจำกัดของ bank v2 และจัดทำ v3 สำหรับ staging เท่านั้น ดู [ข้อค้นพบ](ASSESSMENT_AI_REVIEW_20261027.md) และ [การแก้และทดสอบ v3](ASSESSMENT_V3_STAGING.md) ใช้ rubric แบบ criterion gate และ typed return contract โดยไม่มี schema migration ใหม่ ไม่เปลี่ยนคะแนนเดิม และไม่ถือว่าได้ผ่าน expert validation
+การทบทวน AI รอบต่อมาพบข้อจำกัดของ bank v2 และจัดทำ v3 และ deploy production ผ่าน PR #4 แล้ว (ดู ASSESSMENT_V3_PRODUCTION.md) ดู [ข้อค้นพบ](ASSESSMENT_AI_REVIEW_20261027.md) และ [การแก้และทดสอบ v3](ASSESSMENT_V3_STAGING.md) ใช้ rubric แบบ criterion gate และ typed return contract โดยไม่มี schema migration ใหม่ ไม่เปลี่ยนคะแนนเดิม และไม่ถือว่าได้ผ่าน expert validation
 
 ขั้นตอน production ฉบับเต็ม รวมถึง bank patch, migration history และ recovery: [คู่มืออัปเกรดฐานข้อมูล](PRODUCTION_ASSESSMENT_UPGRADE.md) การเริ่ม API/Docker ไม่แก้ schema อัตโนมัติ
 
@@ -115,3 +115,7 @@ npm run build
 3. กำหนดอายุผลประเมิน วิธีเลือกผลล่าสุดข้ามข้อสอบในทักษะเดียวกัน และหลักเกณฑ์นำผลเก่ามาใช้เมื่อมีหลักฐาน skill binding ที่ตรวจสอบได้
 4. ตัดสินใจว่าจะอนุญาตใช้ผลบริษัทหรือทฤษฎีในคะแนนส่วนกลางภายใต้สิทธิ์/ความยินยอมและความเทียบเคียงแบบใด ปัจจุบันแยกออกอย่างชัดเจน
 5. กำหนด baseline/rollout สำหรับสภาพแวดล้อมอื่นก่อนนำ SQL ไปใช้ การอัปเกรดและทดสอบ local เสร็จแล้ว; ยังไม่ใช่การ deploy ไปบริการ production
+
+## การปรับคอร์สและข้อความโปรไฟล์หลัง v3
+
+ดู [กติกาการตัดรายการซ้ำและคัดความเกี่ยวข้อง](COURSE_RECOMMENDATION_CLEANUP.md) ใช้ร่วมใน API คลังคอร์ส ช่องว่างทักษะ รายละเอียดงาน และแผนพัฒนาบริษัท ไม่มี schema migration หรือการแก้ผลสอบเดิม จำนวนทักษะบนโปรไฟล์เรียกว่า “ทักษะที่บันทึกไว้” เพื่อรวมสถานะยังไม่ประเมินอย่างตรงไปตรงมา
