@@ -80,4 +80,3 @@ Assessment semantics remain unchanged: unassessed is neither 0 nor 100; partial 
 2. Owner/operator: resolve billing, monitoring, provider capacity and recovery gates above. Approve exact QA visibility IDs; implement and test visibility separately without deleting history.
 3. Human domain/assessment experts: review skill/job relevance, original question/rubric/test coverage, threshold fairness and pilot results before removing draft labels. Automated review and synthetic answer testing are supporting evidence, not expert sign-off.
 4. Owner with privacy/security reviewers: approve consent, retention/deletion/export handling, incident contact and company access policy before onboarding real users. This report does not assert legal compliance.
-

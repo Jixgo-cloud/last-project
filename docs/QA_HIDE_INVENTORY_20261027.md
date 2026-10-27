@@ -65,4 +65,3 @@ Company has no isActive column. Do not delete companies or memberships to hide t
 7. Retain the exact old flag values to reverse visibility changes. This list is not executable SQL and makes no production change.
 
 Unknown assessment status remains unknown: it is neither 0 nor 100, and must prompt assessment before a skill gap can be inferred. The draft v3 bank is not a QA fixture merely because it is awaiting expert review; retain its draft label and do not hide it using this inventory automatically.
-
