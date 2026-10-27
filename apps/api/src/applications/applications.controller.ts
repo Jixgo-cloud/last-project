@@ -27,8 +27,9 @@ export class ApplicationsController {
   }
 
   @Get(':id')
-  async getOne(@Param('id') id: string) {
-    return this.applicationsService.getApplicationById(id);
+  @Roles(UserRole.CANDIDATE, UserRole.COMPANY, UserRole.ADMIN)
+  async getOne(@Param('id') id: string, @Request() req: any) {
+    return this.applicationsService.getApplicationById(id, req.user.id, req.user.role);
   }
 }
 
