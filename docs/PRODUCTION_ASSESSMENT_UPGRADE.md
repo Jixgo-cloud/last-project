@@ -2,12 +2,14 @@
 
 This is a release procedure, not evidence of a production deployment. The completed live Judge0 verification used a local PostgreSQL clone; see [the evidence report](LIVE_JUDGE0_VERIFICATION.md). Run commands from the repository root using the locked dependencies (Prisma 5.22). API/container startup now starts Node only: it does not run `prisma db push`.
 
+**27 October readiness check: HOLD.** The actual production bank has one question, so the two-question bank patch below must not be applied unchanged. Production still needs the application-score migration, a fresh verified backup, and coordinated provider rollout. Read [the inspected targets, rehearsal results, and release gates](PRODUCTION_ROLLOUT_READINESS_20261027.md) before executing this procedure.
+
 ## 1. Prepare and rehearse
 
 - Pin the reviewed release commit and build API/web artifacts before the maintenance window. Run `npm ci`, `npm run build`, `npm test`, and `npm run lint` in CI. Supply build/runtime settings through the deployment secret store.
 - Identify the production database and inspect its schema and migration history. This repository contains incremental SQL, **not an initial schema baseline**. Do not run these migrations against an empty database or assume `migrate deploy` can reconstruct the whole schema.
 - Use a direct database connection with migration privileges, supplied as `DATABASE_URL` in the release environment. Do not paste credentials into commands, logs, or Git. Use the provider's required SSL settings.
-- Take a provider snapshot/PITR recovery point and a full PostgreSQL custom-format backup. Verify that the backup restores to an isolated database. Record table row counts and fingerprints, especially assessments, questions, assessment attempts/answers, and job applications. Rehearse the SQL and bank patch on that restored clone first.
+- Verify which provider snapshot/PITR recovery features are actually available and record their recovery window. Production currently reports the Free plan, so do not assume managed backups exist. Obtain a fresh PostgreSQL custom-format backup and document its schema, permissions, and Storage coverage; a public-schema dump does not cover Supabase-managed schemas or Storage object files. Verify restoration to an isolated database. Record table row counts and fingerprints, especially assessments, questions, assessment attempts/answers, and job applications. Rehearse the SQL and the separately approved production bank path on that restored clone first.
 - Record the old image versions, migration history, and release evidence in private storage. Restrict access to bank backups because they contain answer keys. Stop new exam starts/submissions, job applications, ingestion workers, and other writes for the final backup and release window. Drain existing requests and coordinate unfinished exam attempts: changed criteria invalidate their later submission, so offer a restart without interpreting it as a failed skill assessment.
 
 ## 2. Apply the schema changes explicitly
