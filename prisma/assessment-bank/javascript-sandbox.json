@@ -1,41 +1,222 @@
 {
-  "version": 2,
+  "version": 3,
   "qualityStatus": "PENDING_EXPERT_REVIEW_AND_PILOT",
-  "description": "JavaScript algorithm practice using Judge0. Draft assessment pending expert review and pilot calibration; covers only the stated tasks, not all JavaScript proficiency.",
+  "description": "Draft JavaScript parsing and algorithm assessment v3. Criterion-based scoring; pending human expert review and pilot. Does not certify general JavaScript proficiency.",
   "questions": [
     {
       "title": "Two Sum Target Matcher",
-      "prompt": "Implement solution(numsStr, target) in JavaScript. numsStr is a comma-separated string of integers. Return two different zero-based indices as a string 'i,j' whose values sum to target. Scan the second index j from left to right and return the first matching pair; for repeated values, use the most recent earlier index. Return an empty string if no pair exists. Example: solution('2,7,11,15', 9) returns '0,1'. Test inputs use JSON argument arrays, for example [\"2,7,11,15\",9].",
+      "prompt": "Implement solution(numsStr, target) in JavaScript. numsStr is a comma-separated string of integers. Return two different zero-based indices as a string 'i,j' whose values sum to target. Scan the second index j from left to right and return the first matching pair; for repeated values, use the most recent earlier index. Return an empty string if no pair exists. Example: solution('2,7,11,15', 9) returns '0,1'. Test inputs use JSON argument arrays, for example [\"2,7,11,15\",9]. Constraints: 1 to 100 integers, each between -1000 and 1000; target is an integer between -2000 and 2000. Input is valid; no empty fields. Return a string. Scoring: each criterion earns its weight only when every associated test passes. If any essential criterion fails, this question is capped at 15/50. These draft rules await human review and pilot.",
       "difficulty": "MEDIUM",
       "points": 50,
       "evaluationMethod": "AUTOMATED_TEST_CASES",
       "starterCode": "// JavaScript: implement the function below.\nfunction solution(numsStr, target) {\n  // TODO\n}",
       "solutionCode": "function solution(numsStr, target) { const nums = String(numsStr).split(',').map(Number); const seen = new Map(); for (let j = 0; j < nums.length; j++) { const other = Number(target) - nums[j]; if (seen.has(other)) return seen.get(other) + ',' + j; seen.set(nums[j], j); } return ''; }",
-      "rubric": { "scoring": "50 * passedTestCases / totalTestCases", "criteria": ["Parse integer arguments", "Find distinct indices with the specified tie-break", "Handle repeated values and zero"], "qualityStatus": "PENDING_EXPERT_REVIEW_AND_PILOT" },
+      "rubric": {
+        "model": "CRITERION_GATE_V1",
+        "scoring": "All cases within a criterion must pass to earn its weight; essential failure caps question at 30% (15/50). Draft, uncalibrated.",
+        "essentialFailureCap": 0.3,
+        "qualityStatus": "PENDING_EXPERT_REVIEW_AND_PILOT",
+        "criteria": [
+          {
+            "id": "pair",
+            "label": "Distinct indices and signed integer parsing",
+            "weight": 40,
+            "essential": true
+          },
+          {
+            "id": "tie",
+            "label": "First second index and most recent earlier index",
+            "weight": 30,
+            "essential": true
+          },
+          {
+            "id": "absent",
+            "label": "Empty string when no distinct pair exists",
+            "weight": 30,
+            "essential": true
+          }
+        ]
+      },
       "testCases": [
-        { "input": "[\"2,7,11,15\",9]", "expectedOutput": "0,1" },
-        { "input": "[\"3,2,4\",6]", "expectedOutput": "1,2" },
-        { "input": "[\"3,3\",6]", "expectedOutput": "0,1" },
-        { "input": "[\"1,5,3,7\",8]", "expectedOutput": "1,2", "isHidden": true },
-        { "input": "[\"0,4,3,0\",0]", "expectedOutput": "0,3", "isHidden": true }
+        {
+          "input": "[\"2,7,11,15\",9]",
+          "expectedOutput": "0,1",
+          "returnType": "string",
+          "criterionId": "pair"
+        },
+        {
+          "input": "[\"3,2,4\",6]",
+          "expectedOutput": "1,2",
+          "returnType": "string",
+          "criterionId": "pair"
+        },
+        {
+          "input": "[\"3,3\",6]",
+          "expectedOutput": "0,1",
+          "returnType": "string",
+          "criterionId": "pair"
+        },
+        {
+          "input": "[\"1,5,3,7\",8]",
+          "expectedOutput": "1,2",
+          "isHidden": true,
+          "returnType": "string",
+          "criterionId": "tie"
+        },
+        {
+          "input": "[\"0,4,3,0\",0]",
+          "expectedOutput": "0,3",
+          "isHidden": true,
+          "returnType": "string",
+          "criterionId": "pair"
+        },
+        {
+          "input": "[\"1,1,2\",3]",
+          "expectedOutput": "1,2",
+          "isHidden": true,
+          "criterionId": "tie",
+          "returnType": "string"
+        },
+        {
+          "input": "[\"1,2,3\",99]",
+          "expectedOutput": "",
+          "isHidden": true,
+          "criterionId": "absent",
+          "returnType": "string"
+        },
+        {
+          "input": "[\"2\",4]",
+          "expectedOutput": "",
+          "isHidden": true,
+          "criterionId": "absent",
+          "returnType": "string"
+        },
+        {
+          "input": "[\"-2,5,8\",3]",
+          "expectedOutput": "0,1",
+          "isHidden": true,
+          "criterionId": "pair",
+          "returnType": "string"
+        },
+        {
+          "input": "[\"-1000,1000\",0]",
+          "expectedOutput": "0,1",
+          "isHidden": true,
+          "criterionId": "pair",
+          "returnType": "string"
+        }
       ]
     },
     {
       "title": "Valid Palindrome Verifier",
-      "prompt": "Implement solution(str) in JavaScript. Keep only ASCII letters A-Z/a-z and digits 0-9, ignore letter case, and return boolean true if the remaining string reads identically forward and backward; otherwise return false. An empty normalized string is a palindrome. Example: solution('A man, a plan, a canal: Panama') returns true. Test inputs use JSON argument arrays, preserving commas and whitespace inside strings.",
+      "prompt": "Implement solution(str) in JavaScript. Keep only ASCII letters A-Z/a-z and digits 0-9, ignore letter case, and return boolean true if the remaining string reads identically forward and backward; otherwise return false. An empty normalized string is a palindrome. Example: solution('A man, a plan, a canal: Panama') returns true. Test inputs use JSON argument arrays, preserving commas and whitespace inside strings. Input length is 0 to 1000 UTF-16 code units. Remove non-ASCII characters BEFORE converting ASCII letters to lowercase. Return a boolean, not a string. Scoring: each criterion earns its weight only when every associated test passes. If any essential criterion fails, this question is capped at 15/50. These draft rules await human review and pilot.",
       "difficulty": "EASY",
       "points": 50,
       "evaluationMethod": "AUTOMATED_TEST_CASES",
       "starterCode": "// JavaScript: implement the function below.\nfunction solution(str) {\n  // TODO\n}",
-      "solutionCode": "function solution(str) { const clean = String(str).toLowerCase().replace(/[^a-z0-9]/g, ''); return clean === clean.split('').reverse().join(''); }",
-      "rubric": { "scoring": "50 * passedTestCases / totalTestCases", "criteria": ["Normalize ASCII letters and digits", "Preserve single string input including punctuation", "Check symmetry including empty strings"], "qualityStatus": "PENDING_EXPERT_REVIEW_AND_PILOT" },
+      "solutionCode": "function solution(str) { const clean = String(str).replace(/[^A-Za-z0-9]/g, '').toLowerCase(); return clean === clean.split('').reverse().join(''); }",
+      "rubric": {
+        "model": "CRITERION_GATE_V1",
+        "scoring": "All cases within a criterion must pass to earn its weight; essential failure caps question at 30% (15/50). Draft, uncalibrated.",
+        "essentialFailureCap": 0.3,
+        "qualityStatus": "PENDING_EXPERT_REVIEW_AND_PILOT",
+        "criteria": [
+          {
+            "id": "normalize",
+            "label": "ASCII-only filtering before lowercase; keep digits",
+            "weight": 50,
+            "essential": true
+          },
+          {
+            "id": "symmetry",
+            "label": "True and false symmetry decisions including empty strings",
+            "weight": 50,
+            "essential": true
+          }
+        ]
+      },
       "testCases": [
-        { "input": "[\"A man, a plan, a canal: Panama\"]", "expectedOutput": "true" },
-        { "input": "[\"race a car\"]", "expectedOutput": "false" },
-        { "input": "[\" \"]", "expectedOutput": "true" },
-        { "input": "[\"Was it a car or a cat I saw?\"]", "expectedOutput": "true", "isHidden": true },
-        { "input": "[\"12321\"]", "expectedOutput": "true", "isHidden": true },
-        { "input": "[\"12345\"]", "expectedOutput": "false", "isHidden": true }
+        {
+          "input": "[\"A man, a plan, a canal: Panama\"]",
+          "expectedOutput": "true",
+          "returnType": "boolean",
+          "criterionId": "normalize"
+        },
+        {
+          "input": "[\"race a car\"]",
+          "expectedOutput": "false",
+          "returnType": "boolean",
+          "criterionId": "symmetry"
+        },
+        {
+          "input": "[\" \"]",
+          "expectedOutput": "true",
+          "returnType": "boolean",
+          "criterionId": "symmetry"
+        },
+        {
+          "input": "[\"Was it a car or a cat I saw?\"]",
+          "expectedOutput": "true",
+          "isHidden": true,
+          "returnType": "boolean",
+          "criterionId": "normalize"
+        },
+        {
+          "input": "[\"12321\"]",
+          "expectedOutput": "true",
+          "isHidden": true,
+          "returnType": "boolean",
+          "criterionId": "normalize"
+        },
+        {
+          "input": "[\"12345\"]",
+          "expectedOutput": "false",
+          "isHidden": true,
+          "returnType": "boolean",
+          "criterionId": "normalize"
+        },
+        {
+          "input": "[\"Ka\"]",
+          "expectedOutput": "true",
+          "isHidden": true,
+          "criterionId": "normalize",
+          "returnType": "boolean"
+        },
+        {
+          "input": "[\"İa\"]",
+          "expectedOutput": "true",
+          "isHidden": true,
+          "criterionId": "normalize",
+          "returnType": "boolean"
+        },
+        {
+          "input": "[\"a1\"]",
+          "expectedOutput": "false",
+          "isHidden": true,
+          "criterionId": "normalize",
+          "returnType": "boolean"
+        },
+        {
+          "input": "[\"\"]",
+          "expectedOutput": "true",
+          "isHidden": true,
+          "criterionId": "symmetry",
+          "returnType": "boolean"
+        },
+        {
+          "input": "[\"ab\"]",
+          "expectedOutput": "false",
+          "isHidden": true,
+          "criterionId": "symmetry",
+          "returnType": "boolean"
+        },
+        {
+          "input": "[\"abc\"]",
+          "expectedOutput": "false",
+          "isHidden": true,
+          "criterionId": "symmetry",
+          "returnType": "boolean"
+        }
       ]
     }
   ]

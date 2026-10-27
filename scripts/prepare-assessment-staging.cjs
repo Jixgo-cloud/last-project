@@ -70,7 +70,7 @@ async function fingerprints() {
   const archive = await db.assessmentBankRevision.findUniqueOrThrow({ where: { assessmentId_version: { assessmentId: original.id, version: 1 } } });
   assert.equal(archive.snapshot.questions.length, 1);
   assert.equal(archive.contentHash, plan.expectedHash);
-  const q = await db.question.findUniqueOrThrow({ where: { id: original.questions[0].id } }); assert.equal(q.version, 2);
+  const q = await db.question.findUniqueOrThrow({ where: { id: original.questions[0].id } }); assert.equal(q.version, require('../prisma/assessment-bank/javascript-sandbox.json').version);
   const report = { checkedAt: new Date().toISOString(), database: name, sourceBackup: path.basename(backup), sourceBackupHash: hash(fs.readFileSync(backup)),
     backupScope: 'public schema only; owner/ACL restoration excluded', productionWrites: false,
     before, after, migrations, diff: diff.trim(), plan, applied: applied.trim(), idempotent: true,

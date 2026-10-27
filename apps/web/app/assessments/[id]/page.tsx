@@ -1142,6 +1142,17 @@ export default function AssessmentRunnerPage() {
                       </p>
 
                       {/* Test Cases Specification or Open-Ended Rubric */}
+                      {currentQuestion?.rubric?.model === 'CRITERION_GATE_V1' && (
+                        <div className="my-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-slate-700">
+                          <p className="font-semibold">เกณฑ์ฉบับร่าง — รอผู้เชี่ยวชาญและการทดลองใช้</p>
+                          <p>แต่ละองค์ประกอบได้คะแนนเมื่อผ่านทุกกรณีทดสอบในองค์ประกอบนั้น หากไม่ผ่านองค์ประกอบจำเป็น คะแนนข้อนี้ไม่เกิน {currentQuestion.points * currentQuestion.rubric.essentialFailureCap} / {currentQuestion.points}</p>
+                          <ul className="mt-2 list-disc pl-5">
+                            {currentQuestion.rubric.criteria.map((criterion: any) => (
+                              <li key={criterion.id}>{criterion.label} — น้ำหนัก {criterion.weight}{criterion.essential ? ' (จำเป็น)' : ''}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                       {currentQuestion?.evaluationMethod === QuestionEvaluationMethod.OPEN_ENDED ? (
                         <div className="p-4 rounded-2xl bg-purple-50/70 border border-purple-200 text-xs text-purple-950 space-y-2.5 mb-6">
                           <div className="flex items-center gap-1.5 font-bold text-sm text-purple-950">

@@ -147,7 +147,7 @@ export default function AssessmentsPage() {
                           }`}
                         >
                           {getAttemptPercentage(latestAttempt) === null ? (
-                            <><Clock className="h-3.5 w-3.5" />{latestAttempt.status === 'IN_PROGRESS' ? 'กำลังทำข้อสอบ' : 'รอตรวจ'}</>
+                            <><Clock className="h-3.5 w-3.5" />{latestAttempt.status === 'SYSTEM_ERROR' ? 'บริการตรวจข้อสอบขัดข้อง — กรุณาเริ่มใหม่' : latestAttempt.status === 'IN_PROGRESS' ? 'กำลังทำข้อสอบ' : 'รอตรวจ'}</>
                           ) : latestAttempt.passed ? (
                             <>
                               <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />

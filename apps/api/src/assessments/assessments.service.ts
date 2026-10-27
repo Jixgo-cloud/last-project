@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { AZ204_FRAMEWORK, frameworkMetadata, getFrameworkCoverage, getFrameworkTopic } from '@smartcareer/shared';
 import { candidateFeedback } from './candidate-feedback';
 import { codingAttemptTotals } from './coding-attempt-totals';
+import { automatedRubricScore } from './automated-rubric';
 import {
   Injectable,
   NotFoundException,
@@ -856,12 +857,13 @@ export class AssessmentsService {
   }
 
   const isCorrect = !isExpired && executionReport.passedTestCases === executionReport.totalTestCases;
-  const pointsEarned =
-    isExpired || executionReport.totalTestCases === 0
-      ? 0
-      : Math.round(
-          (executionReport.passedTestCases / executionReport.totalTestCases) * question.points * 10,
-        ) / 10;
+  const grading = (question.rubric as any)?.model === 'CRITERION_GATE_V1'
+    ? automatedRubricScore(question.points, testCases, executionReport.details, question.rubric)
+    : { pointsEarned: executionReport.totalTestCases === 0 ? 0 :
+        Math.round(executionReport.passedTestCases / executionReport.totalTestCases * question.points * 10) / 10,
+        rubricResult: undefined };
+  const pointsEarned = isExpired ? 0 : grading.pointsEarned;
+  Object.assign(executionReport, { rubricResult: grading.rubricResult });
 
   return this.prisma.$transaction(async (tx) => {
     const existingAnswer = await tx.assessmentAnswer.findFirst({

@@ -40,9 +40,10 @@ async function ready(url) {
   throw new Error('Staging did not become ready: '+url);
 }
 (async()=>{
-  await portFree(4100); if(!process.argv.includes('--api-only')) await portFree(3100);
+  if(!process.argv.includes('--web-only')) await portFree(4100);
+  if(!process.argv.includes('--api-only')) await portFree(3100);
   cfg.provider=provider; cfg.servers ||= {};
-  cfg.servers.api=start('api',path.join(root,'apps/api/dist/main.js'),[],path.join(root,'apps/api'));
+  if(!process.argv.includes('--web-only')) cfg.servers.api=start('api',path.join(root,'apps/api/dist/main.js'),[],path.join(root,'apps/api'));
   if(!process.argv.includes('--api-only')) cfg.servers.web=start('web',path.join(root,'node_modules/next/dist/bin/next'),['dev','-p','3100','-H','127.0.0.1'],path.join(root,'apps/web'));
   fs.writeFileSync(file,JSON.stringify(cfg,null,2),{mode:0o600});
   await ready(cfg.apiUrl+'/health/ready');

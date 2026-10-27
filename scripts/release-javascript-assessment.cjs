@@ -27,7 +27,7 @@ async function main() {
   assert.equal(assessment.type, 'PRACTICAL_CODING');
   assert.equal(assessment.skill?.slug, 'javascript', 'Bank must be bound to JavaScript');
   if (current(assessment)) { console.log(JSON.stringify({ status: 'ALREADY_CURRENT', version: bank.version })); return; }
-  assert.equal(assessment.version, 1, 'Unexpected version; do not overwrite editorial changes');
+  assert([1, bank.version - 1].includes(assessment.version), 'Only reviewed legacy or previous versions can be upgraded');
   const single = assessment.questions.length === 1;
   if (single) {
     assert(expand, 'One-question bank requires explicit --expand-single-question and a reviewed fresh plan');

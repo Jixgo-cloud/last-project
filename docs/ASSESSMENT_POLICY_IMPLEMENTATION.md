@@ -75,6 +75,8 @@ JavaScript จึงเป็นทักษะนำร่องที่มี
 
 ## 5. Migration และการเปิดใช้
 
+การทบทวน AI รอบต่อมาพบข้อจำกัดของ bank v2 และจัดทำ v3 สำหรับ staging เท่านั้น ดู [ข้อค้นพบ](ASSESSMENT_AI_REVIEW_20261027.md) และ [การแก้และทดสอบ v3](ASSESSMENT_V3_STAGING.md) ใช้ rubric แบบ criterion gate และ typed return contract โดยไม่มี schema migration ใหม่ ไม่เปลี่ยนคะแนนเดิม และไม่ถือว่าได้ผ่าน expert validation
+
 ขั้นตอน production ฉบับเต็ม รวมถึง bank patch, migration history และ recovery: [คู่มืออัปเกรดฐานข้อมูล](PRODUCTION_ASSESSMENT_UPGRADE.md) การเริ่ม API/Docker ไม่แก้ schema อัตโนมัติ
 
 SQL ใหม่เปลี่ยนเพียงคอลัมน์คะแนนใบสมัครให้รับ null, เอา default 0 ออก และเพิ่ม JSONB snapshot ไม่มี DELETE, UPDATE คะแนนเดิม หรือการ backfill ผลสอบที่เดาที่มา การเพิ่มคอลัมน์ใช้ IF NOT EXISTS เพื่อรันซ้ำได้
