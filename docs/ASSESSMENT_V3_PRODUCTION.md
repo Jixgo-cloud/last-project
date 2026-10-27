@@ -61,4 +61,4 @@ Evidence is saved locally under `output/assessment-v3-production/`: API before/g
 
 ## Local follow-up after rollout
 
-Profile summary wording and shared course deduplication/relevance selection have been implemented locally; see [cleanup report](COURSE_RECOMMENDATION_CLEANUP.md). These changes supersede the first two UI/catalog follow-ups in code only, and are not yet deployed. Historical production verification above remains unchanged. Duplicate database records are retained intentionally; API presentation removes duplicates without destructive migration.
+Profile summary wording and shared course deduplication/relevance selection have been deployed through PR #5; see [cleanup report](COURSE_RECOMMENDATION_CLEANUP.md). These changes resolve the first two UI/catalog follow-ups in production, with API and browser evidence in the cleanup report. Historical production verification above remains unchanged. Duplicate database records are retained intentionally; API presentation removes duplicates without destructive migration.
