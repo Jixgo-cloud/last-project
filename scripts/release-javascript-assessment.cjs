@@ -10,6 +10,9 @@ const args = process.argv.slice(2);
 const value = flag => args[args.indexOf(flag) + 1];
 const apply = args.includes('--apply');
 const expand = args.includes('--expand-single-question');
+// Explicit owner-approved exception; the database revision archive is still mandatory.
+const skipBackup = args.includes('--skip-backup');
+assert(!(skipBackup && args.includes('--backup-dir')), 'Choose --skip-backup or --backup-dir, not both');
 assert(process.env.DATABASE_URL, 'Supply DATABASE_URL through the release secret environment');
 const db = new PrismaClient();
 const query = { where: { slug: 'coding-algorithm-sandbox' }, include: { skill: true, questions: { include: { choices: { orderBy: { id: 'asc' } } }, orderBy: { id: 'asc' } } } };
@@ -46,11 +49,14 @@ async function main() {
     questionTitles: bank.questions.map(q => q.title), qualityStatus: bank.qualityStatus }));
   if (!apply) return;
   assert(args.includes('--expected-hash') && value('--expected-hash') === fingerprint, 'Plan hash differs; review a fresh plan');
-  assert(args.includes('--backup-dir') && path.isAbsolute(value('--backup-dir')), 'Provide an absolute private --backup-dir');
-  const backupDir = value('--backup-dir');
-  assert(fs.statSync(backupDir).isDirectory(), 'Backup directory must already exist');
-  const backupFile = path.join(backupDir, `javascript-bank-before-${Date.now()}.json`);
-  fs.writeFileSync(backupFile, JSON.stringify(assessment, null, 2), { flag: 'wx', mode: 0o600 });
+  let backupFile = null;
+  if (!skipBackup) {
+    assert(args.includes('--backup-dir') && path.isAbsolute(value('--backup-dir')), 'Provide an absolute private --backup-dir or explicitly authorized --skip-backup');
+    const backupDir = value('--backup-dir');
+    assert(fs.statSync(backupDir).isDirectory(), 'Backup directory must already exist');
+    backupFile = path.join(backupDir, `javascript-bank-before-${Date.now()}.json`);
+    fs.writeFileSync(backupFile, JSON.stringify(assessment, null, 2), { flag: 'wx', mode: 0o600 });
+  }
   await db.$transaction(async tx => {
     await tx.$executeRawUnsafe("SET LOCAL lock_timeout = '5s'");
     await tx.$executeRawUnsafe("SET LOCAL statement_timeout = '15s'");
@@ -75,6 +81,6 @@ async function main() {
     await tx.assessment.update({ where: { id: latest.id }, data: { version: bank.version, description: bank.description } });
   }, { isolationLevel: 'Serializable', timeout: 20000 });
   assert(current(await db.assessment.findUniqueOrThrow(query)), 'Post-update verification failed');
-  console.log(JSON.stringify({ status: 'APPLIED', version: bank.version, backupFile, attemptsAndAnswers: 'UNMODIFIED' }));
+  console.log(JSON.stringify({ status: 'APPLIED', version: bank.version, backupFile, backupSkipped: skipBackup, attemptsAndAnswers: 'UNMODIFIED' }));
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => db.$disconnect());

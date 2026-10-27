@@ -41,14 +41,25 @@ async function main() {
   assert.equal((await db.assessment.findUniqueOrThrow({ where: { id: exam.id } })).version, 1);
   run(release, [...flags, '--apply', '--expected-hash', 'stale', '--backup-dir', backupDir], 1);
   assert.equal(fs.readdirSync(backupDir).length, 0);
+  run(release, [...flags, '--apply', '--expected-hash', plan.expectedHash], 1);
+  run(release, [...flags, '--apply', '--expected-hash', plan.expectedHash, '--skip-backup', '--backup-dir', backupDir], 1);
+  run(release, [...flags, '--apply', '--expected-hash', 'stale', '--skip-backup'], 1);
   const active = await db.assessmentAttempt.create({ data: { assessmentId: exam.id, candidateId: user.candidateProfile.id } });
   run(release, [...flags, '--apply', '--expected-hash', plan.expectedHash, '--backup-dir', backupDir], 1);
+  run(release, [...flags, '--apply', '--expected-hash', plan.expectedHash, '--skip-backup'], 1);
   assert.equal(await db.assessmentBankRevision.count(), 0, 'Rejected release must roll back the archive');
   assert.equal((await db.assessment.findUniqueOrThrow({ where: { id: exam.id } })).version, 1);
   await db.assessmentAttempt.delete({ where: { id: active.id } });
-  const applied = run(release, [...flags, '--apply', '--expected-hash', plan.expectedHash, '--backup-dir', backupDir]);
+  const filesBeforeApply = fs.readdirSync(backupDir);
+  const applied = run(release, [...flags, '--apply', '--expected-hash', plan.expectedHash, ...(single ? ['--skip-backup'] : ['--backup-dir', backupDir])]);
   assert.equal(applied.at(-1).status, 'APPLIED');
-  const backup = JSON.parse(fs.readFileSync(applied.at(-1).backupFile)); assert.equal(backup.version, 1);
+  assert.equal(applied.at(-1).backupSkipped, single);
+  if (single) {
+    assert.equal(applied.at(-1).backupFile, null);
+    assert.deepEqual(fs.readdirSync(backupDir), filesBeforeApply);
+  } else {
+    const backup = JSON.parse(fs.readFileSync(applied.at(-1).backupFile)); assert.equal(backup.version, 1);
+  }
   assert.equal(run(release)[0].status, 'ALREADY_CURRENT');
   assert.deepEqual(await db.assessmentAttempt.findUniqueOrThrow({ where: { id: attempt.id }, include: { answers: true } }), attempt);
   const updated = await db.assessment.findUniqueOrThrow({ where: { id: exam.id }, include: { questions: true } });
