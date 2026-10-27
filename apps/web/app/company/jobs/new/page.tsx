@@ -117,7 +117,7 @@ export default function NewJobPage() {
             ลงประกาศรับสมัครงาน
           </h1>
           <p className="text-[13px] text-[#667085] mt-1.5">
-            ระบุรายละเอียดตำแหน่งงานและกำหนดเกณฑ์ทักษะที่ต้องการ เพื่อให้ระบบจับคู่ Candidate ตามคะแนน Match Score 70/20
+            ระบุรายละเอียดตำแหน่งงานและกำหนดเกณฑ์ทักษะที่ต้องการ เพื่อให้ระบบจับคู่ Candidate จากผลประเมิน พร้อมแสดงความครอบคลุม
           </p>
         </div>
 
@@ -254,7 +254,7 @@ export default function NewJobPage() {
             <div className="flex items-center justify-between mb-3.5">
               <div>
                 <h3 className="text-sm font-bold text-slate-900">
-                  ทักษะที่ต้องการสำหรับคำนวณ Match Score (70/20 Algorithm)
+                  ทักษะที่ต้องการสำหรับคำนวณ การจับคู่จากผลประเมิน
                 </h3>
                 <p className="text-xs text-[#667085]">
                   ระบบจะนำทักษะที่กำหนดไปประเมินกับหลักฐานและคะแนนเรดาร์ของ Candidate

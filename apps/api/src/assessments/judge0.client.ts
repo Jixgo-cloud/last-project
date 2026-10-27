@@ -297,11 +297,13 @@ export class Judge0Client {
       case 10:
       case 11:
       case 12:
+      case 14:
         return 'RUNTIME_ERROR';
+      // 13 is Judge0's Internal Error, not a candidate memory-limit failure.
+      // Queued/processing/unknown statuses also cannot become a measured zero.
       case 13:
-        return 'MEMORY_LIMIT';
       default:
-        return 'RUNTIME_ERROR';
+        throw new Error(`Judge0 did not return a final grading result (status ${statusId})`);
     }
   }
 
@@ -340,6 +342,7 @@ ${sourceCode}
 
 if 'solution' not in globals() or not callable(globals().get('solution')):
     print("Error: ฟังก์ชัน 'solution' ไม่ถูกกำหนด (Function 'solution' is not defined). โปรดตั้งชื่อฟังก์ชันหลักเป็น def solution(...):", file=sys.stderr)
+    sys.exit(1)
 else:
     def __parse_input(raw):
         s = (raw or '').strip()
@@ -395,6 +398,7 @@ else:
             print(res)
     except Exception as err:
         print(f"Runtime Error in solution(): {err}", file=sys.stderr)
+        sys.exit(1)
 `;
     }
 
@@ -404,6 +408,7 @@ ${sourceCode}
 
 if (typeof solution !== 'function') {
   console.error("Error: ฟังก์ชัน 'solution' ไม่ถูกกำหนด (Function 'solution' is not defined). โปรดตั้งชื่อฟังก์ชันหลักเป็น function solution(...)");
+  process.exitCode = 1;
 } else {
   function __parseInput(raw) {
     var str = (raw || '').trim();
@@ -444,6 +449,7 @@ if (typeof solution !== 'function') {
     }
   } catch (err) {
     console.error("Runtime Error in solution(): " + err.message);
+    process.exitCode = 1;
   }
 }
 `;

@@ -612,6 +612,7 @@ export default function AssessmentRunnerPage() {
                 <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight">
                   {assessment.title}
                 </h1>
+                {!assessment.companyId && <p className="text-xs text-amber-800 mt-2">ข้อสอบและเกณฑ์รอผู้เชี่ยวชาญตรวจและทดลองใช้ ผลประเมินสะท้อนเฉพาะขอบเขตที่ทดสอบ</p>}
                 <span className="text-[10px] font-semibold bg-[#e8eaff] text-[#4f46e5] px-2.5 py-0.5 rounded-full border border-[#dce0ff]">
                   {assessment.type === AssessmentType.PRACTICAL_CODING
                     ? 'Strict Sandbox Coding'
@@ -733,7 +734,8 @@ export default function AssessmentRunnerPage() {
                   </div>
                 )}
 
-                <AssessmentResultGuidance percentage={getAttemptPercentage(theoryResult)} passingScore={assessment.passingScore} feedbackHidden={theoryResult.feedbackHidden} skillName={assessment.skill?.name} />
+                {theoryResult.resultScope?.assessmentVersion != null && <p className="text-sm text-slate-500">ผลสอบชุดรุ่น {theoryResult.resultScope.assessmentVersion}{theoryResult.resultScope.questionCount != null ? ` · ${theoryResult.resultScope.questionCount} ข้อ` : ''} · คะแนนเต็มเดิม {theoryResult.maxScore}</p>}
+                <AssessmentResultGuidance percentage={getAttemptPercentage(theoryResult)} passingScore={theoryResult.assessment?.passingScore ?? assessment.passingScore} feedbackHidden={theoryResult.feedbackHidden} skillName={assessment.skill?.name} />
 
                 <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
                   <Link
@@ -919,6 +921,7 @@ export default function AssessmentRunnerPage() {
                       ) : null}
                     </p>
 
+                    {codingFinalResult.resultScope?.assessmentVersion != null && <p className="text-sm text-slate-500 mt-2">ผลสอบชุดรุ่น {codingFinalResult.resultScope.assessmentVersion}{codingFinalResult.resultScope.questionCount != null ? ` · ${codingFinalResult.resultScope.questionCount} ข้อ` : ''} · คะแนนเต็มเดิม {codingFinalResult.maxScore}</p>}
                     {/* AI Rubric Breakdown Display */}
                     {codingFinalResult.evaluation?.rubricBreakdown && (
                       <div className="mt-6 text-left p-5 rounded-2xl bg-purple-50/60 border border-purple-200 space-y-4">
@@ -1005,7 +1008,7 @@ export default function AssessmentRunnerPage() {
                               ได้รับเหรียญทักษะเฉพาะ: {assessment.title}
                             </div>
                             <div className="text-[11px] text-indigo-700 mt-0.5">
-                              เหรียญแสดงผลผ่านข้อสอบนี้ โดยไม่เพิ่มคะแนนหลักฐาน GitHub
+                              เหรียญแสดงผลผ่านข้อสอบนี้ ไม่ใช่การรับรองความชำนาญทั้งหมด
                             </div>
                           </div>
                         </div>
@@ -1018,7 +1021,7 @@ export default function AssessmentRunnerPage() {
                       </div>
                     )}
 
-                    <AssessmentResultGuidance percentage={getAttemptPercentage(codingFinalResult)} passingScore={assessment.passingScore} feedbackHidden={codingFinalResult.feedbackHidden} skillName={assessment.skill?.name} />
+                    <AssessmentResultGuidance percentage={getAttemptPercentage(codingFinalResult)} passingScore={codingFinalResult.assessment?.passingScore ?? assessment.passingScore} feedbackHidden={codingFinalResult.feedbackHidden} skillName={assessment.skill?.name} />
 
                     <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
                       <Link

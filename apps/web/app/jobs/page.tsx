@@ -1,4 +1,5 @@
 'use client';
+import { formatMatchSummary } from '@smartcareer/shared';
 
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -510,9 +511,9 @@ export default function JobsPage() {
                       </div>
 
                       {/* Match Score Badge */}
-                      {job.matchScore !== undefined && job.matchScore !== null && (
+                      {job.matchAssessment && (
                         <span
-                          className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 border whitespace-nowrap ${
+                          className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 border whitespace-normal max-w-full ${
                             job.matchScore >= 80
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-xs'
                               : job.matchScore >= 60
@@ -520,7 +521,7 @@ export default function JobsPage() {
                               : 'bg-slate-100 text-slate-700 border-slate-200'
                           }`}
                         >
-                          🎯 {job.matchScore}% Match
+                          🎯 {formatMatchSummary(job.matchAssessment)}
                         </span>
                       )}
                     </div>

@@ -206,31 +206,40 @@ export interface SkillScoreSummary {
   skillId: string;
   name: string;
   category: SkillCategory;
-  practicalScore: number; // 0-100 (GitHub)
+  practicalScore: null; // Retired GitHub proficiency field
   theoryScore: number;    // 0-100 (MCQ Assessment)
   codingScore: number;    // 0-100 (Judge0 Coding)
-  verifiedScore: number;  // Legacy cache; use githubEvidenceScore(evidences)
+  verifiedScore: null; // Retired combined cache
+  assessmentScore: number | null;
+  assessmentStatus: "ASSESSED" | "GAP" | "NOT_ASSESSED";
   isVerified: boolean;
 }
 
 export interface RadarChartDataPoint {
   category: SkillCategory;
   subject: string;
-  score: number;
+  score: number | null;
   fullMark: number;
 }
 
 export interface MatchScoreResult {
   jobId: string;
-  matchScore: number; // 0-100
-  requiredCoverage: number; // %
-  preferredCoverage: number; // %
-  careerAlignment: number; // %
+  matchScore: number | null; // conditional on assessed skills
+  status: "AWAITING_ASSESSMENT" | "PRELIMINARY" | "ASSESSED";
+  assessedCount: number;
+  totalSkills: number;
+  assessmentCoverage: number;
+  scoreSource: "ASSESSMENT";
+  unassessedSkills: Array<{ skillId: string; name: string; requiredScore: number; userScore: null; status: "NOT_ASSESSED"; reason: string }>;
+  requiredCoverage: number | null; // %
+  preferredCoverage: number | null; // %
+  careerAlignment: number | null; // %
   verifiedBadgesCount?: number;
   matchedSkills: Array<{
     skillId: string;
     name: string;
     userScore: number;
+    attemptId?: string;
     requiredScore: number;
     isVerified?: boolean;
   }>;
@@ -239,6 +248,7 @@ export interface MatchScoreResult {
     name: string;
     requiredScore: number;
     userScore: number;
+    attemptId?: string;
   }>;
 }
 
@@ -308,3 +318,5 @@ export interface NotificationItem {
 }
 export { ingestionFeedback } from './ingestion-feedback';
 export * from './assessment-framework';
+
+export * from "./skill-assessment";

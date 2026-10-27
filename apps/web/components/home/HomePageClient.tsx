@@ -22,134 +22,6 @@ import {
 import { formatJobItem, formatCourseItem } from '@/lib/home-utils';
 
 
-function CompetencyRadarChart({ radarData }: { radarData: Array<{ subject: string; score: number }> }) {
-  const competencies = [
-    { key: 'frontend', name: 'Frontend', label: 'FRONTEND' },
-    { key: 'backend', name: 'Backend', label: 'BACKEND' },
-    { key: 'database', name: 'Database', label: 'DATABASE' },
-    { key: 'devops', name: 'DevOps', label: 'DEVOPS' },
-    { key: 'testing', name: 'Testing', label: 'TESTING' },
-  ];
-
-  const cx = 150;
-  const cy = 132;
-  const maxRadius = 72;
-
-  const scores = competencies.map((comp) => {
-    const item = radarData?.find(
-      (d) => d.subject.toLowerCase() === comp.key || d.subject.toLowerCase() === comp.label.toLowerCase()
-    );
-    return item ? item.score : 0;
-  });
-
-  const angles = [0, 1, 2, 3, 4].map((i) => (i * 2 * Math.PI) / 5 - Math.PI / 2);
-
-  const gridLevels = [0.25, 0.5, 0.75, 1.0];
-  const gridPolygons = gridLevels.map((lvl) => {
-    return angles
-      .map((ang) => {
-        const x = cx + maxRadius * lvl * Math.cos(ang);
-        const y = cy + maxRadius * lvl * Math.sin(ang);
-        return `${x.toFixed(1)},${y.toFixed(1)}`;
-      })
-      .join(' ');
-  });
-
-  const spokes = angles.map((ang) => ({
-    x2: (cx + maxRadius * Math.cos(ang)).toFixed(1),
-    y2: (cy + maxRadius * Math.sin(ang)).toFixed(1),
-  }));
-
-  const dataPoints = angles
-    .map((ang, i) => {
-      const r = (Math.max(0, Math.min(100, scores[i])) / 100) * maxRadius;
-      const x = cx + r * Math.cos(ang);
-      const y = cy + r * Math.sin(ang);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(' ');
-
-  const labelPositions = [
-    { name: 'FRONTEND', x: cx, y: cy - maxRadius - 13, anchor: 'middle' as const },
-    { name: 'BACKEND', x: cx + (maxRadius + 14) * Math.cos(angles[1]), y: cy + (maxRadius + 14) * Math.sin(angles[1]), anchor: 'start' as const },
-    { name: 'DATABASE', x: cx + (maxRadius + 14) * Math.cos(angles[2]), y: cy + (maxRadius + 14) * Math.sin(angles[2]) + 4, anchor: 'start' as const },
-    { name: 'DEVOPS', x: cx + (maxRadius + 14) * Math.cos(angles[3]), y: cy + (maxRadius + 14) * Math.sin(angles[3]) + 4, anchor: 'end' as const },
-    { name: 'TESTING', x: cx + (maxRadius + 14) * Math.cos(angles[4]), y: cy + (maxRadius + 14) * Math.sin(angles[4]), anchor: 'end' as const },
-  ];
-
-  return (
-    <div className="w-full flex items-center justify-center py-2 px-1">
-      <svg
-        viewBox="0 0 300 270"
-        className="w-full max-w-[270px] h-auto overflow-visible select-none"
-        aria-label="Competency Distribution Radar Chart"
-      >
-        {gridPolygons.map((poly, idx) => (
-          <polygon
-            key={idx}
-            points={poly}
-            fill="none"
-            stroke="#e2e8f0"
-            strokeWidth="1.2"
-          />
-        ))}
-
-        {spokes.map((spoke, idx) => (
-          <line
-            key={idx}
-            x1={cx}
-            y1={cy}
-            x2={spoke.x2}
-            y2={spoke.y2}
-            stroke="#e2e8f0"
-            strokeWidth="1.2"
-          />
-        ))}
-
-        <polygon
-          points={dataPoints}
-          fill="#6366f1"
-          fillOpacity="0.22"
-          stroke="#5c5be5"
-          strokeWidth="2.2"
-          strokeLinejoin="round"
-        />
-
-        {angles.map((ang, i) => {
-          const r = (Math.max(0, Math.min(100, scores[i])) / 100) * maxRadius;
-          const x = cx + r * Math.cos(ang);
-          const y = cy + r * Math.sin(ang);
-          return (
-            <circle
-              key={i}
-              cx={x}
-              cy={y}
-              r="2.5"
-              fill="#5c5be5"
-            />
-          );
-        })}
-
-        {labelPositions.map((lbl, idx) => (
-          <text
-            key={idx}
-            x={lbl.x}
-            y={lbl.y}
-            textAnchor={lbl.anchor}
-            dominantBaseline="central"
-            fill="#475569"
-            fontSize="10.5"
-            fontWeight="600"
-            fontFamily="Inter, system-ui, sans-serif"
-          >
-            {lbl.name}
-          </text>
-        ))}
-      </svg>
-    </div>
-  );
-}
-
 function JobCardSkeleton() {
   return (
     <article className="flex flex-col min-h-[280px] p-5 rounded-[19px] border border-slate-200 bg-white shadow-2xs animate-pulse">
@@ -311,7 +183,7 @@ export default function HomePageClient({ initialJobs = [], initialCourses = [] }
 
             {/* Description */}
             <p className="max-w-[555px] text-[13px] leading-relaxed text-[#667085]">
-              ใส่ชื่อผู้ใช้ GitHub เพื่อวิเคราะห์ repositories ตรวจจับทักษะ และค้นพบเส้นทางอาชีพที่เหมาะสม — ไม่ต้องสมัครสมาชิก
+              ใส่ชื่อผู้ใช้ GitHub เพื่อดูภาษาและเครื่องมือที่พบใน repositories — ไม่ต้องสมัครสมาชิก
             </p>
 
             {/* Search Input Form */}
@@ -500,72 +372,15 @@ export default function HomePageClient({ initialJobs = [], initialCourses = [] }
                 </div>
               </div>
 
-              {/* ---------------- CARD 2: COMPETENCY DISTRIBUTION ---------------- */}
-              <div className="flex flex-col justify-between p-5 rounded-2xl border border-slate-200/90 bg-white shadow-2xs overflow-hidden">
-                <div className="mb-1">
-                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 whitespace-nowrap">
-                    <Layers className="w-4 h-4 text-[#6366f1] flex-shrink-0" />
-                    <span>Competency Distribution</span>
-                  </h3>
-                  <p className="text-[10px] text-slate-500 leading-snug mt-0.5">
-                    Estimated from repository analysis
-                  </p>
-                </div>
-
-                {/* Competency Radar Chart Component */}
-                <div className="w-full flex items-center justify-center my-auto">
-                  <CompetencyRadarChart radarData={analysisResult.radar} />
-                </div>
-
-                {/* 5-Column Competency Breakdown */}
-                <div className="grid grid-cols-5 gap-1 pt-3 mt-auto border-t border-slate-100 text-center">
-                  {analysisResult.radar.map((d: any) => (
-                    <div key={d.subject} className="p-1.5 rounded-lg bg-slate-50">
-                      <p className="text-[9px] uppercase font-bold text-slate-400 truncate">{d.subject}</p>
-                      <p className="text-xs font-extrabold text-[#4f46e5] mt-0.5">{d.score}%</p>
-                    </div>
-                  ))}
-                </div>
+              <div className="p-5 rounded-2xl border bg-white">
+                <h3 className="font-bold">ภาษาและเครื่องมือที่พบในโครงการ</h3>
+                <p className="text-sm text-slate-600 my-3">{analysisResult.detectedSkills?.join(', ') || 'ยังไม่มีข้อมูล'}</p>
+                <p className="text-sm">ข้อมูลนี้บอกบริบทของ repository ไม่ยืนยันผู้เขียนหรือความชำนาญ</p>
               </div>
-
-              {/* ---------------- CARD 3: RECOMMENDED ROLES ---------------- */}
-              <div className="flex flex-col p-5 rounded-2xl border border-slate-200/90 bg-white shadow-2xs">
-                <div className="flex items-center gap-2 mb-3">
-                  <Briefcase className="w-4 h-4 text-[#6366f1]" />
-                  <h3 className="text-sm font-bold text-slate-900">Recommended Roles</h3>
-                  <span className="text-[10px] text-slate-400 truncate">— based on detected skills</span>
-                </div>
-
-                <div className="flex flex-col gap-3 mt-1">
-                  {analysisResult.recommendedRoles.map((roleItem: any) => (
-                    <div key={roleItem.role} className="pb-2.5 border-b border-slate-100 last:border-none last:pb-0">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs font-bold text-slate-900">{roleItem.role}</span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                            roleItem.fitLevel === 'Strong'
-                              ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
-                              : roleItem.fitLevel === 'Good fit'
-                              ? 'text-blue-700 bg-blue-50 border-blue-200'
-                              : 'text-slate-600 bg-slate-50 border-slate-200'
-                          }`}
-                        >
-                          {roleItem.fitLevel}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {roleItem.skills.map((s: string) => (
-                          <span
-                            key={s}
-                            className="px-1.5 py-0.5 rounded text-[9px] font-medium text-slate-600 bg-slate-100"
-                          >
-                            {s}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              <div className="p-5 rounded-2xl border bg-white">
+                <h3 className="font-bold">ยังไม่ประเมินทักษะ</h3>
+                <p className="text-sm my-3">เลือกทักษะสำคัญจากประกาศงานและเป้าหมายอาชีพ แล้วทำแบบทดสอบก่อนจับคู่งานหรือสรุปช่องว่าง</p>
+                <Link className="text-indigo-700 underline" href="/assessments">ดูแบบทดสอบ</Link>
               </div>
 
               {/* ---------------- CARD 4: TOP REPOSITORIES ---------------- */}
@@ -589,6 +404,7 @@ export default function HomePageClient({ initialJobs = [], initialCourses = [] }
                         <span className="truncate">{repo.name}</span>
                         <ExternalLink className="w-3 h-3 text-slate-400 group-hover:text-[#4f46e5] flex-shrink-0" />
                       </div>
+                      <p className="text-xs text-slate-600 mt-2">สัดส่วนโค้ดใน repository (ไม่ใช่ความชำนาญ): {repo.languageComposition?.map((item: any) => `${item.language} ${item.repositoryCodePercentage == null ? "ไม่ทราบ" : item.repositoryCodePercentage.toFixed(1) + "%"}`).join(", ") || "ไม่มีข้อมูลภาษา"}</p>
                       <div className="flex flex-wrap gap-1 mt-1.5">
                         {repo.tags.map((tag: string) => (
                           <span

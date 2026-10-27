@@ -58,4 +58,5 @@ COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
 EXPOSE 4000
 
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node apps/api/dist/main.js"]
+# Apply the reviewed SQL release steps before starting this image (see production runbook).
+CMD ["node", "apps/api/dist/main.js"]

@@ -1,7 +1,8 @@
+import { skillAttemptSelect } from '../assessments/skill-attempt-select';
 import { candidateFeedback } from '../assessments/candidate-feedback';
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { RadarChartDataPoint, SkillCategory, evidenceWeightedScore, githubSkillView } from '@smartcareer/shared';
+import { RadarChartDataPoint, SkillCategory, candidateSkillViews, applicationAssessmentView } from '@smartcareer/shared';
 
 @Injectable()
 export class CandidateService {
@@ -11,6 +12,7 @@ export class CandidateService {
     const profile = await this.prisma.candidateProfile.findUnique({
       where: { userId },
       include: {
+        assessmentAttempts: { select: skillAttemptSelect },
         skills: {
           include: {
             skill: true,
@@ -30,7 +32,7 @@ export class CandidateService {
       throw new NotFoundException('Candidate profile not found');
     }
 
-    return { ...profile, skills: profile.skills.map(githubSkillView) };
+    return { ...profile, skills: candidateSkillViews(profile.skills, profile.assessmentAttempts), assessmentAttempts: undefined };
   }
 
   async updateProfile(
@@ -90,19 +92,21 @@ export class CandidateService {
         avatarUrl: data.avatarUrl,
       },
       include: {
+        assessmentAttempts: { select: skillAttemptSelect },
         skills: {
           include: { skill: true, evidences: true },
         },
       },
     });
 
-    return { ...profile, skills: profile.skills.map(githubSkillView) };
+    return { ...profile, skills: candidateSkillViews(profile.skills, profile.assessmentAttempts), assessmentAttempts: undefined };
   }
 
   async getRadarData(userId: string): Promise<RadarChartDataPoint[]> {
     const profile = await this.prisma.candidateProfile.findUnique({
       where: { userId },
       include: {
+        assessmentAttempts: { select: skillAttemptSelect },
         skills: {
           include: {
             skill: true,
@@ -112,26 +116,13 @@ export class CandidateService {
       },
     });
 
-    if (!profile || !profile.skills || profile.skills.length === 0) {
-      return this.getDefaultRadar();
-    }
-
-    // Default categories to show on radar
-    const categories = [
-      SkillCategory.FRONTEND,
-      SkillCategory.BACKEND,
-      SkillCategory.DATABASE,
-      SkillCategory.DEVOPS,
-      SkillCategory.TESTING,
-    ];
-
-    const radarPoints: RadarChartDataPoint[] = categories.map(category => {
-      const skills = profile.skills.filter(cs => cs.skill.category === category && evidenceWeightedScore(cs) > 0);
-      const score = skills.length ? Math.round(skills.reduce((sum, cs) => sum + evidenceWeightedScore(cs), 0) / skills.length) : 0;
-      return { category, subject: category, score, fullMark: 100 };
+    if (!profile) return this.getDefaultRadar();
+    const views = candidateSkillViews(profile.skills, profile.assessmentAttempts);
+    return [SkillCategory.FRONTEND, SkillCategory.BACKEND, SkillCategory.DATABASE, SkillCategory.DEVOPS, SkillCategory.TESTING].map(category => {
+      const measured = views.filter(s => s.skill.category === category && s.assessmentScore !== null);
+      return { category, subject: category, fullMark: 100,
+        score: measured.length ? Math.round(measured.reduce((sum, s) => sum + s.assessmentScore!, 0) / measured.length) : null };
     });
-
-    return radarPoints;
   }
 
   async getCandidateApplications(userId: string) {
@@ -200,16 +191,16 @@ export class CandidateService {
       },
       orderBy: { createdAt: 'desc' },
     });
-    return applications.map(application => ({ ...application, candidate: { ...application.candidate, assessmentAttempts: application.candidate.assessmentAttempts.map(attempt => candidateFeedback(attempt)) } }));
+    return applications.map(application => ({ ...applicationAssessmentView(application), candidate: { ...application.candidate, assessmentAttempts: application.candidate.assessmentAttempts.map(attempt => candidateFeedback(attempt)) } }));
   }
 
   private getDefaultRadar(): RadarChartDataPoint[] {
     return [
-      { category: SkillCategory.FRONTEND, subject: 'FRONTEND', score: 0, fullMark: 100 },
-      { category: SkillCategory.BACKEND, subject: 'BACKEND', score: 0, fullMark: 100 },
-      { category: SkillCategory.DATABASE, subject: 'DATABASE', score: 0, fullMark: 100 },
-      { category: SkillCategory.DEVOPS, subject: 'DEVOPS', score: 0, fullMark: 100 },
-      { category: SkillCategory.TESTING, subject: 'TESTING', score: 0, fullMark: 100 },
+      { category: SkillCategory.FRONTEND, subject: 'FRONTEND', score: null, fullMark: 100 },
+      { category: SkillCategory.BACKEND, subject: 'BACKEND', score: null, fullMark: 100 },
+      { category: SkillCategory.DATABASE, subject: 'DATABASE', score: null, fullMark: 100 },
+      { category: SkillCategory.DEVOPS, subject: 'DEVOPS', score: null, fullMark: 100 },
+      { category: SkillCategory.TESTING, subject: 'TESTING', score: null, fullMark: 100 },
     ];
   }
 }

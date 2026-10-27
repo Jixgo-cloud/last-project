@@ -11,8 +11,7 @@
     "start:dev": "nest start --watch",
     "dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/main",
-    "prestart": "npx prisma db push --schema=../../prisma/schema.prisma --skip-generate"
+    "start:prod": "node dist/main"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.22",

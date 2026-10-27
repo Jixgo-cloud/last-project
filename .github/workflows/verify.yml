@@ -53,6 +53,10 @@ jobs:
         run: npx prisma db push --skip-generate
       - name: Verify durable import runs on isolated Postgres
         run: node scripts/verify-ingestion-runs.cjs
+      - name: Verify assessment bank expansion and historical preservation
+        run: |
+          node scripts/verify-assessment-release.cjs
+          node scripts/verify-assessment-release.cjs --single
       - name: Install virtual display and Thai fonts
         run: |
           sudo apt-get update -qq

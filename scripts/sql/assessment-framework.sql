@@ -1,5 +1,5 @@
 -- Additive AZ-204 assessment reference fields. Existing assessments remain unreferenced.
--- The application also supports its existing prisma db push deployment workflow.
+-- Run explicitly as a release step; API startup never synchronizes the schema.
 -- Apply before starting the new API; no data backfill or score changes are performed.
 BEGIN;
 ALTER TABLE "assessments" ADD COLUMN IF NOT EXISTS "frameworkCode" TEXT;

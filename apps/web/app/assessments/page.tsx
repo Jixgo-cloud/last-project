@@ -1,4 +1,5 @@
 'use client';
+import AssessmentPlan, { AssessmentPlanItem } from '@/components/AssessmentPlan';
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -23,21 +24,29 @@ export default function AssessmentsPage() {
   const { user } = useAuth();
   const [assessments, setAssessments] = useState<any[]>([]);
   const [myAttempts, setMyAttempts] = useState<any[]>([]);
+  const [plan, setPlan] = useState<{ assessmentPlan: AssessmentPlanItem[]; relevantJobCount: number } | null>(null);
+  const [planError, setPlanError] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
+    setPlan(null); setPlanError(false); setMyAttempts([]);
     const fetchPromises: Promise<any>[] = [apiRequest('/assessments')];
-    if (user) {
+    if (user?.role === 'CANDIDATE') {
       fetchPromises.push(apiRequest('/assessments/my-attempts').catch(() => []));
+      apiRequest('/recommendations/skill-gaps')
+        .then(value => { if (active) setPlan(value); })
+        .catch(() => { if (active) setPlanError(true); });
     }
-
     Promise.all(fetchPromises)
       .then(([assessData, attemptsData]) => {
+        if (!active) return;
         setAssessments(assessData || []);
         if (attemptsData) setMyAttempts(attemptsData);
       })
       .catch((e) => console.error(e))
-      .finally(() => setLoading(false));
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, [user]);
 
   // Map latest attempt per assessment ID
@@ -71,10 +80,12 @@ export default function AssessmentsPage() {
             </span>
           </h1>
           <p className="text-[13px] text-[#667085] mt-2 leading-relaxed">
-            พิสูจน์ความสามารถของคุณผ่านแบบทดสอบเชิงทฤษฎี และโจทย์เขียนโค้ด Sandbox พร้อมตรวจ Test Cases จริงทุกข้อ 100% ผ่านระบบ Safe Sandbox เพื่อรับเหรียญทักษะยืนยันสำหรับโปรไฟล์
+            เลือกทำแบบทดสอบตามทักษะสำคัญของงานและเป้าหมายอาชีพ โจทย์เขียนโค้ดใช้ Judge0 ตรวจตาม test cases หรือเกณฑ์ที่กำหนด ข้อสอบยังรอผู้เชี่ยวชาญตรวจและทดลองใช้
           </p>
         </div>
 
+        {plan && <AssessmentPlan items={plan.assessmentPlan} jobCount={plan.relevantJobCount} />}
+        {planError && <p role="alert">โหลดแผนประเมินไม่สำเร็จ กรุณาลองใหม่</p>}
         {loading ? (
           <div className="py-28 text-center text-slate-400 flex flex-col items-center justify-center gap-3">
             <div className="h-8 w-8 rounded-full border-2 border-[#6366f1] border-t-transparent animate-spin" />

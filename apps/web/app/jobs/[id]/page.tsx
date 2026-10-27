@@ -1,4 +1,5 @@
 'use client';
+import { formatMatchSummary } from '@smartcareer/shared';
 
 import React, { useCallback, useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -456,7 +457,7 @@ export default function JobDetailPage() {
             </div>
           </div>
 
-          {/* Sidebar with 70/20/10 Match Score (Right 4 cols) */}
+          {/* Sidebar with assessment match and coverage (Right 4 cols) */}
           <div className="lg:col-span-4 space-y-6">
             <div className="rounded-[20px] border border-slate-200/90 bg-white/95 p-6 shadow-[0_12px_32px_rgba(15,23,42,0.04)] sticky top-24">
               <div className="flex items-center justify-between mb-4">
@@ -465,47 +466,26 @@ export default function JobDetailPage() {
                   คะแนนความเหมาะสม (Match Score)
                 </h3>
                 <span className="text-[10px] bg-[#f4f5fa] border border-slate-200/80 px-2 py-0.5 rounded-full text-[#667085] font-semibold">
-                  สูตร 70 / 20 / 10
+                  ผลประเมินจริง
                 </span>
               </div>
 
               {match ? (
                 <div>
-                  <p className="text-xs text-slate-500 mb-3">ประเมินจากทักษะและสายงานที่ตรงกับประกาศ ไม่ใช่คะแนนสอบหรือการยืนยันรับเข้าทำงาน</p>
-                  <div className="flex items-baseline gap-2.5 mb-4">
-                    <span className="text-4xl sm:text-5xl font-extrabold text-[#4f46e5] tracking-tight">
-                      {match.matchScore}%
-                    </span>
-                    <span className="text-xs font-bold text-[#667085]">
-                      {match.matchScore >= 75
-                        ? '🔥 ทักษะตรงระดับสูง'
-                        : match.matchScore >= 50
-                        ? 'ทักษะตรงระดับปานกลาง'
-                        : 'มีช่องว่างทักษะที่ควรเสริม'}
-                    </span>
-                  </div>
-
-                  {/* Formula Breakdown */}
-                  <div className="space-y-2 mb-6 text-xs text-[#667085] bg-[#f9fafb] p-3 rounded-xl border border-slate-100">
-                    <div className="flex justify-between py-0.5">
-                      <span>ทักษะจำเป็น (70%):</span>
-                      <span className="font-bold text-slate-800">{match.requiredCoverage}%</span>
-                    </div>
-                    <div className="flex justify-between py-0.5">
-                      <span>ทักษะแนะนำ (20%):</span>
-                      <span className="font-bold text-slate-800">{match.preferredCoverage}%</span>
-                    </div>
-                    <div className="flex justify-between py-0.5">
-                      <span>ทิศทางสายงาน (10%):</span>
-                      <span className="font-bold text-slate-800">{match.careerAlignment}%</span>
-                    </div>
-                  </div>
+                  <p className="text-xs text-slate-500 mb-3">คะแนนเทียบเกณฑ์งานจากผลทักษะที่ประเมินแล้วเท่านั้น ข้อสอบและเกณฑ์ยังรอผู้เชี่ยวชาญตรวจและทดลองใช้</p>
+                  <p className="text-lg font-bold text-indigo-700 mb-4">{formatMatchSummary(match)}</p>
+                  <p className="text-xs mb-4">ทักษะจำเป็น: {match.requiredCoverage == null ? 'ยังคำนวณไม่ได้' : `${match.requiredCoverage}%`} · ทักษะเสริม: {match.preferredCoverage == null ? 'ยังคำนวณไม่ได้' : `${match.preferredCoverage}%`}</p>
+                  {match.unassessedSkills?.length > 0 && <div className="mb-4 text-sm">
+                    <h4 className="font-bold">ยังไม่ประเมิน</h4>
+                    {match.unassessedSkills.map((s: any) => <p key={s.skillId}>{s.name} — {s.reason === 'INVALID_JOB_CRITERION' ? 'รอแก้ไขเกณฑ์งาน' : 'แนะนำทำแบบทดสอบก่อน'}</p>)}
+                    <Link href="/assessments" className="underline text-indigo-700">เลือกแบบทดสอบทักษะสำคัญ</Link>
+                  </div>}
 
                   {/* Matched vs Missing Skills */}
                   <div className="space-y-3 pt-3 border-t border-slate-100">
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-bold text-slate-800">
-                        ทักษะที่คุณมีตรงกับงาน ({match.matchedSkills?.length || 0})
+                        ทักษะที่ผลประเมินถึงเกณฑ์งาน ({match.matchedSkills?.length || 0})
                       </p>
                       {match.verifiedBadgesCount !== undefined && match.verifiedBadgesCount > 0 && (
                         <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
@@ -533,7 +513,7 @@ export default function JobDetailPage() {
                     {match.missingSkills && match.missingSkills.length > 0 && (
                       <>
                         <p className="text-xs font-bold text-slate-800 mt-4">
-                          ทักษะที่ควรเสริมเพิ่มเติม ({match.missingSkills.length})
+                          ช่องว่างจากผลประเมิน ({match.missingSkills.length})
                         </p>
                         <div className="flex flex-wrap gap-1.5">
                           {match.missingSkills.map((s: any) => (
@@ -569,7 +549,7 @@ export default function JobDetailPage() {
                   <Link href="/login" className="text-[#4f46e5] font-bold hover:underline">
                     เข้าสู่ระบบในฐานะ Candidate
                   </Link>{' '}
-                  เพื่อคำนวณคะแนน Match Score 70/20/10 แบบเรียลไทม์ตามทักษะจริงที่คุณได้รับการยืนยัน
+                  เพื่อดูคะแนนจับคู่จากผลประเมิน พร้อมความครอบคลุมและทักษะที่ยังไม่ประเมิน
                 </div>
               )}
 

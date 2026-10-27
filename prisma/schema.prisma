@@ -256,10 +256,10 @@ model CandidateSkill {
   candidate      CandidateProfile @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   skillId        String
   skill          Skill          @relation(fields: [skillId], references: [id], onDelete: Cascade)
-  practicalScore Float          @default(0) // 0-100 from GitHub evidence
+  practicalScore Float          @default(0) // Legacy GitHub cache; not a proficiency result
   theoryScore    Float          @default(0) // 0-100 from Assessment
   codingScore    Float          @default(0) // 0-100 from Judge0
-  verifiedScore  Float          @default(0) // Weighted combined
+  verifiedScore  Float          @default(0) // Legacy cache; not used for assessment matching
   isVerified     Boolean        @default(false)
   verifiedAt     DateTime?
   updatedAt      DateTime       @updatedAt
@@ -405,7 +405,8 @@ model JobApplication {
   roundNumber             Int                       @default(1)
   coverLetter             String?
   resumeUrl               String?
-  matchScoreAtApplication Float                     @default(0)
+  matchScoreAtApplication Float?
+  matchAssessmentSnapshot Json? // Assessment policy and coverage; null = legacy
   internalNote            String?
   assignedAssessmentId    String?
   assignedAssessment      Assessment?               @relation("AssignedApplicationAssessment", fields: [assignedAssessmentId], references: [id], onDelete: SetNull)
@@ -489,11 +490,25 @@ model Assessment {
   updatedAt        DateTime            @updatedAt
 
   questions        Question[]
+  bankRevisions    AssessmentBankRevision[]
   attempts         AssessmentAttempt[]
   jobs             Job[]
   assignedApplications JobApplication[]      @relation("AssignedApplicationAssessment")
 
   @@map("assessments")
+}
+
+// Private authored criteria archive. Never return through candidate/public APIs.
+model AssessmentBankRevision {
+  assessmentId String
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+  version      Int
+  snapshot     Json
+  contentHash  String
+  createdAt    DateTime @default(now())
+
+  @@id([assessmentId, version])
+  @@map("assessment_bank_revisions")
 }
 
 // 17. Question

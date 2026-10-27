@@ -52,13 +52,13 @@ API เปิดใช้งานใต้ prefix /api แต่ละ feature 
 flowchart TD
   Profile["CandidateProfile<br/>เป้าหมายอาชีพ"] --> Github["GitHub sync"]
   Github --> Repos["GitHubRepository + GitHubEvidence"]
-  Repos --> CandidateSkill["CandidateSkill<br/>คะแนนและสถานะยืนยัน"]
+  Repos --> Context["บริบทโครงการ ไม่ให้คะแนน"]
   PlatformAssessment["Platform Assessment"] --> Attempt["AssessmentAttempt + Answer"]
-  Attempt --> CandidateSkill
-  CandidateSkill --> Matching["Job matching"]
+  Attempt --> Results["ผลสอบที่ผูกทักษะและเกณฑ์"]
+  Results --> Matching["Job matching"]
   JobSkills["Job + JobSkill"] --> Matching
-  Profile --> Gaps["Skill gap ตาม career benchmark"]
-  CandidateSkill --> Gaps
+  Profile --> Gaps["Skill gap จากผลสอบเทียบเกณฑ์งาน"]
+  Results --> Gaps
   Gaps --> Course["Course + CourseSkill"]
   Matching --> Application["JobApplication"]
   Application --> History["ApplicationStatusHistory"]
@@ -76,10 +76,10 @@ flowchart TD
 
 1. **โปรไฟล์และทักษะ:** CandidateProfile เก็บข้อมูลผู้สมัคร เป้าหมายอาชีพ การศึกษา และประสบการณ์ GitHub sync บันทึก repository และหลักฐาน แล้วสร้างหรือปรับ CandidateSkill ตาม skill ที่ตรวจพบ
 2. **การยืนยันคะแนน:** แบบประเมินของแพลตฟอร์มที่ผูกกับ Skill บันทึก Attempt/Answer และนำผลทฤษฎีหรือโค้ดกลับไปปรับ CandidateSkill ส่วน assessment ของบริษัทใช้กับการคัดเลือกและการ review
-3. **ค้นหาและจับคู่งาน:** Job มี JobSkill เป็นทักษะที่ต้องการ ระบบเทียบกับ CandidateSkill และ targetCareer แล้วส่งคะแนน รายการทักษะที่ตรง และช่องว่างกลับหน้าแสดงงาน เมื่อสมัครจะสร้าง JobApplication พร้อม matchScoreAtApplication
+3. **ค้นหาและจับคู่งาน:** Job มี JobSkill เป็นทักษะที่ต้องการ ระบบเทียบกับผลประเมินที่ใช้ได้ ส่งคะแนน nullable พร้อมความครอบคลุม ทักษะที่ถึงเกณฑ์ ช่องว่าง และยังไม่ประเมินกลับหน้าแสดงงาน เมื่อสมัครจะสร้าง JobApplication พร้อม matchScoreAtApplication และ matchAssessmentSnapshot
 4. **การคัดเลือก:** บริษัทเปลี่ยนสถานะใบสมัครได้ตั้งแต่ APPLIED, REVIEWING, INTERVIEW, TECHNICAL_TEST, OFFER จนถึง ACCEPTED/REJECTED; ผู้สมัครยกเลิกได้ สถานะใหม่ถูกเก็บใน ApplicationStatusHistory และการเปลี่ยนสถานะของบริษัทสร้าง Notification ให้ผู้สมัคร
 5. **แบบทดสอบรับสมัคร:** บริษัทเลือก assessment ที่ตนสร้างหรือ assessment ของแพลตฟอร์มเพื่อมอบหมายให้ application; ความพยายามทำข้อสอบอยู่ใน AssessmentAttempt และคำตอบอยู่ใน AssessmentAnswer ผล open-ended สามารถรอ AI หรือ human review ได้
-6. **พัฒนาทักษะ:** ระบบเปรียบเทียบคะแนนผู้สมัครกับ benchmark ของ targetCareer เพื่อหา skill gap แล้วค้น Course ด้วยชื่อ/คำอธิบายหรือความสัมพันธ์ CourseSkill
+6. **พัฒนาทักษะ:** ระบบเลือกทักษะสำคัญจากงานที่เปิดและ targetCareer แล้วเทียบผลสอบจริงกับเกณฑ์งานเพื่อหา skill gap แล้วค้น Course ด้วยชื่อ/คำอธิบายหรือความสัมพันธ์ CourseSkill
 7. **ข้อมูลภายนอก:** ingestion ดึงงานและคอร์ส จัดเป็น Job/Course และเชื่อมทักษะด้วย JobSkill/CourseSkill; แต่ละรอบสร้าง IngestionLog สำหรับสรุปจำนวนข้อมูลและข้อผิดพลาด
 
 ## แบบจำลองข้อมูล
@@ -89,7 +89,7 @@ schema มี 25 models แบ่งตามโดเมนดังนี้
 | โดเมน | Models | ความหมาย/ความสัมพันธ์สำคัญ |
 |---|---|---|
 | บัญชีและองค์กร | User, CandidateProfile, Company, CompanyMember, CompanyVerification | User มี CandidateProfile ได้หนึ่งรายการ; สมาชิกบริษัทเชื่อม User กับ Company; CompanyVerification เก็บคำขอและผลตรวจบริษัท |
-| ทักษะและหลักฐาน | Skill, CandidateSkill, GitHubRepository, GitHubEvidence, SkillFramework, SkillFrameworkItem | CandidateSkill เชื่อมผู้สมัครกับ Skill พร้อมคะแนน; GitHubEvidence เชื่อม CandidateSkill กับ Repository; SkillFrameworkItem เชื่อม framework กับ Skill |
+| ทักษะและหลักฐาน | Skill, CandidateSkill, GitHubRepository, GitHubEvidence, SkillFramework, SkillFrameworkItem | CandidateSkill เชื่อมผู้สมัครกับ Skill และเก็บ cache เดิมที่ไม่ใช้สรุปความชำนาญ; ผลประเมินอ่านจาก attempt ที่ผูกทักษะและเกณฑ์; GitHubEvidence เชื่อม CandidateSkill กับ Repository; SkillFrameworkItem เชื่อม framework กับ Skill |
 | ตลาดงาน | Job, JobSkill, JobApplication, JobFavorite, ApplicationStatusHistory | Job เชื่อม Company ได้ (งานภายนอกอาจไม่มี Company); JobSkill เชื่อม Job กับ Skill; JobApplication เชื่อมงานและผู้สมัคร; ประวัติและรายการโปรดแยกเก็บ |
 | การประเมิน | Assessment, Question, Choice, AssessmentAttempt, AssessmentAnswer, CompanyEvaluation | Assessment มีคำถามและ attempts; Choice รองรับข้อสอบปรนัย; CompanyEvaluation เก็บ feedback ต่อ application ได้หนึ่งรายการ |
 | การเรียนรู้และระบบปฏิบัติการ | Course, CourseSkill, IngestionLog, Notification | Course เชื่อม Skill ผ่าน CourseSkill; IngestionLog เก็บผล sync; Notification เป็นของ User |
@@ -134,8 +134,8 @@ erDiagram
 
 ## กติกาคำนวณที่เชื่อมฟีเจอร์
 
-- **คะแนนทักษะ:** CandidateSkill แยก practicalScore, theoryScore, codingScore และ verifiedScore; สูตรรวมที่ใช้ใน GitHub sync/assessment คือ practical 50% + theory 20% + coding 30% และมี isVerified/verifiedAt กำกับ
-- **Job match:** 70% required skill coverage + 20% preferred skill coverage + 10% career alignment; ทักษะ required นับคะแนนตามระดับขั้นต่ำ ส่วน preferred ใช้เกณฑ์พบ/ไม่พบ และ career alignment เช็กคำร่วมระหว่าง targetCareer กับชื่อตำแหน่ง
+- **คะแนนทักษะ:** ใช้ผลล่าสุดจาก AssessmentAttempt ที่ตรวจเสร็จและมี snapshot ผูกทักษะ/เกณฑ์ครบ practicalScore/verifiedScore และ cache เดิมไม่ใช่แหล่งคะแนน ไม่มีผลคือ null ไม่ใช่ 0
+- **Job match:** ผลประเมินเทียบ minimumScore เฉพาะทักษะที่ประเมินแล้ว ถ่วงกลุ่มจำเป็น/เสริม 70:20 โดยปรับน้ำหนักตามกลุ่มที่มีผล แสดง coverage และสถานะเบื้องต้น; ไม่มีผลคืน null ไม่ใช้ career alignment เพิ่มคะแนน
 - **Skill gap:** ใช้ benchmark ที่กำหนดไว้ใน RecommendationsService สำหรับ Full Stack, Frontend, Backend และ DevOps; ถ้า targetCareer ไม่ตรงกับรายการจะใช้ Full Stack Developer เป็นค่าเริ่มต้น แล้วเลือก gap ที่มากกว่า 5 คะแนน
 - **Course recommendation:** ใช้ CourseSkill หรือค้นจากชื่อ/คำอธิบายคอร์สที่ตรงกับทักษะที่ขาด
 - **ความคงทนของข้อสอบ:** Attempt เก็บ assessmentVersion และ snapshot ของเกณฑ์/คำถามที่ใช้เริ่มทำ เพื่อแยกผลของการสอบครั้งนั้นออกจากการแก้ assessment ภายหลัง
@@ -150,7 +150,7 @@ erDiagram
 
 ## หมายเหตุจากการเทียบเอกสารกับโค้ด
 
-- README ระบุว่าคะแนน GitHub ประกอบจาก usage/dependencies/commits/diversity แต่ GitHubService ปัจจุบันคำนวณ practicalScore จากจำนวนดาว repository และ scoreWeight ของ skill ที่ตรวจพบ โดยจำกัดคะแนนไว้ระหว่าง 50–95; ค่า commitCount และ linesOfCode ที่บันทึกใน GitHubEvidence ถูกสร้างด้วยค่ากึ่งสุ่มใน sync ปัจจุบัน
+- GitHub แสดงภาษา/เครื่องมือและองค์ประกอบ repository ไม่สร้างคะแนน ฐาน 60/น้ำหนัก 20/25 ถูกยกเลิก ดู README หัวข้อ 3, 5, 6, 8 และรายงานนโยบายใหม่
 - README ระบุว่า feedback บริษัทเชื่อมเข้า skill gap แต่ EvaluationsService บันทึก CompanyEvaluation แยกกับใบสมัคร ขณะที่ RecommendationsService คำนวณ gap จาก career benchmark และ CandidateSkill โดยยังไม่อ่านคะแนน/feedback บริษัท
 - README ระบุ 24 Prisma models; schema ปัจจุบันมี 25 models รวม Notification
 - source งานที่ตั้งเวลาใน Scheduler รวม JSearch, JobsDB และ JobThai เพิ่มจาก Remotive/Blognone ที่กล่าวใน README

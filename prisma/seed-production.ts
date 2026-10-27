@@ -188,7 +188,7 @@ async function main() {
       where: { slug: 'coding-algorithm-sandbox' },
       update: {
         title: 'Practical Coding: Algorithm & Data Manipulation Sandbox',
-        description: 'Write, debug, and execute clean JavaScript/TypeScript algorithms tested against automated test cases in the Judge0 sandbox.',
+        description: require('./assessment-bank/javascript-sandbox.json').description,
         type: AssessmentType.PRACTICAL_CODING,
         skillId: jsSkillId,
         timeLimitMinutes: 30,
@@ -197,7 +197,8 @@ async function main() {
       create: {
         title: 'Practical Coding: Algorithm & Data Manipulation Sandbox',
         slug: 'coding-algorithm-sandbox',
-        description: 'Write, debug, and execute clean JavaScript/TypeScript algorithms tested against automated test cases in the Judge0 sandbox.',
+        version: 2,
+        description: require('./assessment-bank/javascript-sandbox.json').description,
         type: AssessmentType.PRACTICAL_CODING,
         skillId: jsSkillId,
         timeLimitMinutes: 30,
@@ -205,32 +206,7 @@ async function main() {
       },
     });
 
-    const codingQuestions = [
-      {
-        title: 'Two Sum Target Matcher',
-        prompt: 'Write a function `solution(numbers, target)` that takes a comma-separated list of numbers and a target integer. Return the indices of the two numbers that add up to target as "index1,index2" (0-indexed). Example: input "2,7,11,15" with target 9 should return "0,1".',
-        difficulty: QuestionDifficulty.MEDIUM,
-        points: 50,
-        starterCode: `function solution(numsStr, target) {
-  const nums = String(numsStr).split(',').map(n => Number(n.trim()));
-  const targetNum = Number(target);
-  const map = new Map();
-  for (let i = 0; i < nums.length; i++) {
-    const complement = targetNum - nums[i];
-    if (map.has(complement)) {
-      return map.get(complement) + ',' + i;
-    }
-    map.set(nums[i], i);
-  }
-  return '';
-}`,
-        testCases: [
-          { input: '2,7,11,15, 9', expectedOutput: '0,1' },
-          { input: '3,2,4, 6', expectedOutput: '1,2' },
-          { input: '3,3, 6', expectedOutput: '0,1' },
-        ],
-      },
-    ];
+    const codingQuestions = require('./assessment-bank/javascript-sandbox.json').questions;
 
     for (const q of codingQuestions) {
       const existingQ = await tx.question.findFirst({
@@ -240,12 +216,7 @@ async function main() {
         await tx.question.create({
           data: {
             assessmentId: codingAssessment.id,
-            title: q.title,
-            prompt: q.prompt,
-            difficulty: q.difficulty,
-            points: q.points,
-            starterCode: q.starterCode,
-            testCases: q.testCases,
+            ...q,
           },
         });
       }

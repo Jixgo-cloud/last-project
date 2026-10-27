@@ -2,8 +2,19 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MatchingService } from '../matching/matching.service';
 import { honestJobContent } from './job-content';
+import { courseWithSupportedSkills, mentionsSkill } from '../recommendations/course-skill-evidence';
 import { isLegacySampleJob, legacySampleJobIds } from './legacy-sample-jobs';
 import { JobType, JobSource, SkillCategory, CareerTrack } from '@smartcareer/shared';
+
+const publicJobFixtureExclusions = [
+  // Reserved QA records stay in the database for internal review, but never appear publicly.
+  { NOT: { title: { startsWith: 'PILOT-QA-', mode: 'insensitive' as const } } },
+  { NOT: { companyName: { contains: '(UAT QA)', mode: 'insensitive' as const } } },
+];
+
+function isPublicJobFixture(job: { title: string; companyName: string }) {
+  return /^PILOT-QA-/i.test(job.title) || /\(UAT QA\)/i.test(job.companyName);
+}
 
 export const CAREER_DEFINITIONS: Record<string, { categories: SkillCategory[]; keywords: string[] }> = {
   [CareerTrack.FULL_STACK]: {
@@ -70,6 +81,7 @@ export class JobsService {
         {
           OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
         },
+        ...publicJobFixtureExclusions,
       ],
     };
 
@@ -146,10 +158,11 @@ export class JobsService {
 
       const scoredJobs = allMatchingJobs.map((j) => ({
         ...j,
-        matchScore: scoreMap.get(j.id) ?? 40,
+        matchScore: scoreMap.get(j.id)?.matchScore ?? null,
+          matchAssessment: scoreMap.get(j.id),
       }));
 
-      scoredJobs.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+      scoredJobs.sort((a, b) => (b.matchScore ?? -1) - (a.matchScore ?? -1));
       jobs = scoredJobs.slice(skip, skip + limit);
     } else {
       let orderBy: any = { publishedAt: 'desc' };
@@ -176,7 +189,8 @@ export class JobsService {
         );
         jobs = jobs.map((j) => ({
           ...j,
-          matchScore: scoreMap.get(j.id) ?? 40,
+          matchScore: scoreMap.get(j.id)?.matchScore ?? null,
+          matchAssessment: scoreMap.get(j.id),
         }));
       }
     }
@@ -226,8 +240,8 @@ export class JobsService {
     if (!job) {
       throw new NotFoundException('Job not found');
     }
-    if (isLegacySampleJob(job)) {
-      throw new NotFoundException('ประกาศนี้เป็นข้อมูลตัวอย่างเดิม จึงไม่เปิดรับสมัคร กรุณาตรวจประกาศจริงจากต้นทาง');
+    if (isLegacySampleJob(job) || isPublicJobFixture(job)) {
+      throw new NotFoundException('ประกาศนี้ไม่พร้อมให้ใช้งาน');
     }
 
     let matchScore = null;
@@ -250,16 +264,13 @@ export class JobsService {
       }
     }
 
-    // Recommend courses specifically for missing skills if candidate has gaps,
-    // or for top required skills of the job if candidate is not logged in / no gaps
+    // Only measured gaps can drive personalized course recommendations.
     let targetSkillNames: string[] = [];
     let isPersonalizedForGap = false;
 
     if (matchScore && matchScore.missingSkills && matchScore.missingSkills.length > 0) {
       targetSkillNames = matchScore.missingSkills.map((s: any) => s.name);
       isPersonalizedForGap = true;
-    } else {
-      targetSkillNames = job.skills.map((s: any) => s.skill.name);
     }
 
     let recommendedCourses: any[] = [];
@@ -282,19 +293,20 @@ export class JobsService {
         include: {
           skills: { include: { skill: true } },
         },
-        take: 6,
       });
 
-      recommendedCourses = courses.map((c) => {
-        const matchedSkill = c.skills?.find((cs: any) =>
-          targetSkillNames.some((ts) => ts.toLowerCase() === cs.skill.name.toLowerCase()),
-        );
-        return {
+      recommendedCourses = courses.map(courseWithSupportedSkills).flatMap((c) => {
+        // Old links can be wrong even at relevanceScore=1; require descriptive
+        // evidence before claiming that a course addresses a measured gap.
+        const targetSkill = targetSkillNames.find(name =>
+          mentionsSkill(`${c.title} ${c.description || ''}`, name));
+        if (!targetSkill) return [];
+        return [{
           ...c,
-          targetSkill: matchedSkill ? matchedSkill.skill.name : targetSkillNames[0] || null,
+          targetSkill,
           isGapCloser: isPersonalizedForGap,
-        };
-      });
+        }];
+      }).slice(0, 6);
     }
 
     return {

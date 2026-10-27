@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { AZ204_FRAMEWORK, frameworkMetadata, getFrameworkCoverage, getFrameworkTopic } from '@smartcareer/shared';
 import { candidateFeedback } from './candidate-feedback';
 import { codingAttemptTotals } from './coding-attempt-totals';
@@ -131,6 +132,7 @@ export class AssessmentsService {
             type: true,
             passingScore: true,
             timeLimitMinutes: true,
+            version: true,
             skill: { select: { id: true, name: true, category: true } },
             company: { select: { id: true, name: true } },
           },
@@ -138,7 +140,8 @@ export class AssessmentsService {
       },
       orderBy: { startedAt: 'desc' },
     });
-    return attempts.map(attempt => candidateFeedback(attempt));
+    return Promise.all(attempts.map(async attempt => candidateFeedback({ ...attempt,
+      assessment: await this.assessmentForHistoricalResult(attempt) })));
   }
 
   /**
@@ -152,7 +155,7 @@ export class AssessmentsService {
 
     const assessment = await this.prisma.assessment.findUnique({
       where: { id: assessmentId },
-      include: { questions: { include: { choices: true } } },
+      include: { skill: true, questions: { include: { choices: true } } },
     });
     if (!assessment || !assessment.isActive) {
       throw new NotFoundException('Assessment not available');
@@ -192,7 +195,11 @@ export class AssessmentsService {
       orderBy: { startedAt: 'desc' },
     });
 
-    if (existingAttempt) {
+    if (existingAttempt && (existingAttempt.assessmentVersion !== assessment.version ||
+        ((existingAttempt.snapshot as any)?.criteriaHash &&
+        (existingAttempt.snapshot as any).criteriaHash !== this.criteriaHash(assessment)))) {
+      await this.prisma.assessmentAttempt.update({ where: { id: existingAttempt.id }, data: { status: AttemptStatus.SYSTEM_ERROR } });
+    } else if (existingAttempt) {
       const now = new Date();
       const elapsedSeconds = Math.round((now.getTime() - existingAttempt.startedAt.getTime()) / 1000);
       const maxAllowedSeconds = existingAttempt.assessment.timeLimitMinutes * 60 + 30; // 30s grace buffer
@@ -218,6 +225,11 @@ export class AssessmentsService {
 
     // Version Snapshotting
     const snapshot = {
+      skillAssessmentVersion: 1,
+      skill: assessment.skill ? { id: assessment.skill.id, name: assessment.skill.name, category: assessment.skill.category } : null,
+      assessmentType: assessment.type,
+      criteriaHash: this.criteriaHash(assessment),
+      qualityStatus: "PENDING_EXPERT_REVIEW_AND_PILOT",
       gradingMode: assessment.companyId ? 'COMPANY_MANUAL' : 'PLATFORM_AUTOMATED',
       ...frameworkMetadata(assessment),
       frameworkCoverage: getFrameworkCoverage(assessment),
@@ -229,6 +241,9 @@ export class AssessmentsService {
       questions: assessment.questions.map((q) => ({
         id: q.id,
         title: q.title,
+        evaluationMethod: q.evaluationMethod,
+        testCaseCount: Array.isArray(q.testCases) ? q.testCases.length : 0,
+        rubric: q.rubric,
         difficulty: q.difficulty,
         frameworkTopicId: q.frameworkTopicId,
         points: q.points,
@@ -380,8 +395,8 @@ export class AssessmentsService {
     }
     this.runCodeRateLimit.set(candidate.id, now);
 
-    // Production Control: Automatic Language Detection (Python 3.11 = 71, JS = 63)
-    const langId = this.detectLanguageId(sourceCode, question.starterCode);
+    // Use the authored execution language so a submission cannot switch the assessed language.
+    const langId = this.detectLanguageId(undefined, question.starterCode);
 
     // Dual-Mode: If OPEN_ENDED, execute raw code in isolated Judge0 sandbox
     if (question.evaluationMethod === QuestionEvaluationMethod.OPEN_ENDED) {
@@ -404,14 +419,15 @@ export class AssessmentsService {
     const allTestCases: TestCase[] = (question.testCases as any) || [];
     // Filter strictly to visible test cases
     const visibleTestCases = allTestCases.filter((tc) => !tc.isHidden);
-    const testCasesToRun = visibleTestCases.length > 0 ? visibleTestCases : allTestCases.slice(0, 2);
+    if (!visibleTestCases.length) throw new BadRequestException('ไม่มี test case สาธารณะสำหรับทดลองรัน');
+    const testCasesToRun = visibleTestCases;
 
     // Run via Judge0 only
     return this.judge0.execute(sourceCode, testCasesToRun, { maskHiddenDetails: false, languageId: langId });
   }
 
   /**
-   * Automatically detects language ID for Judge0 based on source code and question starter code.
+   * Selects the execution language from the authored starter code, never from the candidate submission.
    * 71 = Python 3.11, 63 = JavaScript (Node.js)
    */
   private detectLanguageId(sourceCode?: string, starterCode?: string): number {
@@ -585,7 +601,7 @@ export class AssessmentsService {
     // =========================================================================
     // BRANCH 1: OPEN-ENDED EVALUATION (Free-form / Plain text prompt)
     // =========================================================================
-    const langId = this.detectLanguageId(sourceCode, question.starterCode);
+    const langId = this.detectLanguageId(undefined, question.starterCode);
 
     // Company owns the grading decision. Execution is evidence only: never call AI,
     // award points or issue a badge before a reviewer examines the saved answer.
@@ -1016,6 +1032,7 @@ export class AssessmentsService {
       include: {
         assessment: {
           include: {
+            questions: { include: { choices: true } },
             company: {
               include: { members: true },
             },
@@ -1050,7 +1067,11 @@ export class AssessmentsService {
       throw new BadRequestException('Review is available only after the candidate finishes');
     }
 
-    const passingScore = attempt.assessment.passingScore;
+    const snapshot = attempt.snapshot as any;
+    if (this.hasVersionMismatch(attempt) || (snapshot?.criteriaHash && snapshot.criteriaHash !== this.criteriaHash(attempt.assessment))) {
+      throw new BadRequestException('เกณฑ์ข้อสอบเปลี่ยนหลังเริ่มรอบสอบ ต้องตรวจเกณฑ์เดิมก่อนบันทึกผล');
+    }
+    const passingScore = snapshot?.passingScore ?? attempt.assessment.passingScore;
     const passed = humanScore >= passingScore;
     const now = new Date();
 
@@ -1187,10 +1208,11 @@ export class AssessmentsService {
       throw new ForbiddenException('Access denied');
     }
 
-    if (isOwnerCandidate && !isAdmin && !isCompanyMember) return candidateFeedback(attempt);
+    const historical = { ...attempt, assessment: await this.assessmentForHistoricalResult(attempt) };
+    if (isOwnerCandidate && !isAdmin && !isCompanyMember) return candidateFeedback(historical);
 
     return {
-      ...attempt,
+      ...historical,
       integritySummary: this.getIntegritySummary(attempt.integrityEvents),
     };
   }
@@ -1242,7 +1264,42 @@ export class AssessmentsService {
       throw new ForbiddenException('You are not authorized to access this assessment attempt');
     }
 
+    const snapshot = attempt.snapshot as any;
+    if (this.hasVersionMismatch(attempt) || (snapshot?.criteriaHash && snapshot.criteriaHash !== this.criteriaHash(attempt.assessment))) {
+      throw new BadRequestException('เกณฑ์ข้อสอบเปลี่ยนหลังเริ่มรอบสอบ กรุณาเริ่มรอบใหม่หรือติดต่อผู้ดูแล');
+    }
     return attempt;
+  }
+
+  private hasVersionMismatch(attempt: any) {
+    return typeof attempt.assessmentVersion === 'number' && typeof attempt.assessment?.version === 'number' &&
+      attempt.assessmentVersion !== attempt.assessment.version;
+  }
+
+  private async assessmentForHistoricalResult(attempt: any) {
+    if (!this.hasVersionMismatch(attempt)) return attempt.assessment;
+    const revision = await this.prisma.assessmentBankRevision.findUnique({ where: {
+      assessmentId_version: { assessmentId: attempt.assessmentId, version: attempt.assessmentVersion },
+    } });
+    if (!revision) return { ...attempt.assessment, questions: [], historicalCriteriaUnavailable: true };
+    const snapshot = revision.snapshot as any;
+    // Keep current access/disclosure policy; restore only the authored historical criteria.
+    return { ...attempt.assessment, title: snapshot.title, type: snapshot.type,
+      version: snapshot.version, passingScore: snapshot.passingScore, timeLimitMinutes: snapshot.timeLimitMinutes,
+      questions: snapshot.questions, historicalCriteriaArchived: true };
+  }
+
+  private criteriaHash(assessment: any) {
+    const criteria = { skillId: assessment.skillId, type: assessment.type, version: assessment.version,
+      ...frameworkMetadata(assessment),
+      passingScore: assessment.passingScore, timeLimitMinutes: assessment.timeLimitMinutes,
+      questions: [...assessment.questions].sort((a, b) => a.id.localeCompare(b.id)).map(q => ({
+        id: q.id, version: q.version, title: q.title, difficulty: q.difficulty, prompt: q.prompt, points: q.points, starterCode: q.starterCode,
+        frameworkTopicId: q.frameworkTopicId, frameworkMappingNote: q.frameworkMappingNote, behavioralChecks: q.behavioralChecks,
+        evaluationMethod: q.evaluationMethod, rubric: q.rubric, testCases: q.testCases,
+        choices: [...(q.choices || [])].sort((a, b) => a.id.localeCompare(b.id)),
+      })) };
+    return createHash('sha256').update(JSON.stringify(criteria)).digest('hex');
   }
 
   private async assertCandidateAccess(

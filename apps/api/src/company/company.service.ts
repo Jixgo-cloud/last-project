@@ -8,7 +8,9 @@ import { CandidateService } from '../candidate/candidate.service';
 import {
   assessmentQuestionsMatch,
   codingScreeningResult,
-  githubSkillView,
+  candidateSkillViews,
+  applicationAssessmentView,
+  formatMatchSummary,
   getAssessmentValidationError,
   VerificationStatus,
   ApplicationStatus,
@@ -31,6 +33,7 @@ const attemptSummarySelect = {
   startedAt: true,
   completedAt: true,
   integrityEvents: true,
+  snapshot: true,
   assessment: {
     select: { id: true, title: true, passingScore: true, type: true, companyId: true },
   },
@@ -333,8 +336,8 @@ export class CompanyService {
       },
       orderBy: { createdAt: 'desc' },
     });
-    return applications.map(application => ({ ...application,
-      candidate: { ...application.candidate, skills: (application.candidate.skills || []).map(githubSkillView) },
+    return applications.map(application => ({ ...applicationAssessmentView(application),
+      candidate: { ...application.candidate, assessmentAttempts: application.candidate.assessmentAttempts.map(({ snapshot, ...attempt }) => attempt), skills: candidateSkillViews(application.candidate.skills, application.candidate.assessmentAttempts) },
       codingResult: codingScreeningResult(application.candidate.assessmentAttempts, application.assignedAssessment || application.job.customAssessment),
       evaluation: companyEvaluationView(application.evaluation) }));
   }
@@ -569,11 +572,7 @@ export class CompanyService {
         escapeCsv(app.candidate?.githubUsername || 'N/A'),
         escapeCsv(app.job?.title || 'N/A'),
         escapeCsv(app.status),
-        escapeCsv(
-          app.matchScoreAtApplication !== null && app.matchScoreAtApplication !== undefined
-            ? Math.round(app.matchScoreAtApplication)
-            : 'N/A',
-        ),
+        escapeCsv(formatMatchSummary(app.matchAssessmentSnapshot as any)),
         escapeCsv(new Date(app.createdAt).toISOString()),
         escapeCsv(app.internalNote || ''),
         escapeCsv(app.evaluation?.technicalScore ?? ''),
@@ -984,6 +983,7 @@ export class CompanyService {
 
       return {
         ...att,
+        snapshot: undefined,
         integritySummary: {
           tabSwitchCount,
           riskLevel,
@@ -1085,6 +1085,7 @@ export class CompanyService {
 
       return {
         ...att,
+        snapshot: undefined,
         integritySummary: {
           tabSwitchCount,
           riskLevel,
@@ -1098,10 +1099,10 @@ export class CompanyService {
 
     return {
       ...candidate,
-      skills: (candidate.skills || []).map(githubSkillView),
+      skills: candidateSkillViews(candidate.skills, candidate.assessmentAttempts),
       assessmentAttempts: attemptsWithIntegrity,
       radarData,
-      application: { ...application, evaluation: companyEvaluationView(application.evaluation) },
+      application: { ...applicationAssessmentView(application), evaluation: companyEvaluationView(application.evaluation) },
     };
   }
 }
