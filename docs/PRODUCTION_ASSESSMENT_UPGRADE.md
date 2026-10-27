@@ -1,6 +1,6 @@
 # Production release: assessment-based matching
 
-This is a release procedure, not evidence of a production deployment. The completed live Judge0 verification used a local PostgreSQL clone; see [the evidence report](LIVE_JUDGE0_VERIFICATION.md). Run commands from the repository root using the locked dependencies (Prisma 5.22). API/container startup now starts Node only: it does not run `prisma db push`.
+This is the general release procedure. Production execution at commit `15ee7a2`, including migrations and live Judge0/API/UI verification, is recorded in [the 27 October production report](PRODUCTION_ASSESSMENT_ROLLOUT_20261027.md). Earlier local verification is recorded [separately](LIVE_JUDGE0_VERIFICATION.md). Run commands from the repository root using the locked dependencies (Prisma 5.22). API/container startup now starts Node only: it does not run `prisma db push`.
 
 **Owner authorization update, 27 October 2026:** all production records are test data. The owner explicitly approved migration preserving existing data, a production deployment and full Judge0/API/UI verification, **without a new backup and without merging PR #2**. This supersedes the earlier HOLD and fresh-backup gate for this rollout only. Record before/after fingerprints as verification evidence; they are not a restorable backup. The private database bank revision remains required to interpret historical results. The optional release flag `--skip-backup` skips only the external bank backup file, keeps hash/active-attempt/transaction guards, and cannot be combined with `--backup-dir`:
 
@@ -12,7 +12,7 @@ node scripts/release-javascript-assessment.cjs --expand-single-question
 
 The general backup-based procedure below remains the default for future releases. No fresh recovery point is created for this exception; do not claim otherwise.
 
-**27 October readiness check: HOLD production execution/merge.** The owner selected preparation of the two-question expansion. The explicit `--expand-single-question` path now archives version 1 and preserves old results; see [the isolated staging report](ASSESSMENT_EXPANSION_STAGING.md). Production still needs both the application-score and private bank-revision migrations, a fresh verified backup, and coordinated provider rollout. Read [the inspected targets and release gates](PRODUCTION_ROLLOUT_READINESS_20261027.md) before executing this procedure. Staging success is not authorization to change production.
+**27 October execution update:** the earlier readiness HOLD was superseded by the owner's explicit production authorization above. The four SQL steps and one-to-two expansion are now applied, and production API/UI verification passed; **PR merge remains on hold**. Read [the execution record](PRODUCTION_ASSESSMENT_ROLLOUT_20261027.md) for actual Supabase migration history and deployed revisions. The [readiness inspection](PRODUCTION_ROLLOUT_READINESS_20261027.md) and [isolated staging report](ASSESSMENT_EXPANSION_STAGING.md) remain historical evidence.
 
 ## 1. Prepare and rehearse
 

@@ -1,5 +1,7 @@
 # Production rollout readiness — 27 October 2026 (Asia/Bangkok)
 
+> Historical inspection: the HOLD and pre-release state below were superseded later on 27 October by explicit owner authorization. Production was migrated and deployed without a new backup, with original data preserved and live Judge0/API/UI checks completed. See [the production execution report](PRODUCTION_ASSESSMENT_ROLLOUT_20261027.md). PR #2 remains unmerged.
+
 **Decision: HOLD production rollout and merge.** The application release is CI-green, but the production database and assessment bank are not yet ready for the documented release path. This report records inspection and a local rehearsal, not a production upgrade. No production rows, schema, deployment settings, or secrets were changed.
 
 Read with [the upgrade/recovery runbook](PRODUCTION_ASSESSMENT_UPGRADE.md). [PR #2](https://github.com/Jixgo-cloud/last-project/pull/2) remains open with auto-merge disabled at the owner's request.
