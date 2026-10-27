@@ -3,6 +3,7 @@ import { Injectable, NotFoundException, BadRequestException, ConflictException }
 import { PrismaService } from '../prisma/prisma.service';
 import { SkillGapItem, SkillCategory, CourseSource, assessedSkills, getAssessmentValidationError } from '@smartcareer/shared';
 import { CAREER_DEFINITIONS } from '../jobs/jobs.service';
+import { selectRelevantCourses, uniqueCourses } from './course-selection';
 import { courseWithSupportedSkills, mentionsSkill } from './course-skill-evidence';
 
 @Injectable()
@@ -64,12 +65,8 @@ export class RecommendationsService {
         strengths: explicit && Array.isArray(evaluation.strengths) ? evaluation.strengths : [],
         note: explicit ? development.note : '', legacy: !explicit,
         skills: explicit ? skills.filter(skill => development.skillIds.includes(skill.id)).map(skill => {
-          const seen = new Set<string>();
-          const recommendedCourses = courses.map(courseWithSupportedSkills).filter(course => {
-            if (!/^https?:\/\//i.test(course.url) || seen.has(course.url)) return false;
-            if (!course.skills.some(link => link.skillId === skill.id) && !mentionsSkill(`${course.title} ${course.description || ''}`, skill.name)) return false;
-            seen.add(course.url); return true;
-          }).slice(0, 3).map(course => ({ id: course.id, title: course.title, url: course.url, provider: course.provider }));
+          const recommendedCourses = selectRelevantCourses(courses, [skill.name], 3)
+            .map(course => ({ id: course.id, title: course.title, url: course.url, provider: course.provider }));
           const progress = development.progress?.[skill.id] || { status: 'NOT_STARTED', note: '', evidenceUrl: '', updatedAt: null, completedAt: null };
           return { id: skill.id, name: skill.name, recommendedCourses, progress,
             needsReview: !!progress.updatedAt && progress.reviewedRevision !== development.updatedAt,
@@ -124,9 +121,7 @@ export class RecommendationsService {
       gaps.push({ skillId: row.skillId, skillName: row.skillName, category: demand.get(row.skillId)!.skill.category,
         requiredLevel: row.requiredLevel, currentLevel: row.currentLevel!, gap,
         priority: gap >= 30 ? 'HIGH' : gap >= 15 ? 'MEDIUM' : 'LOW',
-        recommendedCourses: courses.map(courseWithSupportedSkills).filter(c =>
-          mentionsSkill(`${c.title} ${c.description || ''}`, row.skillName))
-          .slice(0, 3).map(c => ({ id: c.id, title: c.title, provider: c.provider as CourseSource, url: c.url, thumbnail: c.thumbnailUrl, level: c.level })),
+        recommendedCourses: selectRelevantCourses(courses, [row.skillName], 3).map(c => ({ id: c.id, title: c.title, provider: c.provider as CourseSource, url: c.url, thumbnail: c.thumbnailUrl, level: c.level })),
       });
     }
     gaps.sort((a, b) => b.gap - a.gap);
@@ -189,34 +184,12 @@ export class RecommendationsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const seenUrls = new Set<string>();
-    return courses.map(courseWithSupportedSkills).filter((course) => {
+    return uniqueCourses(courses.map(courseWithSupportedSkills).filter((course) => {
       if (filters?.skillId && filters.skillId !== 'ALL' && !course.skills.some((link) => link.skillId === filters.skillId)) return false;
       const career = filters?.career && CAREER_DEFINITIONS[filters.career];
       if (career && !course.skills.some((link) => career.categories.includes(link.skill.category as SkillCategory)) && !career.keywords.some((word) => mentionsSkill(course.title, word))) return false;
-      let normalizedUrl: string;
-      try {
-        const parsedUrl = new URL(course.url);
-        parsedUrl.hash = '';
-        parsedUrl.hostname = parsedUrl.hostname.replace(/^www\./i, '');
-        parsedUrl.pathname = parsedUrl.pathname.replace(/\/+$/, '') || '/';
-
-        for (const key of Array.from(parsedUrl.searchParams.keys())) {
-          if (/^(utm_.+|ref|referrer|couponcode|fbclid|gclid|feature|si)$/i.test(key)) {
-            parsedUrl.searchParams.delete(key);
-          }
-        }
-
-        parsedUrl.searchParams.sort();
-        normalizedUrl = parsedUrl.toString().replace(/\/$/, '');
-      } catch {
-        normalizedUrl = course.url.trim().replace(/\/+$/, '').toLowerCase();
-      }
-
-      if (seenUrls.has(normalizedUrl)) return false;
-      seenUrls.add(normalizedUrl);
       return true;
-    });
+    }));
   }
 }
 

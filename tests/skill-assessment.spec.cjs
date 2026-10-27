@@ -45,8 +45,8 @@ test('Job course recommendations reject stale skill tags and choose the actually
     candidateProfile: { findUnique: async () => ({ id: 'candidate' }) },
     jobFavorite: { findUnique: async () => null },
     course: { findMany: async () => [
-      { id: 'wrong', title: 'HTML5 forms', description: 'HTML semantics', skills: [{ ...staleLink, relevanceScore: 1 }] },
-      { id: 'right', title: 'JavaScript fundamentals', description: 'Arrays and strings', skills: [staleLink] },
+      { id: 'wrong', url: 'https://example.test/html', title: 'HTML5 forms', description: 'HTML semantics', skills: [{ ...staleLink, relevanceScore: 1 }] },
+      { id: 'right', url: 'https://example.test/javascript', title: 'JavaScript fundamentals', description: 'Arrays and strings', skills: [staleLink] },
     ] },
   };
   const service = new JobsService(db, { calculateMatchScore: async () => ({ missingSkills: [{ name: 'JavaScript' }] }) });
