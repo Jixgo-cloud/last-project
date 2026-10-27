@@ -873,7 +873,7 @@ function CompanyApplicationsContent() {
 
         {/* Evaluation Modal */}
         {selectedAppForEval && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 backdrop-blur-sm p-4 overflow-y-auto">
             <div className="bg-white rounded-[28px] p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-slate-200/90 my-8 animate-in fade-in zoom-in-95 duration-150">
               <div className="flex items-center justify-between pb-4 border-b border-slate-100">
                 <div>

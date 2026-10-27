@@ -129,6 +129,6 @@ Before and after deployment/testing, each table was read with count(*) and MD5 o
 
 All seven fingerprints match. No QA job/exam/profile was hidden, deleted or re-scored. The [QA inventory](QA_HIDE_INVENTORY_20261027.md) remains a proposal only; all expert/draft labels remain unchanged.
 
-Local screenshots are retained outside committed evidence under output/prelaunch-production/ (candidate-applications.png, company-evaluation.png, company-denied.png). They contain designated QA display data and are not included in Git. The company result's exact title/80% was also verified from the rendered accessibility tree.
+Local screenshots are retained outside committed evidence under output/prelaunch-production/ (candidate-applications.png, company-evaluation.png, company-denied.png). They contain designated QA display data and are not included in Git. The company result's exact title/80% was verified from the rendered accessibility tree. Screenshot inspection also found that a vertically centered evaluation form taller than the viewport clipped its header above the scroll origin. The follow-up changes that modal to top alignment so its existing title/result remain reachable at short viewport heights; no evaluation data changes. Verify the visual fix after the follow-up deployment.
 
 The initial P0 access finding is now remediated in production. Billing continuity, monitoring/alert ownership, provider capacity, current recovery policy and independent assessment/pilot review remain launch gates; this patch does not close them.
